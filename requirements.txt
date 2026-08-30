@@ -1,3 +1,4 @@
 streamlit
 langgraph
 requests
+Pillow
