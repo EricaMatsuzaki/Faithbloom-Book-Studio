@@ -1,3 +1,24 @@
+#FaithBloom AI
+Christian Storytelling & Book Studio
+
+📚 Coleção: Pequenas Histórias com Grandes Lições
+✍️ Autora: Erica Matsuzaki
+
+#FaithBloom AI é um nome em inglês formado por três ideias:
+
+Faith = Fé
+Bloom = Florescer / desabrochar
+AI = Artificial Intelligence / Inteligência Artificial
+
+Então, conceitualmente, FaithBloom AI pode ser entendido como:
+
+🌷 “Fé que Floresce com Inteligência Artificial”
+
+ou, de maneira mais poética para a marca:
+
+✨ “Onde histórias fazem a fé florescer.”
+
+
 # Pipeline de agentes - Livros infantis (Erica Matsuzaki)
 
 Esqueleto funcional do pipeline discutido: 7 agentes em LangGraph que
