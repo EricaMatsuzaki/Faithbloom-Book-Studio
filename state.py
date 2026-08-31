@@ -43,6 +43,8 @@ class LivroState(TypedDict, total=False):
     idioma_original: str               # ex: "pt-BR"
     idiomas_alvo: list[str]            # lista de idiomas para tradução
     paginas_minimas: int               # padrão 24, nunca abaixo disso
+    trim_largura_in: float             # largura do livro físico, em polegadas (padrão 8.5)
+    trim_altura_in: float              # altura do livro físico, em polegadas (padrão 8.5)
 
     # --- Curador de Tema (opcional) ---
     _entrada_tema_livre: str           # tema/resumo livre, se a Erica não
@@ -64,7 +66,11 @@ class LivroState(TypedDict, total=False):
 
     # --- Ilustrador ---
     cenas_imagem: list[CenaImagem]
-    imagem_capa: str                   # caminho da capa gerada (com a barra da coleção + título + autora)
+
+    # --- Capa e Contracapa (arquivos SEPARADOS do miolo, formatos diferentes) ---
+    capa_ebook: str                    # arquivo só com a arte frontal (eBook)
+    capa_fisica_wrap: str              # arquivo único: contracapa + lombada + capa (livro físico)
+    capa_fisica_dimensoes: dict        # medidas usadas (lombada, largura/altura total, DPI) - ver kdp_rules
 
     # --- Atividades para Colorir ---
     paginas_colorir: list[CenaImagem]  # 3 cenas-chave em versão line-art

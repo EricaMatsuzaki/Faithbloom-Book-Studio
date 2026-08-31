@@ -101,3 +101,55 @@ def carregar_biblioteca_personagens(colecao: str) -> dict:
         return {}
     with open(caminho, encoding="utf-8") as f:
         return json.load(f)
+
+
+# --- Assets de marca fixos por coleção (selo, faixa) - ver marca.py ---
+PASTA_MARCA = "marca_colecoes"
+os.makedirs(PASTA_MARCA, exist_ok=True)
+
+
+def salvar_asset_marca(colecao: str, tipo: str, conteudo_bytes: bytes) -> str:
+    """tipo: 'selo' ou 'faixa'. Salva uma vez, reutilizado em todo livro da coleção."""
+    pasta = os.path.join(PASTA_MARCA, _slug(colecao))
+    os.makedirs(pasta, exist_ok=True)
+    caminho = os.path.join(pasta, f"{tipo}.png")
+    with open(caminho, "wb") as f:
+        f.write(conteudo_bytes)
+    return caminho
+
+
+def carregar_asset_marca(colecao: str, tipo: str) -> str | None:
+    caminho = os.path.join(PASTA_MARCA, _slug(colecao), f"{tipo}.png")
+    return caminho if os.path.exists(caminho) else None
+
+
+# --- Livros de colorir (projeto separado, sem "coleção" de personagens) ---
+PASTA_COLORIR = "livros_colorir_salvos"
+os.makedirs(PASTA_COLORIR, exist_ok=True)
+
+
+def salvar_livro_colorir(state: dict) -> str:
+    slug = _slug(state.get("titulo", ""))
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    caminho = os.path.join(PASTA_COLORIR, f"{slug}-{timestamp}.json")
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    return caminho
+
+
+def listar_livros_colorir() -> list[dict]:
+    livros = []
+    for nome_arquivo in sorted(os.listdir(PASTA_COLORIR), reverse=True):
+        if nome_arquivo.endswith(".json"):
+            with open(os.path.join(PASTA_COLORIR, nome_arquivo), encoding="utf-8") as f:
+                dados = json.load(f)
+            livros.append({
+                "arquivo": nome_arquivo,
+                "titulo": dados.get("titulo", "(sem título)"),
+                "tema_geral": dados.get("tema_geral", ""),
+            })
+    return livros
+
+
+def temas_colorir_usados() -> list[str]:
+    return [l["titulo"] for l in listar_livros_colorir()]

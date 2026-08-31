@@ -31,6 +31,7 @@ from agents.dedicatoria import dedicatoria_node
 from agents.tradutor import tradutor_node
 from agents.sinopse import sinopse_node
 from agents.diagramador import diagramador_node
+from agents.capa import capa_node
 from armazenamento import salvar_livro, listar_livros
 
 st.set_page_config(page_title="Retomar Livro", page_icon="📚")
@@ -104,17 +105,21 @@ elif st.session_state.etapa_r == "revisar_personagens":
                     s["personagens"][nome]["origem_referencia"] = "enviada_pela_autora"
 
     st.markdown("### Dedicatória (opcional)")
-    st.caption("Preencha para gerar a Dedicatória Dinâmica, ou deixe em branco para pular.")
+    st.caption("Preencha para gerar a Dedicatória Dinâmica, ou deixe em branco para pular. "
+               "Essa lista NÃO é salva no código do projeto — fica só nesta sessão e no "
+               "arquivo local do livro salvo (ver README sobre não versionar dados pessoais).")
     texto_dedicatoria = st.text_area(
-        "Uma pessoa por linha, no formato: Nome - relação (ex: Sedinei - mãe)",
+        "Uma pessoa por linha: Nome - relação - opcional \"in memoriam\" "
+        "(ex: Sedinei - mãe / Keiichi - pai - in memoriam)",
         height=120,
     )
     if texto_dedicatoria.strip():
         lista = []
         for linha in texto_dedicatoria.strip().splitlines():
-            if "-" in linha:
-                nome_p, relacao = linha.split("-", 1)
-                lista.append({"pessoa": nome_p.strip(), "relacao": relacao.strip()})
+            partes = [p.strip() for p in linha.split("-")]
+            if len(partes) >= 2:
+                in_memoriam = len(partes) >= 3 and "memoriam" in partes[2].lower()
+                lista.append({"pessoa": partes[0], "relacao": partes[1], "in_memoriam": in_memoriam})
         s["lista_dedicatoria"] = lista
 
     if st.button("Gerar referência visual dos personagens"):
@@ -161,6 +166,8 @@ elif st.session_state.etapa_r == "processando":
     s.update(sinopse_node(dict(s), chamar_llm))
     progresso.progress(95, text="Diagramando e validando com a KDP...")
     s.update(diagramador_node(dict(s)))
+    progresso.progress(97, text="Gerando capa (eBook) e capa física (wraparound)...")
+    s.update(capa_node(dict(s), gerar_imagem))
     progresso.progress(100, text="Pronto!")
     caminho_salvo = salvar_livro(dict(s))
     st.session_state.caminho_salvo_r = caminho_salvo
@@ -173,9 +180,13 @@ elif st.session_state.etapa_r == "resultado":
     st.caption(f"Salvo em: {st.session_state.get('caminho_salvo_r', '')}")
     st.json(s["checklist_kdp"])
 
-    if s.get("imagem_capa"):
-        st.subheader("📕 Capa")
-        st.image(s["imagem_capa"], width=350)
+    if s.get("capa_ebook") or s.get("capa_fisica_wrap"):
+        st.subheader("📕 Capa e Contracapa")
+        col1, col2 = st.columns(2)
+        if s.get("capa_ebook"):
+            col1.image(s["capa_ebook"], caption="Capa para eBook")
+        if s.get("capa_fisica_wrap"):
+            col2.image(s["capa_fisica_wrap"], caption="Capa física (wraparound)")
 
     st.subheader("🎨 Ilustrações")
     for cena in s.get("cenas_imagem", []):

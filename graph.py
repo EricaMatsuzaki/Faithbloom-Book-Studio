@@ -19,6 +19,7 @@ from agents.dedicatoria import dedicatoria_node
 from agents.tradutor import tradutor_node
 from agents.sinopse import sinopse_node
 from agents.diagramador import diagramador_node
+from agents.capa import capa_node
 
 
 def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
@@ -41,6 +42,7 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_node("tradutor", lambda s: tradutor_node(s, chamar_llm))
     grafo.add_node("sinopse", lambda s: sinopse_node(s, chamar_llm))
     grafo.add_node("diagramador", lambda s: diagramador_node(s))
+    grafo.add_node("capa", lambda s: capa_node(s, gerar_imagem))
 
     grafo.set_entry_point("curador_tema")
     grafo.add_edge("curador_tema", "roteirista")
@@ -57,6 +59,7 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_edge("dedicatoria", "tradutor")
     grafo.add_edge("tradutor", "sinopse")
     grafo.add_edge("sinopse", "diagramador")
-    grafo.add_edge("diagramador", END)
+    grafo.add_edge("diagramador", "capa")
+    grafo.add_edge("capa", END)
 
     return grafo.compile()

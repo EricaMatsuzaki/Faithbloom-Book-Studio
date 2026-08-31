@@ -1,46 +1,3 @@
-#FaithBloom AI é um nome em inglês formado por três ideias:
-
-Faith = Fé
-Bloom = Florescer / desabrochar
-AI = Artificial Intelligence / Inteligência Artificial
-
-Então, conceitualmente, FaithBloom AI pode ser entendido como:
-
-🌷 “Fé que Floresce com Inteligência Artificial”
-
-ou, de maneira mais poética para a marca:
-
-✨ “Onde histórias fazem a fé florescer.”
-
-Acho especialmente interessante o verbo bloom, porque em inglês ele transmite a ideia de uma flor que se abre e, figurativamente, de alguém ou algo que cresce, se desenvolve e alcança seu potencial.
-
-Para o seu SaaS, a mensagem poderia ser:
-
-🌷 FaithBloom AI
-
-Pequenas histórias. Grandes lições. Uma fé que floresce.
-
-Em inglês:
-
-Little Stories. Big Lessons. Faith That Blooms.
-
-E existe uma conexão muito bonita com a proposta editorial: a IA é a ferramenta, mas o centro da marca continua sendo histórias infantis, valores cristãos e crescimento da fé.
-
-Eu só faria uma distinção entre os nomes:
-
-FaithBloom AI → nome da marca/SaaS
-FaithBloom Book Studio → nome da plataforma/editor de livros
-Pequenas Histórias com Grandes Lições → nome da coleção de livros
-
-Isso cria uma arquitetura de marca bastante organizada. Por exemplo:
-
-FaithBloom AI
-Christian Storytelling & Book Studio
-
-📚 Coleção: Pequenas Histórias com Grandes Lições
-✍️ Autora: Erica Matsuzaki
-
-
 # Pipeline de agentes - Livros infantis (Erica Matsuzaki)
 
 Esqueleto funcional do pipeline discutido: 7 agentes em LangGraph que
@@ -52,7 +9,10 @@ manual na KDP.
 ```
 state.py            -> estado compartilhado entre os agentes
 emotion_colors.py    -> dicionário fixo emoção -> cor -> atmosfera
-kdp_rules.py         -> regras de páginas mínimas e idiomas elegíveis
+kdp_rules.py         -> regras de páginas mínimas, idiomas elegíveis, e
+                        cálculo de dimensões de capa (lombada, wrap)
+marca.py             -> sobrepõe faixa/selo da coleção via PIL (NÃO
+                        gerados pela IA - garante consistência exata)
 openrouter_client.py -> chamadas reais de texto e imagem via OpenRouter
 app.py               -> frontend Streamlit para criar um livro do ZERO
 app_retomar.py       -> frontend Streamlit para RETOMAR um livro cujo
@@ -65,6 +25,52 @@ armazenamento.py     -> salva cada livro finalizado como JSON local
                         real - ver seção de roadmap abaixo), organizado
                         por coleção, e mantém a biblioteca de
                         personagens de cada coleção separada
+
+## Livros de colorir (projeto separado)
+
+Diferente dos livros com história, um livro de colorir é só um tema
+visual coeso (bichinhos, princesas, carros, aviões, navios, objetos
+fofos - qualquer coisa) com várias páginas dentro, sem narrativa.
+
+```
+state_colorir.py             -> estado do projeto (mais simples que
+                                 o LivroState - sem roteiro/dedicatória)
+agents/gerador_ideias_colorir.py -> sugere temas de livro de colorir,
+                                 cobrindo tipos variados, não só animais
+agents/line_art_colorir.py   -> gera cada página + a capa; aplica o
+                                 código visual macho/fêmea quando o
+                                 tema tem personagens com gênero
+agents/diagramador_colorir.py -> monta o layout do miolo (rosto/título
+                                 + "este livro pertence a" + páginas de
+                                 colorir com VERSO EM BRANCO cada uma +
+                                 branco extra se precisar completar
+                                 número par) e valida contra a KDP
+                                 (mínimo 24 páginas p/ preto e branco)
+app_colorir.py                -> frontend Streamlit dedicado
+```
+
+Regra de estilo fixa (macho/fêmea, quando o tema usa personagens com
+gênero): macho tem olhos sem cílios e blush em círculo tracejado;
+fêmea tem cílios, blush em coração, e acessório (laço). Temas sem
+gênero (veículos, objetos) usam só o estilo base, sem essa distinção.
+
+A capa é gerada na MESMA técnica vetor simples do miolo (nunca
+aquarela/pintura), usando uma página de line art já aprovada como
+imagem-base - isso resolve o problema de inconsistência entre capa e
+miolo que a Erica teve no "Cute Friends". Assim como nos livros de
+história, capa e contracapa são dois arquivos SEPARADOS (`capa_ebook`
+e `capa_fisica_wrap`), com a mesma lógica de cálculo de lombada da
+KDP (`kdp_rules.py`) e a mesma composição de selo/faixa via PIL
+(`marca.py`) - reaproveitável entre livros de colorir se você usar o
+mesmo nome de marca. O `diagramador_colorir_node` roda antes da
+geração de capa e calcula a contagem REAL de páginas do miolo -
+incluindo o VERSO EM BRANCO atrás de cada página de colorir (padrão da
+indústria: giz de cera, lápis de cor e principalmente marcador
+atravessam o papel fino da KDP e estragariam o desenho seguinte se as
+páginas fossem impressas dos dois lados). Isso praticamente dobra a
+contagem de páginas em relação ao número de desenhos - 20 desenhos
+viram ~44 páginas de miolo, contando rosto/título e "este livro
+pertence a".
 agents/
   curador_tema.py       -> a partir só de um tema/resumo, sugere
                            emoção, versículo e lição (autora confirma
@@ -136,6 +142,40 @@ começa com biblioteca de personagens vazia. Isso é controlado por
 `armazenamento.carregar_biblioteca_personagens()` /
 `atualizar_biblioteca_personagens()`, separado por pasta em
 `bibliotecas_personagens/`.
+
+## Capa, contracapa e tamanho do livro
+
+O tamanho do livro (trim size) NÃO é adivinhado pelo sistema - é
+escolhido na tela de coleção (`trim_largura_in`/`trim_altura_in`,
+padrão 8.5"x8.5"). A partir disso e da contagem final de páginas,
+`kdp_rules.calcular_dimensoes_capa_fisica()` calcula a largura exata
+da lombada e o tamanho total do arquivo de capa física, seguindo a
+fórmula oficial da KDP (bleed de 0.125", 300 DPI).
+
+Dois arquivos SEMPRE separados do miolo e um do outro:
+- `capa_ebook` - só a arte frontal, tamanho de pixel recomendado pra eBook.
+- `capa_fisica_wrap` - o arquivo único wraparound (contracapa + lombada
+  + capa) no tamanho exato calculado pra aquele livro específico.
+
+O selo/emblema da coleção e a faixa "COLEÇÃO X" são elementos de marca
+FIXOS - eles não são redesenhados pela IA a cada capa (isso
+reintroduziria inconsistência). A autora envia um PNG do selo (e
+opcionalmente da faixa) uma vez na tela de coleção, e `marca.py`
+sobrepõe essa mesma imagem via PIL em toda capa gerada dali em diante.
+Se nenhuma faixa for enviada, o sistema desenha uma faixa simples com
+fonte real (não pela IA).
+
+## Privacidade — dados pessoais nunca vão pro código
+
+O repositório é **público** no GitHub. Nomes reais de família (lista
+da dedicatória) NUNCA devem aparecer hardcoded em nenhum arquivo `.py`
+— eles são digitados na tela do Streamlit a cada sessão, e ficam
+salvos só localmente (`livros_salvos/`, `bibliotecas_personagens/`,
+`marca_colecoes/`), pastas que o `.gitignore` já exclui do versionamento.
+Se algum desses arquivos já foi commitado por engano antes deste
+`.gitignore` existir, ele continua no histórico do Git mesmo depois de
+apagado - nesse caso é preciso reescrever o histórico (`git filter-repo`
+ou similar) ou, mais simples, tornar o repositório privado.
 
 ## Roadmap para virar SaaS de verdade (fila, banco, autenticação)
 

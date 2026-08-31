@@ -23,7 +23,7 @@ import streamlit as st
 
 from state import LivroState, PersonagemDNA
 from openrouter_client import chamar_llm, gerar_imagem, gerar_audio
-from armazenamento import salvar_livro, listar_livros, listar_colecoes, carregar_biblioteca_personagens
+from armazenamento import salvar_livro, listar_livros, listar_colecoes, carregar_biblioteca_personagens, salvar_asset_marca
 from agents.curador_tema import curador_tema_node
 from agents.gerador_ideias import gerador_ideias_node
 from agents.criador_personagem import criar_personagem_a_partir_de_ideia
@@ -36,6 +36,7 @@ from agents.dedicatoria import dedicatoria_node
 from agents.tradutor import tradutor_node
 from agents.sinopse import sinopse_node
 from agents.diagramador import diagramador_node
+from agents.capa import capa_node
 
 st.set_page_config(page_title="Pequenas Histórias, Grandes Lições", page_icon="📖")
 st.title("📖 Gerador de Livros Infantis - Erica Matsuzaki")
@@ -70,23 +71,48 @@ if st.session_state.etapa == "colecao":
     else:
         escolha = "Criar nova coleção"
 
+    nome_colecao = None
     if escolha == "Criar nova coleção":
-        nome_nova = st.text_input(
+        nome_colecao = st.text_input(
             "Nome da nova coleção",
             placeholder="ex: Aventuras da Floresta Encantada",
         )
-        if st.button("Começar livro nesta coleção") and nome_nova:
-            s["colecao"] = nome_nova
-            s["personagens"] = {}
-            st.session_state.etapa = "entrada"
-            st.rerun()
     else:
-        if st.button(f"Começar livro em \"{escolha}\""):
-            s["colecao"] = escolha
+        nome_colecao = escolha
+
+    with st.expander("Tamanho do livro e marca da coleção (opcional)"):
+        col1, col2 = st.columns(2)
+        largura = col1.number_input("Largura (polegadas)", value=8.5, step=0.5)
+        altura = col2.number_input("Altura (polegadas)", value=8.5, step=0.5)
+        st.caption("Padrão pra livro infantil ilustrado quadrado é 8.5x8.5\". "
+                   "A capa é calculada automaticamente a partir disso.")
+
+        selo_arquivo = st.file_uploader(
+            "Selo/emblema da coleção (PNG com fundo transparente) — vai na contracapa",
+            type=["png"], key="upload_selo",
+        )
+        faixa_arquivo = st.file_uploader(
+            "Faixa com o nome da coleção (PNG com fundo transparente, opcional) — "
+            "se não enviar, o sistema desenha uma faixa simples automaticamente",
+            type=["png"], key="upload_faixa",
+        )
+
+    if st.button("Começar livro nesta coleção") and nome_colecao:
+        s["colecao"] = nome_colecao
+        s["trim_largura_in"] = largura
+        s["trim_altura_in"] = altura
+        if escolha == "Criar nova coleção":
             s["personagens"] = {}
-            st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(escolha)
-            st.session_state.etapa = "entrada"
-            st.rerun()
+            st.session_state.biblioteca_colecao = {}
+        else:
+            s["personagens"] = {}
+            st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(nome_colecao)
+        if selo_arquivo is not None:
+            salvar_asset_marca(nome_colecao, "selo", selo_arquivo.getvalue())
+        if faixa_arquivo is not None:
+            salvar_asset_marca(nome_colecao, "faixa", faixa_arquivo.getvalue())
+        st.session_state.etapa = "entrada"
+        st.rerun()
 
 # ---------------------------------------------------------------- ENTRADA
 elif st.session_state.etapa == "entrada":
@@ -230,6 +256,22 @@ elif st.session_state.etapa == "personagens":
         if p.get("imagem_referencia"):
             st.image(p["imagem_referencia"], width=150)
 
+    st.markdown("**Dedicatória (opcional):**")
+    st.caption("Essa lista NÃO fica salva no código do projeto — só nesta sessão e no "
+               "arquivo local do livro (nunca é commitada no repositório).")
+    texto_dedicatoria = st.text_area(
+        "Uma pessoa por linha: Nome - relação - opcional \"in memoriam\"",
+        height=100, key="dedicatoria_zero",
+    )
+    if texto_dedicatoria.strip():
+        lista = []
+        for linha in texto_dedicatoria.strip().splitlines():
+            partes = [p.strip() for p in linha.split("-")]
+            if len(partes) >= 2:
+                in_memoriam = len(partes) >= 3 and "memoriam" in partes[2].lower()
+                lista.append({"pessoa": partes[0], "relacao": partes[1], "in_memoriam": in_memoriam})
+        s["lista_dedicatoria"] = lista
+
     if st.button("Gerar histórias e ilustrações") and s.get("personagens"):
         st.session_state.etapa = "gerando"
         st.rerun()
@@ -307,6 +349,8 @@ elif st.session_state.etapa == "finalizando":
     s.update(sinopse_node(dict(s), chamar_llm))
     progresso.progress(90, text="Diagramando e validando com a KDP...")
     s.update(diagramador_node(dict(s)))
+    progresso.progress(96, text="Gerando capa (eBook) e capa física (wraparound)...")
+    s.update(capa_node(dict(s), gerar_imagem))
     progresso.progress(100, text="Pronto!")
 
     caminho_salvo = salvar_livro(dict(s))
@@ -322,9 +366,22 @@ elif st.session_state.etapa == "resultado_zero":
                "(arquivo local — ver README sobre o roadmap de banco de dados real)")
     st.json(s["checklist_kdp"])
 
-    if s.get("imagem_capa"):
-        st.subheader("📕 Capa")
-        st.image(s["imagem_capa"], width=350)
+    st.subheader("📕 Capa e Contracapa")
+    st.caption("Dois arquivos separados do miolo, como a KDP exige — cada um com o download próprio.")
+    col1, col2 = st.columns(2)
+    if s.get("capa_ebook"):
+        col1.image(s["capa_ebook"], caption="Capa para eBook (arte frontal só)")
+        with open(s["capa_ebook"], "rb") as f:
+            col1.download_button("⬇️ Baixar capa eBook", f, file_name="capa_ebook.png")
+    if s.get("capa_fisica_wrap"):
+        dim = s.get("capa_fisica_dimensoes", {})
+        col2.image(s["capa_fisica_wrap"], caption=(
+            f"Capa física wraparound — {dim.get('largura_total_in', '?')}\"x"
+            f"{dim.get('altura_total_in', '?')}\" ({dim.get('dpi', 300)} DPI), "
+            f"lombada {dim.get('largura_lombada_in', '?')}\""
+        ))
+        with open(s["capa_fisica_wrap"], "rb") as f:
+            col2.download_button("⬇️ Baixar capa física (wraparound)", f, file_name="capa_fisica_wrap.png")
 
     for i, cena in enumerate(s.get("cenas_imagem", [])):
         st.image(cena["caminho_arquivo"], caption=f"Cena {cena['numero']}")
