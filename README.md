@@ -95,19 +95,47 @@ graph.py             -> monta o LangGraph completo
 main.py              -> exemplo de execução via terminal
 ```
 
-## Como rodar a interface (sem terminal, depois do primeiro setup)
+## Identidade visual
+
+`.streamlit/config.toml` define o tema de cores (teal + dourado + creme,
+baseado no selo/faixa que a Erica já usa) e `estilo.py` traz o CSS
+compartilhado (cabeçalho com gradiente, cards de navegação, badges de
+status, sidebar estilizada) aplicado em todas as páginas via
+`aplicar_estilo()` e `hero(titulo, subtitulo)`. Pra manter a
+identidade consistente ao criar novas páginas, sempre chamar essas
+duas funções logo depois do `st.set_page_config(...)`.
+
+## Como rodar a interface (menu lateral com todas as ferramentas)
 
 ```
 export OPENROUTER_API_KEY="sua-chave-aqui"
-pip install streamlit langgraph requests --break-system-packages
+pip install -r requirements.txt
 streamlit run app.py
 ```
 
-A tela deixa escolher entre "só tenho um tema" (o Curador de Tema sugere
-versículo/emoção/lição e você confirma ou edita) ou preencher tudo
-manualmente, mostra a referência visual dos personagens ANTES de gastar
-créditos gerando o livro inteiro, e no final mostra o pacote pronto com
-o checklist da KDP.
+O Streamlit gera o menu lateral automaticamente a partir dos arquivos
+em `pages/` - `app.py` é só a tela inicial (visão geral e atalhos).
+As ferramentas ficam todas no menu lateral:
+
+```
+app.py                                  -> Home/hub (visão geral)
+pages/
+  1_📖_Criar_do_Zero.py                  -> escrever uma história nova
+  2_📚_Retomar_Livro.py                   -> roteiro já pronto, pula pro Ilustrador
+  3_🖍️_Livros_de_Colorir.py                -> projetos de line art
+  4_🎯_Ir_Direto_para_Etapa.py              -> roda só UM agente específico,
+                                             em cima de um livro já salvo
+                                             (ex: só regerar a capa, só
+                                             rodar o Tradutor de novo)
+  5_🔍_Analisar_Livro.py                     -> vê tudo que foi gerado pra um
+                                             livro salvo: texto cena a
+                                             cena, personagens usados,
+                                             dedicatória, sinopse,
+                                             traduções, checklist KDP
+  6_👤_Personagens.py                         -> biblioteca de personagens
+                                             de cada coleção, com a
+                                             referência visual de cada um
+```
 
 ## O que resolve o problema de consistência visual
 

@@ -23,6 +23,7 @@ class CenaImagem(TypedDict):
     prompt_final: str          # prompt de imagem já com DNA fixo + figurino + paleta de emoção
     caminho_arquivo: str       # onde a imagem gerada foi salva
     aprovado: bool             # marcado True depois de revisão humana ou automática
+    origem: str                 # "gerada_pelo_agente" ou "enviada_pela_autora"
 
 
 class PersonagemDNA(TypedDict):
@@ -66,6 +67,7 @@ class LivroState(TypedDict, total=False):
 
     # --- Ilustrador ---
     cenas_imagem: list[CenaImagem]
+    imagens_cenas_enviadas: dict[int, str]  # {numero_da_cena: caminho_arquivo} - preenchido pela autora ANTES do Ilustrador rodar, pra pular a geração dessas cenas específicas
 
     # --- Capa e Contracapa (arquivos SEPARADOS do miolo, formatos diferentes) ---
     capa_ebook: str                    # arquivo só com a arte frontal (eBook)
