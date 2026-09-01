@@ -98,8 +98,28 @@ def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
             # referência antes de seguir para as cenas.
 
     # Passo 2: gerar cada cena usando a referência aprovada como imagem-base
+    # - EXCETO cenas cuja imagem já foi enviada pela autora (ver
+    # state["imagens_cenas_enviadas"]) - essas são usadas direto, sem
+    # gastar créditos gerando de novo.
+    imagens_enviadas = state.get("imagens_cenas_enviadas", {})
+    # Se o estado veio de um arquivo JSON salvo, as chaves viram string -
+    # normaliza pra sempre comparar como string.
+    imagens_enviadas = {str(k): v for k, v in imagens_enviadas.items()}
     cenas_imagem: list[CenaImagem] = []
     for i, cena in enumerate(state["cenas_texto"]):
+        numero = cena["numero"]
+        if str(numero) in imagens_enviadas:
+            cenas_imagem.append(
+                CenaImagem(
+                    numero=numero,
+                    prompt_final="(imagem enviada pela autora - não gerada por IA)",
+                    caminho_arquivo=imagens_enviadas[str(numero)],
+                    aprovado=True,
+                    origem="enviada_pela_autora",
+                )
+            )
+            continue
+
         lado = "esquerda" if i % 2 == 0 else "direita"  # alterna por spread
         protagonista = state["personagens"].get(
             cena.get("personagem_principal", "")
@@ -109,10 +129,11 @@ def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
         caminho = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
         cenas_imagem.append(
             CenaImagem(
-                numero=cena["numero"],
+                numero=numero,
                 prompt_final=prompt,
                 caminho_arquivo=caminho,
                 aprovado=False,
+                origem="gerada_pelo_agente",
             )
         )
     state["cenas_imagem"] = cenas_imagem
