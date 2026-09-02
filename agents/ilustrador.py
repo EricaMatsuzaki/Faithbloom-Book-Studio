@@ -49,6 +49,51 @@ def prompt_referencia_personagem(nome: str, descricao_fixa: str, papel: str) -> 
     )
 
 
+def prompt_capa(titulo: str, colecao: str, personagens: dict, autora: str = "Erica Matsuzaki") -> str:
+    """
+    Elemento fixo de marca da capa: uma barra branca/clara no topo com
+    o nome da coleção em letras maiúsculas (ex: "COLEÇÃO PEQUENAS
+    HISTÓRIAS, GRANDES LIÇÕES"), o título grande abaixo, os personagens
+    principais em destaque no centro/frente da cena, e o nome da autora
+    na parte inferior da imagem.
+    """
+    protagonistas = ", ".join(
+        f"{p['nome']} ({p['descricao_fixa']})" for p in personagens.values()
+    )
+    return (
+        f"{ESTILO_VISUAL_FIXO}\n"
+        "Capa de livro infantil. Elementos de marca fixos (sempre "
+        "presentes, mesma posição em toda capa da coleção):\n"
+        f"1. Uma barra branca/clara fina no topo da imagem, com uma "
+        f"borda decorativa simples, contendo o texto em maiúsculas: "
+        f"\"COLEÇÃO {colecao.upper()}\".\n"
+        f"2. Título do livro em destaque, tipografia grande e legível, "
+        f"logo abaixo da barra: \"{titulo}\".\n"
+        f"3. Nome da autora \"{autora}\" em itálico, na parte inferior "
+        "da imagem.\n"
+        f"Personagens principais em destaque, centralizados/em primeiro "
+        f"plano, cena de fundo que remeta ao tema da história: "
+        f"{protagonistas}."
+    )
+
+
+def gerar_capa(state: dict, gerar_imagem) -> str:
+    """Gera a imagem de capa usando as referências já aprovadas dos personagens."""
+    prompt = prompt_capa(
+        titulo=state.get("titulo", ""),
+        colecao=state.get("colecao", ""),
+        personagens=state.get("personagens", {}),
+    )
+    # Usa a referência do protagonista como imagem-base, se existir,
+    # para manter a mesma consistência visual da capa com o miolo.
+    protagonista = next(
+        (p for p in state.get("personagens", {}).values() if p.get("papel") == "protagonista"),
+        None,
+    )
+    imagem_base = protagonista["imagem_referencia"] if protagonista else None
+    return gerar_imagem(prompt=prompt, imagem_base=imagem_base)
+
+
 def gerar_referencia_personagem(
     personagem: PersonagemDNA, gerar_imagem
 ) -> PersonagemDNA:
@@ -98,28 +143,8 @@ def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
             # referência antes de seguir para as cenas.
 
     # Passo 2: gerar cada cena usando a referência aprovada como imagem-base
-    # - EXCETO cenas cuja imagem já foi enviada pela autora (ver
-    # state["imagens_cenas_enviadas"]) - essas são usadas direto, sem
-    # gastar créditos gerando de novo.
-    imagens_enviadas = state.get("imagens_cenas_enviadas", {})
-    # Se o estado veio de um arquivo JSON salvo, as chaves viram string -
-    # normaliza pra sempre comparar como string.
-    imagens_enviadas = {str(k): v for k, v in imagens_enviadas.items()}
     cenas_imagem: list[CenaImagem] = []
     for i, cena in enumerate(state["cenas_texto"]):
-        numero = cena["numero"]
-        if str(numero) in imagens_enviadas:
-            cenas_imagem.append(
-                CenaImagem(
-                    numero=numero,
-                    prompt_final="(imagem enviada pela autora - não gerada por IA)",
-                    caminho_arquivo=imagens_enviadas[str(numero)],
-                    aprovado=True,
-                    origem="enviada_pela_autora",
-                )
-            )
-            continue
-
         lado = "esquerda" if i % 2 == 0 else "direita"  # alterna por spread
         protagonista = state["personagens"].get(
             cena.get("personagem_principal", "")
@@ -129,12 +154,14 @@ def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
         caminho = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
         cenas_imagem.append(
             CenaImagem(
-                numero=numero,
+                numero=cena["numero"],
                 prompt_final=prompt,
                 caminho_arquivo=caminho,
                 aprovado=False,
-                origem="gerada_pelo_agente",
             )
         )
     state["cenas_imagem"] = cenas_imagem
+
+    # Passo 3: gerar a capa, usando o protagonista já aprovado como referência
+    state["imagem_capa"] = gerar_capa(state, gerar_imagem)
     return state
