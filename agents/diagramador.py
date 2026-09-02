@@ -76,6 +76,8 @@ def diagramador_node(state: LivroState) -> LivroState:
         "divulgacao_ia_preenchida": False,  # exigência KDP 2026 - conteúdo gerado por IA
         "dedicatoria_incluida": bool(state.get("dedicatoria_texto")),
         "sinopse_vendas_pronta": bool(state.get("sinopse_vendas_curta")),
+        "capa_ebook_gerada": False,          # arquivo separado - ver agents/capa.py
+        "capa_fisica_wrap_gerada": False,    # arquivo separado - ver agents/capa.py
     }
 
     state["layout_paginas"] = layout
