@@ -86,6 +86,79 @@ def dimensoes_capa_ebook_px(trim_largura_in: float, trim_altura_in: float) -> di
         altura_px = round(lado_maior_px * proporcao)
     return {"largura_px": largura_px, "altura_px": altura_px}
 
+
+# ---------------------------------------------------------------------
+# Custo de impressão e royalty (verificado ago/2026 - fontes de
+# calculadoras terceiras divergem um pouco entre si; os valores abaixo
+# são os mais consistentes entre elas, mas SEMPRE confira na
+# calculadora oficial da KDP - kdp.amazon.com/en_US/help/topic/G201834340
+# - antes de fixar um preço de venda de verdade).
+# ---------------------------------------------------------------------
+
+CUSTO_FIXO_PRETO_BRANCO = 1.00
+CUSTO_POR_PAGINA_PRETO_BRANCO = 0.012
+
+CUSTO_FIXO_COR_PADRAO = 1.00
+CUSTO_POR_PAGINA_COR_PADRAO = 0.07
+
+# Cor premium tem uma faixa curta (24-40 páginas) que cobra só o custo
+# fixo, sem custo por página - regra confirmada em múltiplas fontes,
+# mas o valor exato do fixo curto varia (~$3.60 pra trim regular nos
+# EUA) - CONFIRME na calculadora oficial antes de usar pra precificar.
+CUSTO_FIXO_COR_PREMIUM_CURTO = 3.60   # livros de 24-40 páginas
+CUSTO_FIXO_COR_PREMIUM_LONGO = 1.00   # livros com mais de 40 páginas
+CUSTO_POR_PAGINA_COR_PREMIUM_LONGO = 0.065
+
+ROYALTY_PAPERBACK = 0.60   # taxa de royalty do paperback (canal direto Amazon)
+ROYALTY_EBOOK_BAIXO = 0.35
+ROYALTY_EBOOK_ALTO = 0.70  # só disponível pra preço entre $2.99 e $9.99
+
+
+def calcular_custo_impressao(paginas: int, tipo_papel: str = "cor_premium") -> float:
+    """
+    tipo_papel: "preto_branco", "cor_padrao" ou "cor_premium".
+    Retorna o custo de impressão estimado em USD (mercado EUA).
+    """
+    if tipo_papel == "preto_branco":
+        return round(CUSTO_FIXO_PRETO_BRANCO + paginas * CUSTO_POR_PAGINA_PRETO_BRANCO, 2)
+    if tipo_papel == "cor_padrao":
+        return round(CUSTO_FIXO_COR_PADRAO + paginas * CUSTO_POR_PAGINA_COR_PADRAO, 2)
+    if tipo_papel == "cor_premium":
+        if 24 <= paginas <= 40:
+            return CUSTO_FIXO_COR_PREMIUM_CURTO
+        return round(CUSTO_FIXO_COR_PREMIUM_LONGO + paginas * CUSTO_POR_PAGINA_COR_PREMIUM_LONGO, 2)
+    raise ValueError(f"tipo_papel inválido: {tipo_papel}")
+
+
+def calcular_preco_minimo_viavel(custo_impressao: float) -> float:
+    """Preço abaixo do qual você perde dinheiro em cada venda (royalty negativo)."""
+    return round(custo_impressao / ROYALTY_PAPERBACK, 2)
+
+
+def calcular_royalty_paperback(preco_capa: float, custo_impressao: float) -> float:
+    return round(preco_capa * ROYALTY_PAPERBACK - custo_impressao, 2)
+
+
+def calcular_royalty_ebook(preco_capa: float, taxa: str = "alta") -> float:
+    """taxa: "alta" (70%, só entre $2.99-$9.99) ou "baixa" (35%, qualquer preço)."""
+    if taxa == "alta" and not (2.99 <= preco_capa <= 9.99):
+        raise ValueError("A taxa de 70% só é válida para preços entre $2.99 e $9.99.")
+    percentual = ROYALTY_EBOOK_ALTO if taxa == "alta" else ROYALTY_EBOOK_BAIXO
+    return round(preco_capa * percentual, 2)
+
+
+def sugerir_faixa_de_preco(custo_impressao: float) -> dict:
+    """
+    Sugestão de 3 pontos de preço (mínimo viável, competitivo, premium)
+    - referência pra começar a decidir, não uma recomendação definitiva.
+    """
+    minimo = calcular_preco_minimo_viavel(custo_impressao)
+    return {
+        "minimo_viavel": minimo,
+        "competitivo_sugerido": round(max(minimo + 3, 9.99), 2),
+        "premium_sugerido": round(max(minimo + 6, 14.99), 2),
+    }
+
 # Idiomas com upload direto em PDF nativo (os demais precisam de outro formato)
 IDIOMAS_PDF_NATIVO = {
     "pt", "en", "fr", "de", "it", "es", "ca", "gl", "eu",

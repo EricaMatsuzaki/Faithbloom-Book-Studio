@@ -89,6 +89,13 @@ class LivroState(TypedDict, total=False):
     sinopse_vendas_curta: str          # descrição de produto KDP
     sinopse_contracapa: str            # texto impresso na contracapa
 
+    # --- Pesquisa de Mercado (ver agents/pesquisa_mercado.py) ---
+    palavras_chave_kdp: list[str]      # 7 frases-chave sugeridas
+    categorias_sugeridas: list[str]    # caminhos de categoria da árvore KDP
+
+    # --- Marketing de Lançamento (ver agents/marketing.py) ---
+    material_lancamento: dict          # legenda_instagram, descricao_pinterest, email_lancamento, pedido_avaliacao
+
     # --- Tradutor ---
     traducoes: dict[str, dict]         # {"en": {"cenas_texto": [...], "dedicatoria": "...", ...}}
 

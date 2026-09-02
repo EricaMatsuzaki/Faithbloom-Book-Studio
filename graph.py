@@ -18,8 +18,10 @@ from agents.audiobook import audiobook_node, narracao_node
 from agents.dedicatoria import dedicatoria_node
 from agents.tradutor import tradutor_node
 from agents.sinopse import sinopse_node
+from agents.pesquisa_mercado import pesquisa_palavras_chave_node, pesquisa_categorias_node
 from agents.diagramador import diagramador_node
 from agents.capa import capa_node
+from agents.marketing import marketing_lancamento_node
 
 
 def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
@@ -41,8 +43,11 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_node("dedicatoria", lambda s: dedicatoria_node(s, chamar_llm))
     grafo.add_node("tradutor", lambda s: tradutor_node(s, chamar_llm))
     grafo.add_node("sinopse", lambda s: sinopse_node(s, chamar_llm))
+    grafo.add_node("palavras_chave", lambda s: pesquisa_palavras_chave_node(s, chamar_llm))
+    grafo.add_node("categorias", lambda s: pesquisa_categorias_node(s, chamar_llm))
     grafo.add_node("diagramador", lambda s: diagramador_node(s))
     grafo.add_node("capa", lambda s: capa_node(s, gerar_imagem))
+    grafo.add_node("marketing", lambda s: marketing_lancamento_node(s, chamar_llm))
 
     grafo.set_entry_point("curador_tema")
     grafo.add_edge("curador_tema", "roteirista")
@@ -58,8 +63,11 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_edge("narrador", "dedicatoria")
     grafo.add_edge("dedicatoria", "tradutor")
     grafo.add_edge("tradutor", "sinopse")
-    grafo.add_edge("sinopse", "diagramador")
+    grafo.add_edge("sinopse", "palavras_chave")
+    grafo.add_edge("palavras_chave", "categorias")
+    grafo.add_edge("categorias", "diagramador")
     grafo.add_edge("diagramador", "capa")
-    grafo.add_edge("capa", END)
+    grafo.add_edge("capa", "marketing")
+    grafo.add_edge("marketing", END)
 
     return grafo.compile()

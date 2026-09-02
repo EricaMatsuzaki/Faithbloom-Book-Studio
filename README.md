@@ -90,10 +90,36 @@ agents/
   dedicatoria.py       -> dedicatória dinâmica ligada ao tema
   tradutor.py           -> tradução + localização + regra do versículo
   sinopse.py             -> sinopse de vendas (KDP + contracapa)
+  pesquisa_mercado.py    -> sugere 7 palavras-chave e categorias pra
+                            KDP (ver aviso de limitação abaixo)
   diagramador.py         -> layout final + validação KDP
+  capa.py                -> capa eBook + capa física (wraparound)
+  marketing.py           -> material de lançamento: post de Instagram,
+                            descrição Pinterest, e-mail de anúncio,
+                            pedido de avaliação
 graph.py             -> monta o LangGraph completo
 main.py              -> exemplo de execução via terminal
+pages/7_🚀_Lançamento.py -> painel: palavras-chave, categorias,
+                            calculadora de preço/royalty (fórmula
+                            oficial da KDP), material de divulgação
 ```
+
+## Sobre "virar best-seller" — o que este pipeline cobre e o que não cobre
+
+O pipeline resolve bem a parte de PRODUÇÃO (consistência visual,
+conformidade técnica KDP, estrutura narrativa, marca). O painel de
+Lançamento acrescenta pesquisa de palavras-chave/categoria,
+calculadora de preço/royalty e material de divulgação - peças que
+antes faltavam completamente. IMPORTANTE: nenhuma dessas ferramentas
+usa dados reais de venda/busca da Amazon (não existe API pública pra
+isso) - são sugestões por boas práticas gerais, um ponto de partida,
+não uma garantia. O que continua fora do escopo do código, e pesa
+muito pra sucesso de vendas real: qualidade estética final da
+ilustração (revisão humana sempre necessária antes de publicar),
+tração de marketing de verdade (redes sociais, lista de e-mail,
+parcerias), avaliações dos primeiros leitores, e ajuste de
+preço/categoria ao longo do tempo observando o desempenho real (KDP
+Reports).
 
 ## Identidade visual
 

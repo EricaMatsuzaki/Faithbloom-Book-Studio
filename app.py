@@ -30,7 +30,7 @@ with col3:
 st.write("")
 st.subheader("Para onde ir")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     card("📖 Criar do Zero", "Tema/resumo livre ou preenchimento manual — passa pelo pipeline inteiro, do Roteirista à Capa.")
     card("🖍️ Livros de Colorir", "Projetos de line art (bichinhos, princesas, carros, o que for), separados dos livros com história.")
@@ -39,6 +39,8 @@ with col2:
     card("📚 Retomar Livro", "Já tem o roteiro pronto? Pula direto pro Ilustrador, sem reescrever a história.")
     card("🎯 Ir Direto para Etapa", "Escolha um livro salvo e rode só UM agente específico — ex: só regerar a capa.")
     card("👤 Personagens", "Biblioteca de personagens de cada coleção, com a referência visual de cada um.")
+with col3:
+    card("🚀 Lançamento", "Palavras-chave, categorias, calculadora de preço/royalty e material de divulgação.")
 
 st.write("")
 st.subheader("Livros recentes")
