@@ -12,7 +12,10 @@ class PaginaColorir(TypedDict, total=False):
     categoria: str       # ex: "leão", "avião", "princesa" - o tipo de sujeito
     sexo: str            # "macho", "femea", ou "" se o tema não usa distinção
     cena: str            # descrição da cena/pose
-    caminho_arquivo: str # preenchido depois de gerada
+    origem: str          # "gerar_ia", "imagem_enviada", "foto_real" ou "prompt_livre"
+    caminho_foto_original: str  # se origem = "foto_real": a foto enviada, antes de virar line art
+    prompt_livre: str    # se origem = "prompt_livre": texto livre da autora, direto pro gerador
+    caminho_arquivo: str # preenchido depois de gerada (ou já vem pronto se enviada pela autora)
 
 
 class LivroColorirState(TypedDict, total=False):
