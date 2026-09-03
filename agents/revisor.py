@@ -7,6 +7,7 @@ foi seguida. Pode devolver a história pro Roteirista com notas (loop).
 """
 
 from state import LivroState
+from agent_skills import skill_contract
 
 PROMPT_REVISOR = """\
 Você é o Revisor/Editor da coleção. Analise a lista de cenas a seguir e
@@ -37,7 +38,7 @@ REVISAR e liste as notas especificamente por número de cena.
 
 def revisor_node(state: LivroState, chamar_llm) -> LivroState:
     resposta = chamar_llm(
-        sistema=PROMPT_REVISOR,
+        sistema=PROMPT_REVISOR + skill_contract("story_reviewer"),
         instrucao=f"Cenas: {state['cenas_texto']}",
     )
     aprovado = resposta.get("status") == "APROVADO"
@@ -49,3 +50,7 @@ def revisor_node(state: LivroState, chamar_llm) -> LivroState:
 def precisa_retrabalho(state: LivroState) -> str:
     """Função de roteamento condicional do LangGraph."""
     return "roteirista" if not state.get("revisao_aprovada") else "ilustrador"
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('story_reviewer',)

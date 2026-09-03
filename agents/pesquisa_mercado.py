@@ -14,11 +14,13 @@ KDP Reports) ou usando ferramentas de terceiros com dados reais
 O que a KDP permite hoje (verificado ago/2026):
 - 7 campos de palavras-chave (frases, não palavras soltas) na tela de
   cadastro do livro
-- 2 categorias escolhidas na tela + até mais via e-mail de suporte da
-  KDP pedindo categorias adicionais (prática documentada, não é bug)
+- até 3 categorias selecionadas na configuração do título; a disponibilidade
+  varia conforme marketplace, público e formato
 """
 
 from state import LivroState
+from agent_skills import skill_contract
+from market_intelligence import evidence_prompt, classify_market_mode
 
 PROMPT_PALAVRAS_CHAVE = """\
 Você é especialista em SEO de listagem da Amazon KDP para livros
@@ -44,18 +46,17 @@ Responda em JSON: lista de 7 strings.
 
 PROMPT_CATEGORIAS = """\
 Você é especialista em categorização de livros na Amazon KDP. Sugira
-caminhos de categoria (Browse Category) da árvore da KDP pra esse
-livro - priorize categorias ESPECÍFICAS e menos disputadas em vez de
-categorias amplas (é mais fácil um livro virar "Nº1 Mais Vendido" numa
-subcategoria de nicho do que numa categoria ampla). Sugira 5
-categorias, sabendo que a autora pode escolher 2 na tela do KDP e
-pedir as outras 3 por e-mail de suporte (prática permitida pela KDP).
+caminhos de categoria (Browse Category) da árvore da KDP para esse
+livro. Priorize categorias ESPECÍFICAS e genuinamente relevantes ao conteúdo;
+nunca escolha categoria irrelevante apenas para tentar manipular ranking.
+Sugira exatamente 3 categorias altamente relevantes. A árvore disponível pode
+variar por marketplace; não invente uma estratégia baseada em categorias irrelevantes.
 
 Dados do livro:
 Título: {titulo}
 Tema/lição: {aprendizado_cristao}
 
-Responda em JSON: lista de 5 strings, cada uma um caminho de categoria
+Responda em JSON: lista de 3 strings, cada uma um caminho de categoria
 plausível (ex: "Books > Children's Books > Religions > Christian >
 Values & Virtues").
 """
@@ -68,8 +69,10 @@ def pesquisa_palavras_chave_node(state: LivroState, chamar_llm) -> LivroState:
         emocao_central=state.get("emocao_central", ""),
         sinopse_vendas_curta=state.get("sinopse_vendas_curta", ""),
     )
+    prompt += "\n" + evidence_prompt(state.get("market_evidence") or []) + skill_contract("market_keywords")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as 7 frases-chave em JSON.")
-    state["palavras_chave_kdp"] = resposta.get("palavras_chave", resposta if isinstance(resposta, list) else [])
+    state["palavras_chave_kdp"] = resposta if isinstance(resposta, list) else resposta.get("palavras_chave", []) if isinstance(resposta, dict) else []
+    state["market_suggestions_provenance"] = classify_market_mode(state.get("market_evidence") or [])
     return state
 
 
@@ -78,6 +81,11 @@ def pesquisa_categorias_node(state: LivroState, chamar_llm) -> LivroState:
         titulo=state.get("titulo", ""),
         aprendizado_cristao=state.get("aprendizado_cristao", ""),
     )
-    resposta = chamar_llm(sistema=prompt, instrucao="Gere as 5 categorias sugeridas em JSON.")
-    state["categorias_sugeridas"] = resposta.get("categorias", resposta if isinstance(resposta, list) else [])
+    prompt += "\n" + evidence_prompt(state.get("market_evidence") or []) + skill_contract("market_categories")
+    resposta = chamar_llm(sistema=prompt, instrucao="Gere as 3 categorias sugeridas em JSON.")
+    state["categorias_sugeridas"] = resposta if isinstance(resposta, list) else resposta.get("categorias", []) if isinstance(resposta, dict) else []
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('market_keywords', 'market_categories')

@@ -14,6 +14,7 @@ personagem novo, na tela de cadastro de personagens.
 """
 
 from state import PersonagemDNA
+from agent_skills import skill_contract
 from agents.ilustrador import ESTILO_VISUAL_FIXO
 
 PROMPT_CRIADOR_PERSONAGEM = """\
@@ -45,6 +46,7 @@ def criar_personagem_a_partir_de_ideia(
         ideia_curta=ideia_curta,
         papel=papel,
     )
+    prompt += skill_contract("character_creator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere o personagem em JSON.")
     return PersonagemDNA(
         nome=resposta.get("nome_sugerido", ""),
@@ -53,3 +55,7 @@ def criar_personagem_a_partir_de_ideia(
         origem_referencia="",
         papel=papel,
     )
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('character_creator',)

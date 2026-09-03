@@ -13,6 +13,8 @@ sentido pra bichinhos/personagens com gênero) ou não (carros, aviões,
 navios, objetos não têm gênero - usam só o estilo base).
 """
 
+from agent_skills import skill_contract
+
 TEMAS_EXEMPLO = [
     "bichinhos fofos", "princesas encantadas", "carrinhos da cidade",
     "aviões e foguetes", "navios e piratas", "dinossauros fofos",
@@ -52,5 +54,14 @@ def gerador_ideias_colorir_node(quantidade: int, temas_usados: list[str], chamar
         quantidade=quantidade,
         temas_usados=", ".join(temas_usados) if temas_usados else "(nenhum ainda)",
     )
+    prompt += skill_contract("coloring_idea_generator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as ideias em JSON.")
-    return resposta.get("ideias", [])
+    if isinstance(resposta, list):
+        return resposta
+    if isinstance(resposta, dict):
+        return resposta.get("ideias", [])
+    return []
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('coloring_idea_generator',)

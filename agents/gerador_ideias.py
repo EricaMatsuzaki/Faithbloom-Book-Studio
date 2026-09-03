@@ -14,13 +14,14 @@ Roteirista).
 """
 
 from state import LivroState
+from agent_skills import skill_contract
 from emotion_colors import EMOCOES
 
 PROMPT_IDEIAS = """\
-Você é o Gerador de Ideias da coleção "Pequenas Histórias, Grandes
-Lições" de Erica Matsuzaki - livros infantis cristãos para 3-8 anos,
-com personagens fofos originais (Mel a gatinha, Téo o passarinho, Manu
-a menina/mentora, e outros que podem surgir por história).
+Você é o Gerador de Ideias de uma coleção de livros infantis cristãos para 3-8 anos.
+Coleção atual: {colecao}. Crédito/autoria atual: {author_credit}.
+Não presuma personagens fixos de outra coleção; proponha situações que possam
+ser adaptadas aos personagens oficiais do projeto.
 
 Gere {quantidade} ideias de tema NOVAS e diferentes entre si. Cada
 ideia deve ter:
@@ -40,11 +41,22 @@ emocao_central, pista_licao.
 """
 
 
-def gerador_ideias_node(quantidade: int, temas_usados: list[str], chamar_llm) -> list[dict]:
+def gerador_ideias_node(quantidade: int, temas_usados: list[str], chamar_llm, colecao: str = "", author_credit: str = "") -> list[dict]:
     prompt = PROMPT_IDEIAS.format(
         quantidade=quantidade,
         emocoes_validas=", ".join(EMOCOES.keys()),
         temas_usados=", ".join(temas_usados) if temas_usados else "(nenhum ainda)",
+        colecao=colecao or "coleção atual",
+        author_credit=author_credit or "não definido",
     )
+    prompt += skill_contract("idea_generator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as ideias em JSON.")
-    return resposta.get("ideias", [])
+    if isinstance(resposta, list):
+        return resposta
+    if isinstance(resposta, dict):
+        return resposta.get("ideias", [])
+    return []
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('idea_generator',)

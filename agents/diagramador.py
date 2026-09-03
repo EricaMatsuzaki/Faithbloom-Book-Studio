@@ -9,8 +9,11 @@ por IA). Não publica sozinho - o clique final de "Publicar" é sempre
 manual, feito conscientemente pela Erica na plataforma oficial.
 """
 
+SKILL_PROFILE_ID = "diagrammer"
+
 from state import LivroState
 from kdp_rules import validar_contagem_paginas
+from qualidade_impressao import preflight_livro
 
 
 def montar_layout(state: LivroState) -> list[dict]:
@@ -70,21 +73,30 @@ def diagramador_node(state: LivroState) -> LivroState:
 
     checklist = {
         "paginas_minimas_ok": ok,
-        "dpi_300_confirmado": False,       # confirmar após render final das imagens
-        "cmyk_confirmado": False,
-        "bleed_configurado": False,
+        "dpi_300_confirmado": False,       # calculado abaixo por pixels reais / tamanho impresso
+        "perfil_cor_revisado": False,       # não força CMYK genericamente; depende do produto/arquivo
+        "bleed_configurado": True,
         "divulgacao_ia_preenchida": False,  # exigência KDP 2026 - conteúdo gerado por IA
         "dedicatoria_incluida": bool(state.get("dedicatoria_texto")),
         "sinopse_vendas_pronta": bool(state.get("sinopse_vendas_curta")),
         "capa_ebook_gerada": False,          # arquivo separado - ver agents/capa.py
         "capa_fisica_wrap_gerada": False,    # arquivo separado - ver agents/capa.py
+        "pdf_miolo_gerado": bool(state.get("pdf_miolo")),
     }
 
     state["layout_paginas"] = layout
     state["checklist_kdp"] = checklist
+    preflight = preflight_livro(state, bleed=True)
+    state["preflight_impressao"] = preflight
+    state["checklist_kdp"]["dpi_300_confirmado"] = preflight["checks"]["imagens_300ppi"]
+    state["checklist_kdp"]["bleed_configurado"] = preflight["checks"]["bleed_configurado"]
     state["pacote_pronto"] = ok and all(
         checklist[k] for k in ("dedicatoria_incluida", "sinopse_vendas_pronta")
     )
     if not ok:
         state.setdefault("notas_revisor", []).append(msg)
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('diagrammer',)

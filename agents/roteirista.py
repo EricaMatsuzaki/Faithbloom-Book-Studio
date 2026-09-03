@@ -9,11 +9,13 @@ Cadência narrativa fixa: curiosidade -> desafio -> emoção -> aprendizado
 """
 
 from state import LivroState, CenaTexto
+from agent_skills import skill_contract
 
 PROMPT_BASE = """\
-Você é o Roteirista de uma coleção de livros infantis cristãos no estilo
-"Pequenas Histórias, Grandes Lições" de Erica Matsuzaki, fiel ao
-Prompt-Mestre da autora.
+Você é o Roteirista de um projeto de livro infantil cristão, fiel ao
+Prompt-Mestre editorial do projeto. Preserve a voz da coleção e não presuma
+que o usuário logado é a pessoa creditada como autora.
+Autoria/crédito deste projeto: {author_credit}.
 
 Estilo de escrita OBRIGATÓRIO (best-seller infantil cristão, 3-8 anos):
 - Frases muito curtas e diretas (idealmente 5-15 palavras). Uma ideia
@@ -75,7 +77,8 @@ def montar_prompt(state: LivroState) -> str:
         emocao_central=state["emocao_central"],
         aprendizado_cristao=state["aprendizado_cristao"],
         versiculo_referencia=state["versiculo_referencia"],
-    )
+        author_credit=__import__("author_profiles").author_display_from_state(state) or "não definida",
+    ) + skill_contract("storyteller")
 
 
 def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
@@ -99,3 +102,7 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     state["cenas_texto"] = resposta.get("cenas_texto", [])
     state["licao_final"] = resposta.get("licao_final", "")
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('storyteller',)

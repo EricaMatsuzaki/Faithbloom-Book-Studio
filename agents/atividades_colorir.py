@@ -13,6 +13,7 @@ personagem do miolo colorido.
 """
 
 from state import LivroState, CenaImagem
+from agent_skills import skill_contract
 
 ESTILO_LINE_ART = (
     "Ilustração em LINE ART: apenas contorno em preto e branco, SEM "
@@ -40,7 +41,7 @@ def prompt_colorir(cena: dict, dna_personagem: str) -> str:
         f"DNA do personagem (manter pose/proporção reconhecível): {dna_personagem}\n"
         f"Cena original: {cena.get('texto', '')}\n"
         f"Contexto visual: {cena.get('contexto_visual', '')}"
-    )
+    ) + skill_contract("coloring_activity_creator", compact=True)
 
 
 def atividades_colorir_node(state: LivroState, gerar_imagem) -> LivroState:
@@ -70,3 +71,7 @@ def atividades_colorir_node(state: LivroState, gerar_imagem) -> LivroState:
 
     state["paginas_colorir"] = paginas_colorir
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('coloring_activity_creator',)

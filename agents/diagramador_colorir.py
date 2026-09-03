@@ -15,6 +15,8 @@ literalmente DOBRA a contagem de páginas do miolo (20 desenhos viram
 capa física - por isso esse Diagramador precisa rodar antes da capa.
 """
 
+SKILL_PROFILE_ID = "coloring_layout"
+
 from kdp_rules import validar_contagem_paginas, validar_paginas_par
 
 # Páginas fixas de abertura, no padrão que a Erica já usa (ver PDF
@@ -62,3 +64,7 @@ def diagramador_colorir_node(state: dict) -> dict:
     if not minimo_ok:
         state["checklist_kdp"]["nota"] = msg
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('coloring_layout',)

@@ -15,6 +15,7 @@ não uma cópia exata da foto (afinal ela vira um personagem de desenho).
 
 from state import PersonagemDNA
 from agents.ilustrador import ESTILO_VISUAL_FIXO
+from agent_skills import skill_contract
 
 PROMPT_FOTO_PARA_PERSONAGEM = """\
 {estilo_visual}
@@ -44,6 +45,7 @@ def gerar_personagem_a_partir_de_foto(
         detalhe_extra=detalhe_extra or "(nenhum)",
         papel=papel,
     )
+    prompt += skill_contract("photo_to_character", compact=True)
     caminho_gerado = gerar_imagem(prompt=prompt, imagem_base=caminho_foto)
     return PersonagemDNA(
         nome=nome,
@@ -56,3 +58,7 @@ def gerar_personagem_a_partir_de_foto(
         origem_referencia="gerada_a_partir_de_foto",
         papel=papel,
     )
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('photo_to_character',)

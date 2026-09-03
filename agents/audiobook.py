@@ -22,6 +22,7 @@ Marcações usadas:
 """
 
 from state import LivroState
+from agent_skills import skill_contract
 
 PROMPT_AUDIOBOOK = """\
 Você adapta o texto já aprovado da história para uma versão de
@@ -41,6 +42,10 @@ Regras:
   carrega o aprendizado cristão da história).
 - Mantenha o ritmo natural de leitura em voz alta - nada de pausas
   exageradas que quebrem o fluxo da história.
+- BÍBLIA É CONTEÚDO PROTEGIDO: não traduza, complete, parafraseie nem
+  invente texto de versículo. Se uma referência aparecer, preserve apenas
+  a referência; texto bíblico completo é inserido por outra camada somente
+  quando a autora aprovou uma versão específica.
 
 Cenas da história (com a emoção de cada uma):
 {cenas}
@@ -55,6 +60,7 @@ def audiobook_node(state: LivroState, chamar_llm) -> LivroState:
         cenas=state["cenas_texto"],
         licao_final=state["licao_final"],
     )
+    prompt += skill_contract("audiobook_director")
     resposta = chamar_llm(
         sistema=prompt,
         instrucao=(
@@ -63,7 +69,13 @@ def audiobook_node(state: LivroState, chamar_llm) -> LivroState:
             "(dica extra pro narrador, se precisar)."
         ),
     )
-    state["roteiro_audiobook"] = resposta.get("roteiro", [])
+    if isinstance(resposta, list):
+        roteiro = resposta
+    elif isinstance(resposta, dict):
+        roteiro = resposta.get("roteiro", [])
+    else:
+        roteiro = []
+    state["roteiro_audiobook"] = roteiro
     return state
 
 
@@ -83,3 +95,7 @@ def narracao_node(state: LivroState, gerar_audio) -> LivroState:
         audios.append({"numero": trecho["numero"], "caminho_arquivo": caminho})
     state["audio_gerado"] = audios
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('audiobook_director', 'narrator')

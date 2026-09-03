@@ -1,107 +1,133 @@
+"""FaithBloom Coloring Book Studio — geração e conversão de Line Art.
+
+Suporta geração do zero, prompt livre, imagem/foto enviada, Galeria e
+Biblioteca de Personagens. O estilo é controlado por presets reutilizáveis.
+Nunca apaga a imagem-base: novas tentativas viram variações.
 """
-Agente de Line Art / Livro de Colorir.
+from __future__ import annotations
 
-Projeto SEPARADO dos livros com história - um livro de colorir é só um
-tema visual coeso com várias páginas dentro (bichinhos, princesas,
-carros, aviões, navios, objetos fofos, etc.), sem narrativa entre elas.
+import time
+import uuid
 
-REGRA DE ESTILO MAIS IMPORTANTE: quando o tema tem personagens com
-gênero (bichinhos, princesas, heróis), macho e fêmea têm códigos
-visuais DIFERENTES e FIXOS:
-
-    MACHO:  olhos redondos com 2 brilhos, SEM cílios, blush em círculo
-            TRACEJADO, sem acessório por padrão.
-    FÊMEA:  olhos redondos com 2 brilhos, COM cílios, blush em formato
-            de CORAÇÃO, acessório característico (laço).
-
-Para temas SEM gênero (carros, aviões, navios, objetos), esse código
-não se aplica - usa só o estilo base fofo, sem distinção.
-
-DIAGNÓSTICO DA CAPA (problema que a Erica teve no "Cute Friends"): a
-capa tinha um estilo AQUARELA/PINTURA rico, enquanto o miolo é um
-estilo VETOR simples e plano - duas técnicas diferentes, não só duas
-variações de cor. A correção: gerar a capa na MESMA técnica vetor do
-miolo (só colorida), usando uma página de line art já aprovada como
-imagem-base/referência - nunca descrever a capa do zero.
-"""
-
-ESTILO_LINE_ART_COLORIR = (
-    "Line art para livro de colorir infantil: contorno preto grosso e "
-    "limpo, SEM preenchimento de cor, SEM sombreado, traços simples e "
-    "bem fechados (sem lacunas) - fáceis de colorir por uma criança. "
-    "Estilo VETOR simples e fofo (proporção arredondada, elementos "
-    "grandes e simples) - nunca estilo aquarela/pintura/textura rica, "
-    "mesmo na versão colorida da capa. Moldura com cantos arredondados "
-    "ao redor da cena, fundo simples (nuvens, grama, sol, ou elementos "
-    "do tema) sem detalhes complexos."
-)
+from coloring_presets import preset_para_prompt
+from agent_skills import skill_contract
 
 CODIGO_VISUAL_SEXO = {
     "macho": (
-        "Olhos redondos grandes com 2 pontos de brilho (highlight), "
-        "SEM cílios. Marca nas bochechas em formato de CÍRCULO "
-        "TRACEJADO (contorno pontilhado, nunca preenchido ou em "
-        "coração). Sem laço ou acessório."
+        "Olhos redondos grandes com 2 pontos de brilho, sem cílios. "
+        "Bochechas com círculo tracejado. Sem laço por padrão."
     ),
     "femea": (
-        "Olhos redondos grandes com 2 pontos de brilho (highlight), "
-        "COM cílios finos irradiando do topo do olho. Marca nas "
-        "bochechas em formato de CORAÇÃO suave (nunca círculo). "
-        "Acessório característico: um laço."
+        "Olhos redondos grandes com 2 pontos de brilho, cílios finos. "
+        "Bochechas em formato de coração e um laço característico."
     ),
 }
 
+BASE_TECNICA_LINE_ART = (
+    "Página de livro de colorir em preto e branco puro. Apenas linhas pretas limpas; "
+    "sem preenchimento de cor, sem cinza, sem sombreado, sem hachura e sem textura pintada. "
+    "Contornos e áreas devem ser fechados e utilizáveis para colorir. Composição original, "
+    "sem copiar a identidade visual de artistas, marcas ou livros específicos."
+)
 
-def prompt_pagina_colorir(nome_sujeito: str, categoria: str, cena: str, sexo: str | None = None) -> str:
-    """
-    sexo: "macho", "femea", ou None se o tema não usa distinção de
-    gênero (veículos, objetos, formas).
-    """
-    partes = [ESTILO_LINE_ART_COLORIR, f"Assunto: {nome_sujeito} ({categoria})."]
-    if sexo:
-        partes.append(f"Código visual ({sexo}): {CODIGO_VISUAL_SEXO[sexo]}")
-    partes.append(f"Cena: {cena}")
-    return "\n".join(partes)
+
+def prompt_pagina_colorir(
+    nome_sujeito: str,
+    categoria: str,
+    cena: str,
+    sexo: str | None = None,
+    preset: dict | None = None,
+    prompt_livre: str = "",
+    instrucao_extra: str = "",
+    transformar_referencia: bool = False,
+) -> str:
+    partes = [BASE_TECNICA_LINE_ART]
+    if preset:
+        partes.append(preset_para_prompt(preset, instrucao_extra))
+    elif instrucao_extra:
+        partes.append(instrucao_extra)
+
+    if prompt_livre.strip():
+        partes.append("Pedido livre da autora: " + prompt_livre.strip())
+    else:
+        partes.append(f"Assunto: {nome_sujeito} ({categoria}).")
+        if sexo in CODIGO_VISUAL_SEXO:
+            partes.append(f"Código visual ({sexo}): {CODIGO_VISUAL_SEXO[sexo]}")
+        partes.append(f"Cena: {cena}")
+
+    if transformar_referencia:
+        partes.append(
+            "Use a imagem de referência como base visual. Preserve o sujeito, pose e elementos "
+            "importantes reconhecíveis, mas REINTERPRETE a cena como line art própria para colorir; "
+            "não aplique apenas filtro de bordas e não destrua o arquivo original."
+        )
+    return "\n".join(p for p in partes if p) + skill_contract("line_art_specialist", compact=True)
 
 
 def gerar_pagina_colorir(
-    nome_sujeito: str, categoria: str, cena: str, gerar_imagem,
-    sexo: str | None = None, imagem_referencia: str | None = None,
+    nome_sujeito: str,
+    categoria: str,
+    cena: str,
+    gerar_imagem,
+    sexo: str | None = None,
+    imagem_referencia: str | None = None,
+    preset: dict | None = None,
+    prompt_livre: str = "",
+    instrucao_extra: str = "",
+    transformar_referencia: bool = False,
 ) -> str:
-    prompt = prompt_pagina_colorir(nome_sujeito, categoria, cena, sexo)
+    prompt = prompt_pagina_colorir(
+        nome_sujeito, categoria, cena, sexo, preset, prompt_livre,
+        instrucao_extra, transformar_referencia,
+    )
     return gerar_imagem(prompt=prompt, imagem_base=imagem_referencia)
+
+
+def criar_registro_variacao(caminho: str, origem: str, prompt: str = "", base: str = "") -> dict:
+    return {
+        "id": uuid.uuid4().hex[:12],
+        "caminho_arquivo": caminho,
+        "origem": origem,
+        "prompt": prompt,
+        "base": base,
+        "favorita": False,
+        "criada_em": int(time.time()),
+    }
+
+
+def gerar_variacao_line_art(
+    pagina: dict,
+    gerar_imagem,
+    preset: dict | None = None,
+    instrucao: str = "",
+    base_escolhida: str | None = None,
+) -> dict:
+    base = base_escolhida or pagina.get("caminho_arquivo") or pagina.get("imagem_referencia")
+    prompt = prompt_pagina_colorir(
+        pagina.get("nome", ""), pagina.get("categoria", ""), pagina.get("cena", ""),
+        pagina.get("sexo") or None, preset, pagina.get("prompt_livre", ""), instrucao,
+        transformar_referencia=bool(base),
+    )
+    caminho = gerar_imagem(prompt=prompt, imagem_base=base)
+    return criar_registro_variacao(caminho, "variacao", prompt=prompt, base=base or "")
 
 
 def prompt_capa_colorida(sujeitos_destaque: list[dict], titulo: str) -> str:
-    """sujeitos_destaque: [{"nome": str, "categoria": str, "sexo": str|None}, ...]"""
     descricoes = []
     for s in sujeitos_destaque:
         linha = f"{s['nome']} ({s['categoria']})"
-        if s.get("sexo"):
+        if s.get("sexo") in CODIGO_VISUAL_SEXO:
             linha += f": {CODIGO_VISUAL_SEXO[s['sexo']]}"
         descricoes.append(linha)
     return (
-        "Capa de livro de colorir infantil, VERSÃO COLORIDA no MESMO "
-        "estilo vetor simples e fofo do miolo (contorno grosso, cores "
-        "lisas/planas, proporção arredondada) - NUNCA estilo aquarela, "
-        "pintura digital rica, texturizada ou com sombreado complexo. "
-        "Mesma proporção e código visual dos personagens do miolo, só "
-        "que coloridos:\n" + "\n".join(descricoes)
-        + f"\nTítulo do livro em destaque: \"{titulo}\"."
+        "Capa colorida original para livro de colorir, coerente com a line art do miolo: "
+        "formas limpas, cores planas, proporção consistente, sem imitar artista ou marca específica.\n"
+        + "\n".join(descricoes) + f'\nTítulo: "{titulo}".'
     )
 
 
-def gerar_capa_colorida(
-    sujeitos_destaque: list[dict], titulo: str, gerar_imagem, imagem_referencia: str | None = None
-) -> str:
-    """
-    imagem_referencia: passe o caminho de uma página de line art já
-    aprovada como imagem-base - ancora a proporção/estilo da capa no
-    que já foi validado no miolo, em vez de reinterpretar do zero.
-    """
-    prompt = prompt_capa_colorida(sujeitos_destaque, titulo)
-    return gerar_imagem(prompt=prompt, imagem_base=imagem_referencia)
-
+def gerar_capa_colorida(sujeitos_destaque: list[dict], titulo: str, gerar_imagem, imagem_referencia: str | None = None) -> str:
+    return gerar_imagem(prompt=prompt_capa_colorida(sujeitos_destaque, titulo), imagem_base=imagem_referencia)
 
 # ---------------------------------------------------------------------
 # Capa e contracapa SEPARADAS (eBook vs. livro físico), reaproveitando
@@ -203,3 +229,7 @@ def gerar_capas_colorir(state: dict, gerar_imagem) -> dict:
         "capa_fisica_wrap": resultado_fisica["caminho_arquivo"],
         "capa_fisica_dimensoes": resultado_fisica,
     }
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('line_art_specialist',)

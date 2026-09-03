@@ -14,6 +14,7 @@ lição/valor que a criança aprende -> chamada emocional final.
 """
 
 from state import LivroState
+from agent_skills import skill_contract
 
 PROMPT_SINOPSE = """\
 Você é o agente de Copywriting de Vendas da coleção. Escreva DUAS
@@ -42,10 +43,15 @@ Lição: {aprendizado_cristao}
 def sinopse_node(state: LivroState, chamar_llm) -> LivroState:
     prompt = PROMPT_SINOPSE.format(
         titulo=state["titulo"],
-        sinopse_poetica=state["sinopse_poetica"],
+        sinopse_poetica=state.get("sinopse_poetica", state.get("titulo", "")),
         aprendizado_cristao=state["aprendizado_cristao"],
     )
+    prompt += skill_contract("sales_synopsis")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as duas versões.")
     state["sinopse_vendas_curta"] = resposta.get("sinopse_vendas_curta", "")
     state["sinopse_contracapa"] = resposta.get("sinopse_contracapa", "")
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('sales_synopsis',)

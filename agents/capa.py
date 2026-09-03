@@ -1,139 +1,98 @@
+"""Agente de Capa - FaithBloom 2.0 Fase 7.
+
+Mudança principal: a IA NÃO gera mais o wraparound inteiro.
+Ela gera duas artes sem texto (frente e contracapa) e o FaithBloom monta
+matematicamente contracapa + lombada + capa frontal em capa_profissional.py.
 """
-Agente de Capa e Contracapa.
+from __future__ import annotations
 
-Capa e contracapa são arquivos SEPARADOS do miolo, com medidas
-próprias, e o eBook e o livro físico usam formatos diferentes:
-
-    EBOOK: um arquivo só, a arte de capa frontal (sem lombada/contracapa).
-    LIVRO FÍSICO: um arquivo ÚNICO "wraparound" (contracapa+lombada+capa),
-    cuja largura de lombada só pode ser calculada depois que o miolo
-    fecha (ver kdp_rules.calcular_dimensoes_capa_fisica).
-
-O tamanho do livro (trim size) NÃO é adivinhado - vem de
-state["trim_largura_in"]/["trim_altura_in"], com 8.5x8.5" como padrão
-se a autora não escolher outro.
-
-A arte de fundo (personagens, cenário) é gerada pela IA. Os elementos
-de marca fixos (faixa "COLEÇÃO X" e o selo/emblema) são SOBREPOSTOS
-depois via PIL (ver marca.py) - não são redesenhados pela IA a cada
-capa, pra ficarem sempre idênticos.
-"""
+from author_profiles import cover_credit_from_state
+from agent_skills import skill_contract
 
 from state import LivroState
 from agents.ilustrador import ESTILO_VISUAL_FIXO
-from kdp_rules import calcular_dimensoes_capa_fisica, dimensoes_capa_ebook_px
-from marca import aplicar_faixa_colecao, aplicar_selo_colecao
+from kdp_rules import dimensoes_capa_ebook_px
+from marca import aplicar_faixa_colecao
 from armazenamento import carregar_asset_marca
+from capa_profissional import gerar_capa_print_ready
 
-TRIM_LARGURA_IN_PADRAO = 8.5
-TRIM_ALTURA_IN_PADRAO = 8.5
-
-
-def _trim(state: LivroState) -> tuple[float, float]:
-    return (
-        state.get("trim_largura_in") or TRIM_LARGURA_IN_PADRAO,
-        state.get("trim_altura_in") or TRIM_ALTURA_IN_PADRAO,
-    )
+TRIM_LARGURA_IN_PADRAO=8.5
+TRIM_ALTURA_IN_PADRAO=8.5
 
 
-def prompt_arte_capa_frontal(personagens: dict) -> str:
-    """
-    Só a CENA (personagens + cenário) - sem título, sem faixa, sem nome
-    de autora. Esses elementos de texto/marca entram depois via PIL.
-    """
-    protagonistas = ", ".join(
-        f"{p['nome']} ({p['descricao_fixa']})" for p in personagens.values()
-    )
+def _trim(state: LivroState):
+    return (float(state.get("trim_largura_in") or TRIM_LARGURA_IN_PADRAO),float(state.get("trim_altura_in") or TRIM_ALTURA_IN_PADRAO))
+
+
+def _personagens_str(personagens: dict) -> str:
+    return ", ".join(f"{p.get('nome','')} ({p.get('descricao_fixa','')})" for p in personagens.values())
+
+
+def prompt_arte_capa_frontal(state: LivroState) -> str:
     return (
         f"{ESTILO_VISUAL_FIXO}\n"
-        "Arte de capa de livro infantil, SOMENTE a cena ilustrada "
-        "(sem nenhum texto, título, letras ou logotipo na imagem - "
-        "isso será adicionado depois separadamente). Personagens em "
-        f"destaque, centralizados, espaço livre na parte superior da "
-        f"composição para posterior sobreposição de título: {protagonistas}."
-    )
+        "ARTE FRONTAL de capa de livro infantil. Gere SOMENTE ilustração, sem letras, sem título, sem logo, sem moldura tipográfica. "
+        "Composição editorial premium, foco claro nos protagonistas e espaço visual respirável no terço superior e inferior para tipografia posterior. "
+        f"Personagens: {_personagens_str(state.get('personagens',{}))}. Tema do livro: {state.get('titulo','')}."
+    ) + skill_contract("cover_specialist", compact=True)
 
 
-def prompt_arte_contracapa() -> str:
-    """
-    Cenário decorativo mais discreto (sem os personagens principais em
-    destaque), com espaço reservado pro texto da sinopse e pro
-    código de barras - tudo sem texto/logo embutido pela IA.
-    """
+def prompt_arte_contracapa(state: LivroState) -> str:
     return (
         f"{ESTILO_VISUAL_FIXO}\n"
-        "Arte de contracapa de livro infantil: cenário decorativo mais "
-        "simples e discreto que a capa frontal (sem personagens em "
-        "destaque, sem nenhum texto, título ou logotipo - isso será "
-        "adicionado depois separadamente). Deixar a metade inferior da "
-        "composição mais neutra/vazia, para acomodar texto de sinopse "
-        "e a área reservada para código de barras."
-    )
+        "ARTE DE CONTRACAPA combinando perfeitamente com a capa frontal: mesma paleta, luz, época, cenário e acabamento. "
+        "Sem texto, sem letras, sem logotipo, sem código de barras. Fundo mais calmo e menos carregado que a capa. "
+        "Deixar áreas visuais tranquilas para sinopse e para barcode no canto inferior direito da contracapa."
+    ) + skill_contract("cover_specialist", compact=True)
+
+
+def gerar_artes_capa(state: LivroState, gerar_imagem) -> LivroState:
+    protagonista=next((p for p in state.get("personagens",{}).values() if p.get("papel")=="protagonista"),None)
+    ref=protagonista.get("imagem_referencia") if protagonista else None
+    if not state.get("arte_capa_frontal"):
+        state["arte_capa_frontal"]=gerar_imagem(prompt_arte_capa_frontal(state),imagem_base=ref)
+    if not state.get("arte_contracapa"):
+        state["arte_contracapa"]=gerar_imagem(prompt_arte_contracapa(state),imagem_base=ref)
+    return state
 
 
 def gerar_capa_ebook(state: LivroState, gerar_imagem) -> str:
-    trim_l, trim_a = _trim(state)
-    dimensoes = dimensoes_capa_ebook_px(trim_l, trim_a)
+    if not state.get("arte_capa_frontal"):
+        gerar_artes_capa(state,gerar_imagem)
+    faixa=carregar_asset_marca(state.get("colecao",""),"faixa")
+    return aplicar_faixa_colecao(state["arte_capa_frontal"],state.get("colecao",""),faixa)
 
-    protagonista = next(
-        (p for p in state.get("personagens", {}).values() if p.get("papel") == "protagonista"),
-        None,
+
+def montar_capa_fisica(state: LivroState, paginas_fisicas: int, papel: str="cor_premium", pasta_saida: str="saida_capas") -> dict:
+    if not state.get("arte_capa_frontal") or not state.get("arte_contracapa"):
+        raise RuntimeError("Gere ou envie primeiro as artes de capa frontal e contracapa.")
+    trim_w,trim_h=_trim(state)
+    spine_text=state.get("titulo","")
+    result=gerar_capa_print_ready(
+        state["arte_capa_frontal"],state["arte_contracapa"],pasta_saida,
+        trim_w=trim_w,trim_h=trim_h,paginas=int(paginas_fisicas),papel=papel,
+        titulo=state.get("titulo",""),subtitulo=state.get("subtitulo",""),autora=cover_credit_from_state(state),
+        colecao=state.get("colecao",""),sinopse=state.get("sinopse_contracapa","") or state.get("sinopse_vendas_curta",""),
+        spine_text=spine_text,reservar_barcode=True,
     )
-    imagem_base = protagonista["imagem_referencia"] if protagonista else None
-
-    prompt = prompt_arte_capa_frontal(state.get("personagens", {})) + (
-        f" Gerar em {dimensoes['largura_px']}x{dimensoes['altura_px']} pixels."
-    )
-    caminho_arte = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
-
-    faixa_png = carregar_asset_marca(state.get("colecao", ""), "faixa")
-    return aplicar_faixa_colecao(caminho_arte, state.get("colecao", ""), faixa_png)
-
-
-def gerar_capa_fisica_wrap(state: LivroState, gerar_imagem, paginas_fisicas: int) -> dict:
-    trim_l, trim_a = _trim(state)
-    dimensoes = calcular_dimensoes_capa_fisica(trim_l, trim_a, paginas_fisicas)
-
-    protagonista = next(
-        (p for p in state.get("personagens", {}).values() if p.get("papel") == "protagonista"),
-        None,
-    )
-    imagem_base = protagonista["imagem_referencia"] if protagonista else None
-
-    prompt = (
-        f"{prompt_arte_capa_frontal(state.get('personagens', {}))}\n"
-        f"Canvas do wraparound completo: {dimensoes['largura_total_px']}x"
-        f"{dimensoes['altura_total_px']} px, {dimensoes['dpi']} DPI, "
-        f"sangria de 0.125\" nas bordas externas. Lombada de "
-        f"{dimensoes['largura_lombada_in']}\" entre contracapa e capa."
-    )
-    caminho_arte = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
-
-    faixa_png = carregar_asset_marca(state.get("colecao", ""), "faixa")
-    caminho_com_faixa = aplicar_faixa_colecao(caminho_arte, state.get("colecao", ""), faixa_png)
-
-    selo_png = carregar_asset_marca(state.get("colecao", ""), "selo")
-    caminho_final = caminho_com_faixa
-    if selo_png:
-        caminho_final = aplicar_selo_colecao(caminho_com_faixa, selo_png, posicao="inferior_esquerda")
-
-    return {"caminho_arquivo": caminho_final, **dimensoes}
+    state["capa_fisica_wrap"]=result["caminho_png"]
+    state["capa_fisica_pdf"]=result["caminho_pdf"]
+    state["capa_fisica_preview"]=result["caminho_preview"]
+    state["capa_fisica_dimensoes"]=result
+    state["capa_fisica_preflight"]=result["pdf_preflight"]
+    return result
 
 
 def capa_node(state: LivroState, gerar_imagem) -> LivroState:
-    paginas_fisicas = state["layout_paginas"][-1]["pagina"] if state.get("layout_paginas") else 24
-
-    state["capa_ebook"] = gerar_capa_ebook(state, gerar_imagem)
-    resultado_fisica = gerar_capa_fisica_wrap(state, gerar_imagem, paginas_fisicas)
-    state["capa_fisica_wrap"] = resultado_fisica["caminho_arquivo"]
-    state["capa_fisica_dimensoes"] = resultado_fisica
-
+    paginas=int(state.get("pdf_miolo_config",{}).get("paginas") or (state.get("layout_paginas") or [{"pagina":24}])[-1].get("pagina",24))
+    gerar_artes_capa(state,gerar_imagem)
+    state["capa_ebook"]=gerar_capa_ebook(state,gerar_imagem)
+    montar_capa_fisica(state,paginas,papel=state.get("tipo_papel_capa","cor_premium"))
     if "checklist_kdp" in state:
-        state["checklist_kdp"]["capa_ebook_gerada"] = bool(state["capa_ebook"])
-        state["checklist_kdp"]["capa_fisica_wrap_gerada"] = bool(state["capa_fisica_wrap"])
+        state["checklist_kdp"]["capa_ebook_gerada"]=bool(state.get("capa_ebook"))
+        state["checklist_kdp"]["capa_fisica_wrap_gerada"]=bool(state.get("capa_fisica_pdf"))
     return state
 
-# TODO (próxima iteração): montar capa e contracapa como duas artes
-# geradas separadamente, compostas lado a lado no canvas final com PIL
-# (em vez de pedir pra IA gerar o wraparound inteiro numa imagem só,
-# que é menos confiável pra manter a lombada no lugar certo).
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('cover_specialist',)

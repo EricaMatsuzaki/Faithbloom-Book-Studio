@@ -14,10 +14,11 @@ de como usar essa lista, nunca os nomes reais.
 """
 
 from state import LivroState
+from agent_skills import skill_contract
 
 PROMPT_DEDICATORIA = """\
-Você escreve a Dedicatória de um livro da coleção "{colecao}" de
-Erica Matsuzaki.
+Você escreve a Dedicatória de um livro da coleção "{colecao}".
+Autoria/crédito editorial deste projeto: {author_credit}.
 
 Regras:
 - Use a metáfora central da história (emoção: {emocao_central},
@@ -73,11 +74,17 @@ def _formatar_lista_pessoas(lista_dedicatoria: list[dict]) -> str:
 def dedicatoria_node(state: LivroState, chamar_llm) -> LivroState:
     prompt = PROMPT_DEDICATORIA.format(
         colecao=state.get("colecao", ""),
+        author_credit=__import__("author_profiles").author_display_from_state(state) or "não definida",
         emocao_central=state["emocao_central"],
         aprendizado_cristao=state["aprendizado_cristao"],
         lista_pessoas_formatada=_formatar_lista_pessoas(state.get("lista_dedicatoria", [])),
         exemplos_referencia=EXEMPLOS_REFERENCIA,
     )
+    prompt += skill_contract("dedication")
     resposta = chamar_llm(sistema=prompt, instrucao="Escreva a dedicatória.")
     state["dedicatoria_texto"] = resposta.get("texto", "")
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('dedication',)

@@ -16,6 +16,8 @@ fluxo "só me dê o tema" quanto o fluxo "quero controlar tudo".
 
 from state import LivroState
 from emotion_colors import EMOCOES
+from agent_skills import skill_contract
+from biblical_reference_validator import create_reference_candidate
 
 PROMPT_CURADOR = """\
 Você é o Curador de Tema da coleção "Pequenas Histórias, Grandes
@@ -53,15 +55,30 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
         emocoes_validas=", ".join(EMOCOES.keys()),
         entrada_usuario=entrada,
     )
+    prompt += skill_contract("theme_curator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere a sugestão em JSON.")
 
-    # Só preenche o que a Erica não informou manualmente - nunca sobrescreve.
-    state.setdefault("emocao_central", resposta.get("emocao_central", ""))
-    state.setdefault("versiculo_referencia", resposta.get("versiculo_referencia", ""))
-    state.setdefault("aprendizado_cristao", resposta.get("aprendizado_cristao", ""))
-    state.setdefault("titulo", resposta.get("titulo_sugerido", ""))
+    # Só preenche o que não foi informado manualmente - nunca sobrescreve valor real.
+    if not state.get("emocao_central"):
+        state["emocao_central"] = resposta.get("emocao_central", "")
+    if not state.get("versiculo_referencia"):
+        state["versiculo_referencia"] = resposta.get("versiculo_referencia", "")
+    if not state.get("aprendizado_cristao"):
+        state["aprendizado_cristao"] = resposta.get("aprendizado_cristao", "")
+    if not state.get("titulo"):
+        state["titulo"] = resposta.get("titulo_sugerido", "")
 
-    # Guardamos a justificativa para mostrar na tela de aprovação do
-    # frontend - a Erica pode trocar o versículo antes de seguir.
+    # Guardamos a justificativa e registramos a referência da IA como CANDIDATA.
+    # Ela só será considerada validada após fonte/contexto/aprovação humana.
     state["_justificativa_curadoria"] = resposta.get("justificativa", "")
+    suggested_ref = resposta.get("versiculo_referencia", "")
+    if suggested_ref:
+        state["bible_reference_candidate"] = create_reference_candidate(
+            suggested_ref, reason=resposta.get("justificativa", ""), suggested_by="theme_curator"
+        )
+        state.setdefault("bible_reference_validation", dict(state["bible_reference_candidate"]))
     return state
+
+
+# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
+SKILL_PROFILE_IDS = ('theme_curator',)
