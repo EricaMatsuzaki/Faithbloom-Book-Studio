@@ -36,10 +36,10 @@ MULTIPLICADOR_ESPESSURA_PAPEL = {
     "branco": 0.002252,
     "creme": 0.0025,
     "cor_premium": 0.002347,
-    "cor_padrao": 0.002252,
+    "cor_padrao": 0.002347,
 }
 
-PAGINAS_MINIMAS_PARA_TEXTO_NA_LOMBADA = 79  # abaixo disso, lombada sem texto
+PAGINAS_MINIMAS_PARA_TEXTO_NA_LOMBADA = 80  # KDP imprime texto na lombada somente acima de 79 páginas
 
 
 def calcular_largura_lombada_in(paginas_fisicas: int, papel: str = "cor_premium") -> float:
@@ -109,9 +109,13 @@ CUSTO_FIXO_COR_PREMIUM_CURTO = 3.60   # livros de 24-40 páginas
 CUSTO_FIXO_COR_PREMIUM_LONGO = 1.00   # livros com mais de 40 páginas
 CUSTO_POR_PAGINA_COR_PREMIUM_LONGO = 0.065
 
-ROYALTY_PAPERBACK = 0.60   # taxa de royalty do paperback (canal direto Amazon)
+# Desde 10/06/2025 a KDP usa 50% ou 60% conforme preço e marketplace.
+# Amazon.com: <= US$9.98 -> 50%; >= US$9.99 -> 60% (verificado 02/09/2026).
+LIMIAR_60_PAPERBACK_USD = 9.99
+ROYALTY_PAPERBACK_BAIXO = 0.50
+ROYALTY_PAPERBACK_ALTO = 0.60
 ROYALTY_EBOOK_BAIXO = 0.35
-ROYALTY_EBOOK_ALTO = 0.70  # só disponível pra preço entre $2.99 e $9.99
+ROYALTY_EBOOK_ALTO = 0.70  # Amazon.com: faixa 70% = US$2.99-US$12.99 desde 07/07/2026
 
 
 def calcular_custo_impressao(paginas: int, tipo_papel: str = "cor_premium") -> float:
@@ -132,17 +136,24 @@ def calcular_custo_impressao(paginas: int, tipo_papel: str = "cor_premium") -> f
 
 def calcular_preco_minimo_viavel(custo_impressao: float) -> float:
     """Preço abaixo do qual você perde dinheiro em cada venda (royalty negativo)."""
-    return round(custo_impressao / ROYALTY_PAPERBACK, 2)
+    return round(custo_impressao / ROYALTY_PAPERBACK_ALTO, 2)
 
 
-def calcular_royalty_paperback(preco_capa: float, custo_impressao: float) -> float:
-    return round(preco_capa * ROYALTY_PAPERBACK - custo_impressao, 2)
+def taxa_royalty_paperback(preco_capa: float, marketplace: str = "US") -> float:
+    """Taxa atual para Amazon.com. Outros marketplaces devem usar tabela própria."""
+    if marketplace != "US":
+        raise ValueError("Nesta fase a taxa automática está validada somente para Amazon.com (US).")
+    return ROYALTY_PAPERBACK_ALTO if preco_capa >= LIMIAR_60_PAPERBACK_USD else ROYALTY_PAPERBACK_BAIXO
+
+
+def calcular_royalty_paperback(preco_capa: float, custo_impressao: float, marketplace: str = "US") -> float:
+    return round(preco_capa * taxa_royalty_paperback(preco_capa, marketplace) - custo_impressao, 2)
 
 
 def calcular_royalty_ebook(preco_capa: float, taxa: str = "alta") -> float:
     """taxa: "alta" (70%, só entre $2.99-$9.99) ou "baixa" (35%, qualquer preço)."""
-    if taxa == "alta" and not (2.99 <= preco_capa <= 9.99):
-        raise ValueError("A taxa de 70% só é válida para preços entre $2.99 e $9.99.")
+    if taxa == "alta" and not (2.99 <= preco_capa <= 12.99):
+        raise ValueError("Na Amazon.com, a faixa de preço da opção de 70% é US$2.99-US$12.99 desde 07/07/2026 (demais condições/territórios também se aplicam).")
     percentual = ROYALTY_EBOOK_ALTO if taxa == "alta" else ROYALTY_EBOOK_BAIXO
     return round(preco_capa * percentual, 2)
 

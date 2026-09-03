@@ -75,5 +75,6 @@ def paleta_para_prompt(emocao: str) -> str:
         f"Atmosfera de luz e cena: {dados['atmosfera']}. "
         "A emoção deve se expressar através da atmosfera da cena "
         "(cor de fundo, luz, expressão facial do personagem) - "
-        "NUNCA personificar a emoção como um personagem à parte."
+        "NUNCA personificar a emoção como um personagem à parte. "
+        "A paleta emocional afeta luz, fundo e atmosfera; NÃO recolorir pele, pelagem, cabelo, olhos, marcas ou cores canônicas do Character DNA."
     )

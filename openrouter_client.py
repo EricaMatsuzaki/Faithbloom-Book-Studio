@@ -1,24 +1,22 @@
-"""
-Cliente OpenRouter para o pipeline - texto E imagem pela mesma chave de
-API (OPENROUTER_API_KEY), já que a Erica tem assinatura ativa lá.
-
-Modelos sugeridos (configuráveis por variável de ambiente):
-- Texto: qualquer modelo de raciocínio forte (ex: anthropic/claude-sonnet-4-6)
-- Imagem: google/gemini-3.1-flash-image (Nano Banana 2) - recomendado
-  pela melhor consistência de personagem multi-referência hoje.
-  Alternativa: openai/gpt-image-1 (até 16 imagens de referência por edição).
-
-Documentação: https://openrouter.ai/docs (Image API - modalidades
-["image", "text"] no endpoint de chat completions, ou o endpoint
-dedicado /v1/images).
-"""
+"""Cliente OpenRouter do FaithBloom com guardrails de custo/duplicidade (Fase 13)."""
+from __future__ import annotations
 
 import base64
 import json
 import os
+import time
 import uuid
+from typing import Any
 
 import requests
+
+from controle_geracao import (
+    POLITICA,
+    extrair_custo_reportado,
+    finalizar_requisicao,
+    iniciar_requisicao,
+    sanitizar_texto,
+)
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -26,148 +24,166 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MODELO_TEXTO = os.environ.get("OPENROUTER_MODELO_TEXTO", "anthropic/claude-sonnet-4-6")
 MODELO_IMAGEM = os.environ.get("OPENROUTER_MODELO_IMAGEM", "google/gemini-3.1-flash-image")
 MODELO_VOZ = os.environ.get("OPENROUTER_MODELO_VOZ", "google/gemini-3.1-flash-tts-preview")
-VOZ_PADRAO = os.environ.get("OPENROUTER_VOZ_PADRAO", "")  # deixar em branco usa a voz padrão do provedor
+VOZ_PADRAO = os.environ.get("OPENROUTER_VOZ_PADRAO", "")
 
 PASTA_AUDIO = "saida_audio"
 os.makedirs(PASTA_AUDIO, exist_ok=True)
-
 PASTA_IMAGENS = "saida_imagens"
 os.makedirs(PASTA_IMAGENS, exist_ok=True)
 
 
+class OpenRouterFaithBloomError(RuntimeError):
+    pass
+
+
 def _headers() -> dict:
     if not OPENROUTER_API_KEY:
-        raise RuntimeError(
-            "Defina a variável de ambiente OPENROUTER_API_KEY antes de rodar."
-        )
-    return {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
+        raise RuntimeError("Defina a variável de ambiente OPENROUTER_API_KEY antes de rodar.")
+    return {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
 
 
-def chamar_llm(sistema: str, instrucao: str) -> dict:
+def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
+    ultimo: Exception | None = None
+    for tentativa in range(1, POLITICA.tentativas_http + 1):
+        try:
+            resp=requests.post(url, headers=_headers(), json=payload, timeout=timeout)
+            if resp.status_code == 429 or 500 <= resp.status_code <= 599:
+                if tentativa < POLITICA.tentativas_http:
+                    time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
+                    continue
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as exc:
+            ultimo=exc
+            if tentativa < POLITICA.tentativas_http:
+                time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
+    codigo=getattr(getattr(ultimo,"response",None),"status_code",None)
+    sufixo=f" (HTTP {codigo})" if codigo else ""
+    raise OpenRouterFaithBloomError(
+        "A OpenRouter não respondeu corretamente após novas tentativas" + sufixo + ". "
+        "Nenhuma chave ou payload foi gravado no log."
+    ) from ultimo
+
+
+def _json_resposta(resp: requests.Response) -> dict[str,Any]:
+    try:
+        dados=resp.json()
+    except ValueError as exc:
+        raise OpenRouterFaithBloomError("A OpenRouter retornou uma resposta que não é JSON válido.") from exc
+    if not isinstance(dados,dict):
+        raise OpenRouterFaithBloomError("Formato inesperado de resposta da OpenRouter.")
+    return dados
+
+
+def chamar_llm(sistema: str, instrucao: str) -> dict | list:
+    conteudo_assinatura = sistema + "\n" + instrucao
+    req_id,assinatura,estimativa,inicio=iniciar_requisicao("texto", MODELO_TEXTO, conteudo_assinatura)
+    try:
+        payload={
+            "model":MODELO_TEXTO,
+            "messages":[
+                {"role":"system","content":sistema+"\n\nResponda APENAS em JSON válido, sem markdown."},
+                {"role":"user","content":instrucao},
+            ],
+        }
+        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions",payload,120)
+        dados=_json_resposta(resp)
+        texto=dados["choices"][0]["message"]["content"]
+        texto_limpo=texto.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        resultado=json.loads(texto_limpo)
+        finalizar_requisicao(req_id,assinatura,"texto",MODELO_TEXTO,estimativa,inicio,"sucesso",extrair_custo_reportado(dados))
+        return resultado
+    except Exception as exc:
+        finalizar_requisicao(req_id,assinatura,"texto",MODELO_TEXTO,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        raise
+
+
+def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None) -> str:
+    """Gera imagem aceitando cena-base + múltiplas referências visuais oficiais.
+
+    `imagem_base` continua compatível com chamadas antigas. `imagens_referencia` é
+    usado pelo Restoration Studio para anexar Character Masters sem substituir a
+    cena original como referência principal.
     """
-    Chama o modelo de texto via OpenRouter e espera um JSON de volta.
-    Pede explicitamente output em JSON para simplificar o parsing.
+    refs=[]
+    if imagem_base:
+        refs.append(imagem_base)
+    for r in imagens_referencia or []:
+        if r and r not in refs:
+            refs.append(r)
+    ref_sig=""
+    for ref in refs:
+        if os.path.exists(ref):
+            st=os.stat(ref)
+            ref_sig+=f"|ref:{os.path.basename(ref)}:{st.st_size}:{int(st.st_mtime)}"
+    req_id,assinatura,estimativa,inicio=iniciar_requisicao("imagem",MODELO_IMAGEM,prompt+ref_sig)
+    try:
+        content=[{"type":"text","text":prompt}]
+        import mimetypes
+        for ref in refs:
+            if not ref or not os.path.exists(ref):
+                continue
+            with open(ref,"rb") as f:
+                b64_ref=base64.b64encode(f.read()).decode()
+            mime=mimetypes.guess_type(ref)[0] or "image/png"
+            content.append({"type":"image_url","image_url":{"url":f"data:{mime};base64,{b64_ref}"}})
+        payload={"model":MODELO_IMAGEM,"messages":[{"role":"user","content":content}],"modalities":["image","text"]}
+        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions",payload,180)
+        dados=_json_resposta(resp)
+        imagens=dados.get("choices",[{}])[0].get("message",{}).get("images",[])
+        if not imagens:
+            raise OpenRouterFaithBloomError("O modelo não retornou imagem nesta chamada. Tente novamente ou revise o modelo selecionado.")
+        url=imagens[0].get("image_url",{}).get("url","")
+        if "," not in url:
+            raise OpenRouterFaithBloomError("Formato de imagem inesperado na resposta do provedor.")
+        b64_imagem=url.split(",",1)[1]
+        caminho=os.path.join(PASTA_IMAGENS,f"{uuid.uuid4().hex}.png")
+        with open(caminho,"wb") as f:
+            f.write(base64.b64decode(b64_imagem))
+        finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"sucesso",extrair_custo_reportado(dados))
+        return caminho
+    except Exception as exc:
+        finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        raise
+
+
+def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str, voice: str | None = None) -> str:
+    """Gera MP3 via TTS mantendo compatibilidade com o pipeline legado.
+
+    Marcadores editoriais do FaithBloom são convertidos para pontuação natural
+    antes de enviar ao TTS, evitando que o sintetizador leia ``[pausa curta]``
+    em voz alta. O Voice Profile pode fornecer um ``provider_voice_id``; quando
+    vazio, usa-se a voz padrão configurada no ambiente.
     """
-    payload = {
-        "model": MODELO_TEXTO,
-        "messages": [
-            {"role": "system", "content": sistema + "\n\nResponda APENAS em JSON válido, sem markdown."},
-            {"role": "user", "content": instrucao},
-        ],
-    }
-    resp = requests.post(
-        f"{OPENROUTER_BASE_URL}/chat/completions",
-        headers=_headers(),
-        json=payload,
-        timeout=120,
-    )
-    resp.raise_for_status()
-    texto = resp.json()["choices"][0]["message"]["content"]
-    texto_limpo = texto.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(texto_limpo)
-
-
-def gerar_imagem(prompt: str, imagem_base: str | None = None) -> str:
-    """
-    Gera uma imagem via OpenRouter (Nano Banana 2 por padrão).
-    Se imagem_base for passado (caminho de arquivo local), envia como
-    referência visual junto ao prompt - é isso que trava a consistência
-    do personagem entre cenas.
-    Retorna o caminho do arquivo PNG salvo localmente.
-    """
-    content = [{"type": "text", "text": prompt}]
-
-    if imagem_base and os.path.exists(imagem_base):
-        with open(imagem_base, "rb") as f:
-            b64_ref = base64.b64encode(f.read()).decode()
-        content.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64_ref}"},
-            }
-        )
-
-    payload = {
-        "model": MODELO_IMAGEM,
-        "messages": [{"role": "user", "content": content}],
-        "modalities": ["image", "text"],
-    }
-    resp = requests.post(
-        f"{OPENROUTER_BASE_URL}/chat/completions",
-        headers=_headers(),
-        json=payload,
-        timeout=180,
-    )
-    resp.raise_for_status()
-    dados = resp.json()
-
-    # A imagem volta em base64 dentro da resposta - formato pode variar
-    # ligeiramente por modelo, ajuste conforme a resposta real da API.
-    imagens = dados["choices"][0]["message"].get("images", [])
-    if not imagens:
-        raise RuntimeError(f"Nenhuma imagem retornada pela API: {dados}")
-
-    b64_imagem = imagens[0]["image_url"]["url"].split(",", 1)[1]
-    caminho = os.path.join(PASTA_IMAGENS, f"{uuid.uuid4().hex}.png")
-    with open(caminho, "wb") as f:
-        f.write(base64.b64decode(b64_imagem))
-    return caminho
-
-
-def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str) -> str:
-    """
-    Converte um trecho do roteiro de audiobook (já com as marcações
-    [pausa curta], [voz suave], etc.) em áudio de verdade via OpenRouter
-    TTS (endpoint dedicado /api/v1/audio/speech, compatível com a API
-    de audio da OpenAI).
-
-    O Gemini 3.1 Flash TTS aceita tags inline parecidas nativamente -
-    se estiver usando outro modelo TTS sem suporte a tags, considere
-    passar o texto por converter_marcacoes_para_texto_natural() antes.
-    """
-    payload = {
-        "model": MODELO_VOZ,
-        "input": texto_com_marcacoes,
-        "response_format": "mp3",
-    }
-    if VOZ_PADRAO:
-        payload["voice"] = VOZ_PADRAO
-
-    resp = requests.post(
-        f"{OPENROUTER_BASE_URL}/audio/speech",
-        headers=_headers(),
-        json=payload,
-        timeout=120,
-    )
-    resp.raise_for_status()
-
-    caminho = os.path.join(PASTA_AUDIO, f"{nome_arquivo}.mp3")
-    with open(caminho, "wb") as f:
-        f.write(resp.content)  # a resposta é o áudio bruto, não JSON
-    return caminho
+    texto_tts=converter_marcacoes_para_texto_natural(texto_com_marcacoes)
+    palavras=max(1,len(texto_tts.split()))
+    mins=max(0.1,palavras/145.0)
+    estimativa=POLITICA.estimativa_audio_min_usd*mins
+    voice_id=(voice or VOZ_PADRAO or "").strip()
+    assinatura_conteudo=texto_tts+(f"|voice:{voice_id}" if voice_id else "")
+    req_id,assinatura,estimativa,inicio=iniciar_requisicao("audio",MODELO_VOZ,assinatura_conteudo,estimativa)
+    try:
+        payload={"model":MODELO_VOZ,"input":texto_tts,"response_format":"mp3"}
+        if voice_id:
+            payload["voice"]=voice_id
+        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/audio/speech",payload,120)
+        caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.mp3")
+        with open(caminho,"wb") as f:
+            f.write(resp.content)
+        finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"sucesso")
+        return caminho
+    except Exception as exc:
+        finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        raise
 
 
 def converter_marcacoes_para_texto_natural(texto_com_marcacoes: str) -> str:
-    """
-    Fallback para modelos TTS sem suporte a tags inline: troca nossas
-    marcações por pontuação que a maioria dos motores de voz já
-    interpreta naturalmente como pausa (reticências, quebra de linha).
-    Use isso só se o modelo escolhido em MODELO_VOZ não suportar tags.
-    """
-    substituicoes = {
-        "[pausa curta]": "...",
-        "[pausa longa]": "...\n\n",
-        "[voz suave]": "",
-        "[voz animada]": "",
-        "[voz sussurrada]": "",
-    }
-    texto = texto_com_marcacoes
-    for marcado, natural in substituicoes.items():
-        texto = texto.replace(marcado, natural)
-    # remove marcações de ênfase, mantendo só a palavra
+    substituicoes={"[pausa curta]":"...","[pausa longa]":"...\n\n","[voz suave]":"","[voz animada]":"","[voz sussurrada]":""}
+    texto=texto_com_marcacoes or ""
+    for marcado,natural in substituicoes.items():
+        texto=texto.replace(marcado,natural)
     import re
-    texto = re.sub(r"\[ênfase:\s*(.*?)\]", r"\1", texto)
-    return texto
+    texto=re.sub(r"\[ênfase:\s*(.*?)\]",r"\1",texto,flags=re.I)
+    texto=re.sub(r"\[(?:emoção|emocao|ritmo|speaker|voz):[^\]]+\]","",texto,flags=re.I)
+    texto=re.sub(r"\[pausa:\s*(\d+)\s*ms\]",lambda m:", " if int(m.group(1))<500 else "... ",texto,flags=re.I)
+    return re.sub(r"[ \t]+"," ",texto).strip()
