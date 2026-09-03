@@ -1,1 +1,58 @@
-
+[
+  {
+    "id": "faithbloom-baby-cute",
+    "nome": "FaithBloom — Baby Cute",
+    "publico": "Infantil",
+    "faixa_etaria": "2–4 anos",
+    "espessura": "Muito grosso",
+    "complexidade": "Muito simples",
+    "fundo": "Muito simples",
+    "areas": "muito grandes e bem fechadas",
+    "nivel_realismo": "muito estilizado e arredondado",
+    "prompt_base": "Personagens muito fofos, cabeça grande, formas simples, poucos elementos e amplas áreas para colorir.",
+    "favorito": false,
+    "sistema": true
+  },
+  {
+    "id": "faithbloom-cute-cozy",
+    "nome": "FaithBloom — Cute & Cozy",
+    "publico": "Infantil",
+    "faixa_etaria": "4–8 anos",
+    "espessura": "Grosso",
+    "complexidade": "Equilibrada",
+    "fundo": "Simplificado",
+    "areas": "grandes e médias",
+    "nivel_realismo": "fofo, acolhedor e original",
+    "prompt_base": "Cena aconchegante, personagens arredondados e expressivos, objetos simples e composição agradável para colorir.",
+    "favorito": true,
+    "sistema": true
+  },
+  {
+    "id": "faithbloom-junior-detail",
+    "nome": "FaithBloom — Junior Detail",
+    "publico": "Juvenil",
+    "faixa_etaria": "8–12 anos",
+    "espessura": "Médio",
+    "complexidade": "Detalhada",
+    "fundo": "Moderado",
+    "areas": "médias, com alguns detalhes menores",
+    "nivel_realismo": "estilizado com mais detalhes",
+    "prompt_base": "Mais detalhes internos e de cenário, mantendo linhas limpas, legíveis e áreas fechadas para colorir.",
+    "favorito": false,
+    "sistema": true
+  },
+  {
+    "id": "faithbloom-botanical-relax",
+    "nome": "FaithBloom — Botanical Relax",
+    "publico": "Adulto",
+    "faixa_etaria": "Adulto",
+    "espessura": "Fino",
+    "complexidade": "Muito detalhada",
+    "fundo": "Detalhado",
+    "areas": "médias e pequenas, sem microdetalhes inutilizáveis",
+    "nivel_realismo": "ornamental/botânico elegante",
+    "prompt_base": "Composição relaxante para adultos, flora detalhada, linhas nítidas, sem sombreado preenchido e com equilíbrio visual.",
+    "favorito": false,
+    "sistema": true
+  }
+]
