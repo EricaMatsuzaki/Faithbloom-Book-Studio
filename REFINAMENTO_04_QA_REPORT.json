@@ -1,0 +1,19 @@
+{
+  "refinamento": 4,
+  "nome": "Restoration Studio + Book Doctor Integration",
+  "pytest": "36 passed",
+  "qa_release_ok": true,
+  "qa_release_erros": [],
+  "qa_release_avisos": [],
+  "rotas_verificadas": "19 rotas verificadas",
+  "sintaxe": "86 arquivos verificados",
+  "higiene": "Sem caches/logs de execução no momento do QA",
+  "politicas": [
+    "original preservado",
+    "SHA-256 manifest",
+    "versões derivadas",
+    "aprovação humana",
+    "sem score visual fictício",
+    "Character Master visual como referência adicional"
+  ]
+}

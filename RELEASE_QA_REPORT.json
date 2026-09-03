@@ -1,0 +1,68 @@
+{
+  "version": "2.0.0-rc1",
+  "ok": true,
+  "erros": [],
+  "avisos": [],
+  "grupos": {
+    "Código": [
+      {
+        "nome": "Sintaxe Python",
+        "ok": true,
+        "detalhe": "69 arquivos verificados",
+        "nivel": "erro"
+      },
+      {
+        "nome": "Dependências declaradas",
+        "ok": true,
+        "detalhe": "OK",
+        "nivel": "erro"
+      }
+    ],
+    "Navegação": [
+      {
+        "nome": "Navegação / page links",
+        "ok": true,
+        "detalhe": "13 rotas verificadas",
+        "nivel": "erro"
+      }
+    ],
+    "Segurança": [
+      {
+        "nome": "Segredos no repositório",
+        "ok": true,
+        "detalhe": "Nenhum padrão de chave real detectado",
+        "nivel": "erro"
+      }
+    ],
+    "Repositório": [
+      {
+        "nome": "Higiene do pacote",
+        "ok": true,
+        "detalhe": "Sem caches/logs de execução empacotados",
+        "nivel": "info"
+      },
+      {
+        "nome": ".gitignore",
+        "ok": true,
+        "detalhe": "OK",
+        "nivel": "info"
+      }
+    ],
+    "Projeto piloto": [
+      {
+        "nome": "Projeto piloto de Natal",
+        "ok": true,
+        "detalhe": "22 cenas · 3 personagens",
+        "nivel": "info"
+      }
+    ],
+    "Testes": [
+      {
+        "nome": "Testes automatizados",
+        "ok": true,
+        "detalhe": "Ran 20 tests in 0.110s",
+        "nivel": "erro"
+      }
+    ]
+  }
+}

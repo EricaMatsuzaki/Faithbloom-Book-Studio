@@ -1,0 +1,94 @@
+{
+  "refinement": 10,
+  "name": "FaithBloom Quality Guardian",
+  "base": "Refinamento 09 — Audiobook Studio Professional",
+  "checked_at_utc": "2026-09-03T05:26:25.620490+00:00",
+  "result": "PASS",
+  "pytest": {
+    "passed": 103,
+    "failed": 0,
+    "command": "python -m pytest -q"
+  },
+  "unittest": {
+    "passed": 83,
+    "failed": 0,
+    "command": "python -m unittest discover -s tests -q"
+  },
+  "release_qa": {
+    "version": "2.0.0-rc1",
+    "ok": true,
+    "erros": [],
+    "avisos": [],
+    "grupos": {
+      "Código": [
+        {
+          "nome": "Sintaxe Python",
+          "ok": true,
+          "detalhe": "108 arquivos verificados",
+          "nivel": "erro"
+        },
+        {
+          "nome": "Dependências declaradas",
+          "ok": true,
+          "detalhe": "OK",
+          "nivel": "erro"
+        }
+      ],
+      "Navegação": [
+        {
+          "nome": "Navegação / page links",
+          "ok": true,
+          "detalhe": "25 rotas verificadas",
+          "nivel": "erro"
+        }
+      ],
+      "Segurança": [
+        {
+          "nome": "Segredos no repositório",
+          "ok": true,
+          "detalhe": "Nenhum padrão de chave real detectado",
+          "nivel": "erro"
+        }
+      ],
+      "Repositório": [
+        {
+          "nome": "Higiene do pacote",
+          "ok": true,
+          "detalhe": "Sem caches/logs de execução empacotados",
+          "nivel": "info"
+        },
+        {
+          "nome": ".gitignore",
+          "ok": true,
+          "detalhe": "OK",
+          "nivel": "info"
+        }
+      ],
+      "Projeto piloto": [
+        {
+          "nome": "Projeto piloto de Natal",
+          "ok": true,
+          "detalhe": "22 cenas · 3 personagens",
+          "nivel": "info"
+        }
+      ],
+      "Testes": [
+        {
+          "nome": "Testes automatizados",
+          "ok": true,
+          "detalhe": "Ran 83 tests in 1.470s",
+          "nivel": "erro"
+        }
+      ]
+    }
+  },
+  "quality_guardian_policies": {
+    "no_silent_corrections": true,
+    "no_invented_quality_scores": true,
+    "blockers_require_fix_and_rerun": true,
+    "author_decision_required": true,
+    "bible_ai_translation_allowed": false,
+    "readability_is_heuristic_not_real_child_test": true,
+    "certificate_is_internal_only": true
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "summary": {
+    "version": "2.0.0-rc5-skills",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0,
+    "python_files": "146 arquivos verificados",
+    "routes": "30 rotas verificadas",
+    "skills": "23 papéis formalizados · 21 módulos agents/ · Bible/Market/Readiness presentes",
+    "pytest_passed": 209,
+    "unittest_passed": 134
+  },
+  "groups": {
+    "Código": [
+      {
+        "nome": "Sintaxe Python",
+        "ok": true,
+        "detalhe": "146 arquivos verificados",
+        "nivel": "erro"
+      },
+      {
+        "nome": "Dependências declaradas",
+        "ok": true,
+        "detalhe": "OK",
+        "nivel": "erro"
+      }
+    ],
+    "Navegação": [
+      {
+        "nome": "Navegação / page links",
+        "ok": true,
+        "detalhe": "30 rotas verificadas",
+        "nivel": "erro"
+      }
+    ],
+    "Segurança": [
+      {
+        "nome": "Segredos no repositório",
+        "ok": true,
+        "detalhe": "Nenhum padrão de chave real detectado",
+        "nivel": "erro"
+      }
+    ],
+    "Repositório": [
+      {
+        "nome": "Higiene do pacote",
+        "ok": true,
+        "detalhe": "Sem caches/logs de execução empacotados",
+        "nivel": "info"
+      },
+      {
+        "nome": ".gitignore",
+        "ok": true,
+        "detalhe": "OK",
+        "nivel": "info"
+      }
+    ],
+    "Stable hardening": [
+      {
+        "nome": "Stable Release Hardening",
+        "ok": true,
+        "detalhe": "Schema/recovery/access/gate presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Production deployment": [
+      {
+        "nome": "Production Deployment & Real E2E",
+        "ok": true,
+        "detalhe": "Health/migration/OIDC/real-E2E presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Stable candidate": [
+      {
+        "nome": "Stable Candidate & Cloud Launch",
+        "ok": true,
+        "detalhe": "Fingerprint/evidências/rollback/promotion gate presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Asset library": [
+      {
+        "nome": "Asset Library & Media Manager",
+        "ok": true,
+        "detalhe": "Galeria/filtros/Masters/versões/usage/storage manager presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Refinamento 17": [
+      {
+        "nome": "Integration/UX + Author Profiles",
+        "ok": true,
+        "detalhe": "Autoria estruturada + handoff entre Studios presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Refinamento 18": [
+      {
+        "nome": "Family Profiles & Simplified Dashboard",
+        "ok": true,
+        "detalhe": "Perfis de workspace + organização pessoal + dashboard simplificado presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Refinamento 19": [
+      {
+        "nome": "Real Pilot & Bug Fix",
+        "ok": true,
+        "detalhe": "Pilotos reais + bug registry + gate pré-Stable presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Refinamento 20": [
+      {
+        "nome": "RC4 Final Pre-Launch Gate",
+        "ok": true,
+        "detalhe": "Cloud E2E obrigatório + pilot gate + sign-off/fingerprint presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Refinamento 21": [
+      {
+        "nome": "Agent Skills & Bestseller Readiness",
+        "ok": true,
+        "detalhe": "23 papéis formalizados · 21 módulos agents/ · Bible/Market/Readiness presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Projeto piloto": [
+      {
+        "nome": "Projeto piloto de Natal",
+        "ok": true,
+        "detalhe": "22 cenas · 3 personagens",
+        "nivel": "info"
+      }
+    ]
+  }
+}

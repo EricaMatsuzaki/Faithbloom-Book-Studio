@@ -1,0 +1,22 @@
+{
+  "refinement": 11,
+  "name": "Publishing & Distribution Center",
+  "date": "2026-09-03",
+  "pytest": {"passed": 110, "failed": 0},
+  "unittest": {"passed": 90, "failed": 0},
+  "release_qa": {
+    "ok": true,
+    "python_files_checked": 111,
+    "streamlit_routes_checked": 26,
+    "secret_patterns_detected": 0,
+    "package_hygiene": "ok"
+  },
+  "core_policies": [
+    "Book Master is never silently resized",
+    "Quality Guardian certificate must match current project fingerprint",
+    "External publication status is never inferred",
+    "KDP Select digital exclusivity conflicts are blocked",
+    "Platform specification snapshots are versioned",
+    "No automatic external publishing in Refinement 11"
+  ]
+}

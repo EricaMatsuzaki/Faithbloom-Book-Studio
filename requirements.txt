@@ -2,3 +2,5 @@ streamlit
 langgraph
 requests
 Pillow
+reportlab
+pypdf

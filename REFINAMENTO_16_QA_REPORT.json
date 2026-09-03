@@ -1,0 +1,116 @@
+{
+  "version": "2.0.0-rc2",
+  "ok": true,
+  "erros": [],
+  "avisos": [],
+  "grupos": {
+    "Código": [
+      {
+        "nome": "Sintaxe Python",
+        "ok": true,
+        "detalhe": "126 arquivos verificados",
+        "nivel": "erro"
+      },
+      {
+        "nome": "Dependências declaradas",
+        "ok": true,
+        "detalhe": "OK",
+        "nivel": "erro"
+      }
+    ],
+    "Navegação": [
+      {
+        "nome": "Navegação / page links",
+        "ok": true,
+        "detalhe": "31 rotas verificadas",
+        "nivel": "erro"
+      }
+    ],
+    "Segurança": [
+      {
+        "nome": "Segredos no repositório",
+        "ok": true,
+        "detalhe": "Nenhum padrão de chave real detectado",
+        "nivel": "erro"
+      }
+    ],
+    "Repositório": [
+      {
+        "nome": "Higiene do pacote",
+        "ok": true,
+        "detalhe": "Sem caches/logs de execução empacotados",
+        "nivel": "info"
+      },
+      {
+        "nome": ".gitignore",
+        "ok": true,
+        "detalhe": "OK",
+        "nivel": "info"
+      }
+    ],
+    "Stable hardening": [
+      {
+        "nome": "Stable Release Hardening",
+        "ok": true,
+        "detalhe": "Schema/recovery/access/gate presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Production deployment": [
+      {
+        "nome": "Production Deployment & Real E2E",
+        "ok": true,
+        "detalhe": "Health/migration/OIDC/real-E2E presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Stable candidate": [
+      {
+        "nome": "Stable Candidate & Cloud Launch",
+        "ok": true,
+        "detalhe": "Fingerprint/evidências/rollback/promotion gate presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Asset library": [
+      {
+        "nome": "Asset Library & Media Manager",
+        "ok": true,
+        "detalhe": "Galeria/filtros/Masters/versões/usage/storage manager presentes",
+        "nivel": "erro"
+      }
+    ],
+    "Projeto piloto": [
+      {
+        "nome": "Projeto piloto de Natal",
+        "ok": true,
+        "detalhe": "22 cenas · 3 personagens",
+        "nivel": "info"
+      }
+    ],
+    "Testes": [
+      {
+        "nome": "Testes automatizados",
+        "ok": true,
+        "detalhe": "Ran 134 tests in 1.405s",
+        "nivel": "erro"
+      }
+    ]
+  },
+  "refinement": 16,
+  "refinement_name": "Asset Library & Media Manager",
+  "pytest": {
+    "passed": 165,
+    "failed": 0
+  },
+  "unittest": {
+    "ran": 134,
+    "ok": true
+  },
+  "notes": [
+    "Galeria legacy mantida por compatibilidade.",
+    "Assets arquivados não são apagados.",
+    "Varredura de uso é sob demanda e sinaliza quando truncada.",
+    "Candidata Stable deve ser re-fingerprinted após este refinamento."
+  ]
+}

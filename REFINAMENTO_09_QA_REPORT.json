@@ -1,0 +1,36 @@
+{
+  "refinement": 9,
+  "name": "Audiobook Studio Professional",
+  "status": "passed",
+  "pytest": {
+    "passed": 92,
+    "failed": 0
+  },
+  "unittest": {
+    "passed": 72,
+    "failed": 0
+  },
+  "release_qa": {
+    "ok": true,
+    "python_files": 105,
+    "streamlit_routes": 24,
+    "secrets": "none_detected",
+    "package_hygiene": "clean",
+    "christmas_pilot": "22 scenes / 3 characters"
+  },
+  "integration_checks": [
+    "Bible Guard: unapproved legacy scripture text excluded from audio source",
+    "Approved scripture is narrated exactly as approved and version metadata stays separate",
+    "Voice Director cannot silently rewrite approved source text",
+    "Pronunciation dictionary affects TTS input without changing editorial source",
+    "A/B/C audio version history and author approval",
+    "Objective WAV/FFprobe audio QA",
+    "FFmpeg final mix + author listening approval + studio ZIP export",
+    "TTS marker sanitization",
+    "24 Streamlit routes resolved after page filename normalization"
+  ],
+  "notes": [
+    "FFmpeg is optional at runtime; without it, individual clips remain available and final mix is not falsely marked complete.",
+    "Platform-specific audiobook compliance remains a later Publishing & Distribution Center responsibility."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "refinement": 12,
+  "name": "Production Release & Project Hub",
+  "pytest": {
+    "passed": 122,
+    "failed": 0
+  },
+  "unittest": {
+    "passed": 102,
+    "failed": 0
+  },
+  "syntax_python_files": 114,
+  "streamlit_routes": 27,
+  "security": "Nenhum padrão de chave real detectado",
+  "package_hygiene": "Sem caches/logs de execução empacotados",
+  "status": "passed"
+}

@@ -1,0 +1,71 @@
+{
+  "refinement": 7,
+  "name": "Publishing Platform Engine + Expandable Platform Registry",
+  "pytest": "68 passed",
+  "unittest": "48 passed",
+  "release_qa_without_reexecuting_tests": {
+    "version": "2.0.0-rc1",
+    "ok": true,
+    "erros": [],
+    "avisos": [],
+    "grupos": {
+      "Código": [
+        {
+          "nome": "Sintaxe Python",
+          "ok": true,
+          "detalhe": "99 arquivos verificados",
+          "nivel": "erro"
+        },
+        {
+          "nome": "Dependências declaradas",
+          "ok": true,
+          "detalhe": "OK",
+          "nivel": "erro"
+        }
+      ],
+      "Navegação": [
+        {
+          "nome": "Navegação / page links",
+          "ok": true,
+          "detalhe": "22 rotas verificadas",
+          "nivel": "erro"
+        }
+      ],
+      "Segurança": [
+        {
+          "nome": "Segredos no repositório",
+          "ok": true,
+          "detalhe": "Nenhum padrão de chave real detectado",
+          "nivel": "erro"
+        }
+      ],
+      "Repositório": [
+        {
+          "nome": "Higiene do pacote",
+          "ok": true,
+          "detalhe": "Sem caches/logs de execução empacotados",
+          "nivel": "info"
+        },
+        {
+          "nome": ".gitignore",
+          "ok": true,
+          "detalhe": "OK",
+          "nivel": "info"
+        }
+      ],
+      "Projeto piloto": [
+        {
+          "nome": "Projeto piloto de Natal",
+          "ok": true,
+          "detalhe": "22 cenas · 3 personagens",
+          "nivel": "info"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Testes executados antes da limpeza final do pacote.",
+    "Caches, pyc e runtime data removidos após os testes.",
+    "Perfis profile_only não são tratados como especificações técnicas completas."
+  ]
+}

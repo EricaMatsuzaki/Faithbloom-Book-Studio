@@ -1,0 +1,12 @@
+{
+  "refinement": 14,
+  "name": "Production Deployment & Real E2E",
+  "pytest": {"passed": 143, "failed": 0},
+  "unittest": {"passed": 123, "failed": 0},
+  "python_files_checked": 120,
+  "navigation_routes_checked": 29,
+  "secrets_scan": "no real secret patterns detected",
+  "package_hygiene_after_cleanup": "clean",
+  "cloud_e2e": "not executed in this build environment; must be completed in the real Streamlit Cloud deployment",
+  "stable_tag": "not promoted"
+}

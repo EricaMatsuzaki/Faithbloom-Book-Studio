@@ -1,0 +1,100 @@
+{
+  "refinement": 5,
+  "name": "Coloring Book Doctor + Age & Complexity QA + Cover Master",
+  "ok": true,
+  "pytest": "49 passed",
+  "unittest": "29 passed",
+  "qa_release": {
+    "version": "2.0.0-rc1",
+    "ok": true,
+    "erros": [],
+    "avisos": [],
+    "grupos": {
+      "Código": [
+        {
+          "nome": "Sintaxe Python",
+          "ok": true,
+          "detalhe": "91 arquivos verificados",
+          "nivel": "erro"
+        },
+        {
+          "nome": "Dependências declaradas",
+          "ok": true,
+          "detalhe": "OK",
+          "nivel": "erro"
+        }
+      ],
+      "Navegação": [
+        {
+          "nome": "Navegação / page links",
+          "ok": true,
+          "detalhe": "20 rotas verificadas",
+          "nivel": "erro"
+        }
+      ],
+      "Segurança": [
+        {
+          "nome": "Segredos no repositório",
+          "ok": true,
+          "detalhe": "Nenhum padrão de chave real detectado",
+          "nivel": "erro"
+        }
+      ],
+      "Repositório": [
+        {
+          "nome": "Higiene do pacote",
+          "ok": true,
+          "detalhe": "Sem caches/logs de execução empacotados",
+          "nivel": "info"
+        },
+        {
+          "nome": ".gitignore",
+          "ok": true,
+          "detalhe": "OK",
+          "nivel": "info"
+        }
+      ],
+      "Projeto piloto": [
+        {
+          "nome": "Projeto piloto de Natal",
+          "ok": true,
+          "detalhe": "22 cenas · 3 personagens",
+          "nivel": "info"
+        }
+      ],
+      "Testes": [
+        {
+          "nome": "Testes automatizados",
+          "ok": true,
+          "detalhe": "Ran 29 tests in 0.379s",
+          "nivel": "erro"
+        }
+      ]
+    }
+  },
+  "cover_master_integration": {
+    "pdf_preflight": {
+      "ok": true,
+      "paginas": 1,
+      "largura_in": 12.4302,
+      "altura_in": 9.25,
+      "tamanho_correto": true,
+      "erros": []
+    },
+    "cover_gate": {
+      "checks": {
+        "frente_aprovada": true,
+        "contracapa_aprovada": true,
+        "arte_master_sem_texto": true,
+        "wrap_gerado": true,
+        "pdf_preflight_ok": true
+      },
+      "aprovado": true,
+      "nota": "Aprovação automática significa apenas checks técnicos deste módulo; ainda requer revisão visual e prova final."
+    }
+  },
+  "notes": [
+    "Nenhuma chamada OpenRouter foi necessária para o QA.",
+    "O teste de Cover Master montou um wrap 6x9 de 80 páginas e validou o PDF de uma página nas dimensões calculadas."
+  ]
+}
