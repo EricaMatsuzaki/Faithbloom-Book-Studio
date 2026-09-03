@@ -1,1 +1,774 @@
-
+{
+  "schema": "faithbloom.agent-skills.v1",
+  "profiles": [
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "audiobook_director",
+      "module": "audiobook.py",
+      "name": "Diretor de Audiobook",
+      "mission": "Transformar texto aprovado em direção de performance sem reescrever a obra.",
+      "skills": [
+        "read-aloud direction",
+        "pacing",
+        "pause design",
+        "emotion",
+        "pronunciation planning",
+        "character voices",
+        "TTS portability"
+      ],
+      "quality_criteria": [
+        "texto semanticamente idêntico",
+        "pausas intencionais",
+        "emoção coerente",
+        "Bible Guard preservado"
+      ],
+      "required_handoffs": [
+        "narrator",
+        "audio_qa"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "character_creator",
+      "module": "criador_personagem.py",
+      "name": "Criador de Personagem",
+      "mission": "Criar Character DNA distintivo, reproduzível e adequado ao universo visual.",
+      "skills": [
+        "design de personagem",
+        "silhueta",
+        "paleta canônica",
+        "proporções",
+        "marcas permanentes",
+        "expressividade",
+        "potencial de série"
+      ],
+      "quality_criteria": [
+        "DNA fixo separado de variáveis",
+        "descrição reproduzível",
+        "identidade visual diferenciável"
+      ],
+      "required_handoffs": [
+        "character_universe",
+        "character_variations",
+        "illustrator"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "character_variations",
+      "module": "personagens_variacoes.py",
+      "name": "Variações de Personagem",
+      "mission": "Criar alternativas sem destruir o Character Master nem mudar identidade fixa.",
+      "skills": [
+        "variações controladas",
+        "pose",
+        "roupa",
+        "expressão",
+        "temporada",
+        "festividade",
+        "versionamento"
+      ],
+      "quality_criteria": [
+        "DNA travado preservado",
+        "base da variação registrada",
+        "A/B/C preservadas"
+      ],
+      "required_handoffs": [
+        "character_universe",
+        "character_consistency"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "coloring_activity_creator",
+      "module": "atividades_colorir.py",
+      "name": "Atividades para Colorir",
+      "mission": "Selecionar cenas adequadas e criar derivadas de colorir sem deformar personagens.",
+      "skills": [
+        "seleção de cenas",
+        "simplificação",
+        "line art",
+        "continuidade de personagem",
+        "adequação infantil"
+      ],
+      "quality_criteria": [
+        "cenas distintas",
+        "line art reutilizável",
+        "referência do personagem preservada"
+      ],
+      "required_handoffs": [
+        "coloring_doctor",
+        "asset_library"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "coloring_idea_generator",
+      "module": "gerador_ideias_colorir.py",
+      "name": "Gerador de Ideias de Coloring",
+      "mission": "Criar conceitos de coloring book claros, diferenciáveis e adequados ao público escolhido.",
+      "skills": [
+        "conceito de coloring book",
+        "coerência temática",
+        "variedade de páginas",
+        "faixa etária",
+        "potencial de coleção"
+      ],
+      "quality_criteria": [
+        "tema consistente",
+        "variedade sem repetição",
+        "complexidade apropriada"
+      ],
+      "required_handoffs": [
+        "line_art_specialist",
+        "coloring_layout"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "coloring_layout",
+      "module": "diagramador_colorir.py",
+      "name": "Diagramador de Coloring",
+      "mission": "Organizar miolo de coloring book com páginas técnicas e alternância segura para impressão.",
+      "skills": [
+        "paginação",
+        "verso em branco",
+        "margens",
+        "ordem editorial",
+        "páginas opcionais",
+        "print layout"
+      ],
+      "quality_criteria": [
+        "ordem consistente",
+        "frentes/versos intencionais",
+        "sem elemento crítico fora da safe area"
+      ],
+      "required_handoffs": [
+        "print_preflight",
+        "cover_specialist"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "deterministic"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "cover_specialist",
+      "module": "capa.py",
+      "name": "Especialista de Capa",
+      "mission": "Criar arte de capa coerente com o livro e preparar composição técnica para cada formato/plataforma.",
+      "skills": [
+        "cover concept",
+        "thumbnail readability",
+        "visual hierarchy",
+        "character identity",
+        "genre fit",
+        "back cover breathing room",
+        "print wrap"
+      ],
+      "quality_criteria": [
+        "arte sem texto gerado pela IA",
+        "foco reconhecível em thumbnail",
+        "Master separado da tipografia",
+        "wrap calculado"
+      ],
+      "required_handoffs": [
+        "cover_master",
+        "print_preflight",
+        "bestseller_readiness"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "dedication",
+      "module": "dedicatoria.py",
+      "name": "Dedicatória",
+      "mission": "Criar dedicatória curta, respeitosa e fiel às relações fornecidas, sem inventar biografia.",
+      "skills": [
+        "escrita afetiva",
+        "tom infantil/familiar",
+        "personalização",
+        "privacidade",
+        "não-invenção"
+      ],
+      "quality_criteria": [
+        "somente pessoas fornecidas",
+        "relações respeitadas",
+        "texto proporcional ao livro"
+      ],
+      "required_handoffs": [
+        "diagrammer"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "diagrammer",
+      "module": "diagramador.py",
+      "name": "Diagramador",
+      "mission": "Transformar conteúdo aprovado em sequência editorial coerente e tecnicamente preparada.",
+      "skills": [
+        "page sequencing",
+        "text-image alternation",
+        "front matter",
+        "safe areas",
+        "readability",
+        "print structure"
+      ],
+      "quality_criteria": [
+        "ordem reproduzível",
+        "sem conteúdo órfão",
+        "layout compatível com preflight"
+      ],
+      "required_handoffs": [
+        "print_preflight",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "deterministic"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "idea_generator",
+      "module": "gerador_ideias.py",
+      "name": "Gerador de Ideias",
+      "mission": "Criar conceitos originais e comercialmente diferenciáveis sem repetir temas da coleção.",
+      "skills": [
+        "ideação infantil",
+        "promessa de leitura",
+        "variedade temática",
+        "potencial de série",
+        "adequação 3–8",
+        "originalidade"
+      ],
+      "quality_criteria": [
+        "ideia clara em uma frase",
+        "conflito compreensível",
+        "emoção concreta",
+        "oportunidade visual",
+        "lição não forçada"
+      ],
+      "required_handoffs": [
+        "theme_curator",
+        "storyteller"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [
+        "temas já usados na coleção"
+      ],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "illustrator",
+      "module": "ilustrador.py",
+      "name": "Ilustrador",
+      "mission": "Produzir cenas coerentes com Character Master, Style DNA, emoção, narrativa e requisitos de impressão.",
+      "skills": [
+        "composição infantil",
+        "character consistency",
+        "story-image alignment",
+        "direção emocional",
+        "luz e cor",
+        "continuidade visual",
+        "safe area",
+        "referência multimodal"
+      ],
+      "quality_criteria": [
+        "sem texto embutido",
+        "identidade canônica preservada",
+        "ação da cena representada",
+        "imagem revisável antes da aprovação"
+      ],
+      "required_handoffs": [
+        "character_consistency",
+        "quality_guardian",
+        "asset_library"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "line_art_specialist",
+      "module": "line_art_colorir.py",
+      "name": "Especialista em Line Art",
+      "mission": "Gerar line art limpa, imprimível e adequada à complexidade/idade selecionada.",
+      "skills": [
+        "line art",
+        "espessura de traço",
+        "áreas fechadas",
+        "simplicidade por idade",
+        "margens",
+        "printability",
+        "conversão referência→line art"
+      ],
+      "quality_criteria": [
+        "sem cinza indesejado",
+        "contornos legíveis",
+        "não cortar elementos",
+        "personagem consistente"
+      ],
+      "required_handoffs": [
+        "coloring_doctor",
+        "print_preflight"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "market_categories",
+      "module": "pesquisa_mercado.py",
+      "name": "Especialista de Categorias",
+      "mission": "Sugerir categorias relevantes sem usar nichos irrelevantes apenas para buscar selo de ranking.",
+      "skills": [
+        "category fit",
+        "metadata taxonomy",
+        "marketplace awareness",
+        "compliance",
+        "relevância comercial"
+      ],
+      "quality_criteria": [
+        "categoria coerente com conteúdo",
+        "marketplace explicitado",
+        "árvore tratada como mutável"
+      ],
+      "required_handoffs": [
+        "market_bestseller_intelligence",
+        "publishing_engine"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado",
+        "recomendar categoria irrelevante para manipular ranking"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "market_keywords",
+      "module": "pesquisa_mercado.py",
+      "name": "Especialista de Keywords",
+      "mission": "Sugerir keywords relevantes e separar inferência de IA de evidência observada de mercado.",
+      "skills": [
+        "search intent",
+        "long-tail keywords",
+        "metadata compliance",
+        "relevância",
+        "market evidence literacy"
+      ],
+      "quality_criteria": [
+        "sem volume inventado",
+        "sem ranking inventado",
+        "proveniência marcada",
+        "keywords relevantes ao conteúdo"
+      ],
+      "required_handoffs": [
+        "market_bestseller_intelligence",
+        "publishing_engine"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado",
+        "afirmar volume de busca, competição ou demanda sem fonte observada"
+      ],
+      "evidence_requirements": [
+        "evidência externa quando houver alegação de demanda/competição"
+      ],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "marketing_launch",
+      "module": "marketing.py",
+      "name": "Marketing de Lançamento",
+      "mission": "Preparar materiais de lançamento éticos e consistentes com a obra e o público.",
+      "skills": [
+        "launch messaging",
+        "social copy",
+        "Pinterest discoverability",
+        "email",
+        "CTA",
+        "review request compliance",
+        "campaign consistency"
+      ],
+      "quality_criteria": [
+        "mensagens fiéis ao livro",
+        "CTA claro",
+        "sem incentivo indevido a review",
+        "sem promessa de ranking"
+      ],
+      "required_handoffs": [
+        "launch_strategy",
+        "publishing_distribution"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado",
+        "pedir avaliação positiva em troca de benefício",
+        "afirmar que reviews garantem ranking"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "narrator",
+      "module": "audiobook.py",
+      "name": "Narrador/TTS",
+      "mission": "Renderizar o roteiro aprovado em áudio versionado e verificável.",
+      "skills": [
+        "TTS rendering",
+        "segment naming",
+        "pronunciation execution",
+        "version preservation",
+        "audio file integrity"
+      ],
+      "quality_criteria": [
+        "segmentos rastreáveis",
+        "nenhuma substituição silenciosa",
+        "mix exige escuta humana"
+      ],
+      "required_handoffs": [
+        "audio_qa",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "tool"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "photo_to_character",
+      "module": "foto_para_personagem.py",
+      "name": "Foto → Personagem",
+      "mission": "Converter referência enviada em personagem estilizado preservando atributos solicitados e privacidade.",
+      "skills": [
+        "image-to-image",
+        "preservação de atributos",
+        "simplificação visual",
+        "consistência estilística",
+        "controle de referência"
+      ],
+      "quality_criteria": [
+        "referência de origem registrada",
+        "resultado não tratado como identidade oficial sem aprovação"
+      ],
+      "required_handoffs": [
+        "character_universe",
+        "character_variations"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "sales_synopsis",
+      "module": "sinopse.py",
+      "name": "Sinopse de Vendas",
+      "mission": "Converter a essência do livro em descrição clara, emocional e fiel, sem promessas enganosas.",
+      "skills": [
+        "copy editorial",
+        "benefit framing",
+        "clareza",
+        "curiosidade",
+        "adequação ao público",
+        "contracapa"
+      ],
+      "quality_criteria": [
+        "não entregar o final desnecessariamente",
+        "lição e público claros",
+        "sem alegações falsas"
+      ],
+      "required_handoffs": [
+        "market_keywords",
+        "marketing_launch",
+        "cover_specialist"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "story_editor",
+      "module": "editor_historia.py",
+      "name": "Editor de História",
+      "mission": "Editar apenas o trecho solicitado preservando continuidade e aprovações anteriores.",
+      "skills": [
+        "edição cena a cena",
+        "clareza infantil",
+        "ritmo",
+        "continuidade",
+        "redução de redundância",
+        "preservação de intenção"
+      ],
+      "quality_criteria": [
+        "escopo da edição respeitado",
+        "nenhuma mudança colateral",
+        "voz e idade preservadas"
+      ],
+      "required_handoffs": [
+        "story_reviewer",
+        "biblical_reference_validator"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado",
+        "trocar versículo sem aprovação explícita"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "story_reviewer",
+      "module": "revisor.py",
+      "name": "Revisor Editorial",
+      "mission": "Revisar história independentemente do Roteirista e devolver problemas rastreáveis por cena.",
+      "skills": [
+        "continuidade",
+        "gramática",
+        "child readability",
+        "read-aloud",
+        "repetição intencional",
+        "densidade por cena",
+        "coerência de arco"
+      ],
+      "quality_criteria": [
+        "notas localizadas",
+        "sem reescrita silenciosa",
+        "aprovação somente quando critérios centrais passam"
+      ],
+      "required_handoffs": [
+        "storyteller",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "storyteller",
+      "module": "roteirista.py",
+      "name": "Roteirista",
+      "mission": "Escrever história infantil memorável, clara, visual e agradável para leitura em voz alta.",
+      "skills": [
+        "storytelling infantil",
+        "gancho inicial",
+        "page-turn structure",
+        "read-aloud rhythm",
+        "arco emocional",
+        "ação visual",
+        "repetição suave",
+        "integração cristã natural",
+        "continuidade de série"
+      ],
+      "quality_criteria": [
+        "gancho nas cenas iniciais",
+        "uma ação visual por cena",
+        "emoções concretas",
+        "progressão curiosidade→desafio→aprendizado→fé→gratidão",
+        "fechamento memorável"
+      ],
+      "required_handoffs": [
+        "story_reviewer",
+        "emotional_color_director",
+        "illustrator"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "theme_curator",
+      "module": "curador_tema.py",
+      "name": "Curador de Tema",
+      "mission": "Transformar uma ideia em emoção, aprendizado cristão e referência bíblica candidata.",
+      "skills": [
+        "curadoria temática",
+        "arco emocional",
+        "valores cristãos",
+        "coerência tema-lição",
+        "referência bíblica candidata"
+      ],
+      "quality_criteria": [
+        "emoção válida",
+        "lição infantil concreta",
+        "referência marcada como candidata até validação"
+      ],
+      "required_handoffs": [
+        "biblical_reference_validator",
+        "storyteller"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado",
+        "afirmar que a referência bíblica está validada sem fonte/contexto aprovados",
+        "fornecer tradução livre de versículo"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    },
+    {
+      "schema": "faithbloom.agent-skills.v1",
+      "role_id": "translator_localizer",
+      "module": "tradutor.py",
+      "name": "Tradutor & Localizador",
+      "mission": "Localizar o livro para idioma e mercado preservando significado, idade, voz, onomatopeias e Bible Guard.",
+      "skills": [
+        "translation",
+        "localization",
+        "child language",
+        "locale variants",
+        "onomatopoeia localization",
+        "glossary consistency",
+        "cultural sensitivity",
+        "Bible Guard"
+      ],
+      "quality_criteria": [
+        "nenhuma omissão/invenção",
+        "nomes protegidos",
+        "naturalidade infantil",
+        "mercado explícito",
+        "versículo protegido"
+      ],
+      "required_handoffs": [
+        "linguistic_reviewer",
+        "audiobook_director"
+      ],
+      "forbidden": [
+        "prometer best-seller, ranking, vendas ou aprovação por plataforma",
+        "inventar evidência de mercado, métricas, fontes ou validação humana",
+        "alterar conteúdo aprovado fora do escopo do agente sem autorização",
+        "tratar sugestão de IA como fato observado",
+        "traduzir texto bíblico livremente"
+      ],
+      "evidence_requirements": [],
+      "execution": "llm"
+    }
+  ]
+}
