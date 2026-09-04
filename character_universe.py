@@ -78,6 +78,12 @@ def carregar_personagem_oficial(pid: str) -> dict:
         obj.setdefault("metadata", {})
         obj["metadata"].setdefault("usos_permitidos", list(USOS_PADRAO))
         obj["metadata"].setdefault("presets", {"figurinos": [], "cenarios": [], "estacoes": [], "festividades": [], "emocoes": []})
+        # Refinamento 22: defaults aditivos mantêm documentos legados válidos.
+        obj["metadata"].setdefault("master_history", [])
+        obj["metadata"].setdefault("current_master_asset_ids", {})
+        obj.setdefault("reference_pack", [])
+        obj.setdefault("color_master", "")
+        obj.setdefault("line_art_master", "")
     return obj
 
 

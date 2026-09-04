@@ -146,6 +146,29 @@ def get_asset(asset_id: str, materialize_file: bool = True) -> dict | None:
     return item
 
 
+def get_asset_by_uri(uri: str, materialize_file: bool = False) -> dict | None:
+    """Resolve referências legadas que guardavam somente a URI/caminho."""
+    if not uri:
+        return None
+    item = next((x for x in _all_assets() if uri in {x.get("storage_uri"), x.get("caminho_arquivo")}), None)
+    # Character Universe materializa fb:// ao carregar. Reconhece o nome
+    # determinístico do cache sem persistir nem baixar novamente o arquivo.
+    if not item and not is_storage_uri(uri):
+        incoming_name = Path(uri).name
+        for candidate in _all_assets():
+            candidate_uri = candidate.get("storage_uri") or ""
+            if not is_storage_uri(candidate_uri):
+                continue
+            storage_path = uri_to_path(candidate_uri)
+            expected = hashlib.sha256(storage_path.encode("utf-8")).hexdigest()[:24] + (Path(storage_path).suffix or ".bin")
+            if incoming_name == expected:
+                item = candidate
+                break
+    if not item:
+        return None
+    return get_asset(item["id"], materialize_file=materialize_file)
+
+
 def _search_blob(item: dict) -> str:
     meta = item.get("metadata") or {}
     values = [
