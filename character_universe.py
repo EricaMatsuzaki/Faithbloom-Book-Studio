@@ -35,6 +35,61 @@ def normalizar_dna(dna: dict | str | None) -> dict:
     return d
 
 
+def _reference_asset_id(ref: dict) -> str:
+    return str((ref.get("metadata") or {}).get("asset_library_id") or ref.get("asset_library_id") or "").strip()
+
+
+def _reference_path(ref: dict) -> str:
+    return str(ref.get("asset") or ref.get("storage_uri") or ref.get("caminho_arquivo") or "").strip()
+
+
+def _merge_reference_data(first: dict, duplicate: dict) -> dict:
+    """Mantém a primeira ocorrência e preenche apenas informação que faltava."""
+    merged = deepcopy(first)
+    for key, value in duplicate.items():
+        if key == "metadata":
+            metadata = dict(merged.get("metadata") or {})
+            for meta_key, meta_value in (value or {}).items():
+                if meta_key not in metadata or metadata[meta_key] in (None, "", [], {}):
+                    metadata[meta_key] = deepcopy(meta_value)
+            merged["metadata"] = metadata
+        elif key not in merged or merged[key] in (None, "", [], {}):
+            merged[key] = deepcopy(value)
+    return merged
+
+
+def deduplicar_reference_pack(reference_pack: list | None) -> list[dict]:
+    """Deduplica vínculos, nunca assets físicos, preservando a primeira ordem.
+
+    ``asset_library_id`` é a identidade principal. O caminho/URI só é usado
+    quando pelo menos uma ocorrência é legada e não possui esse identificador.
+    """
+    unique: list[dict] = []
+    for raw in reference_pack or []:
+        if isinstance(raw, str):
+            ref = {"asset": raw}
+        elif isinstance(raw, dict):
+            ref = deepcopy(raw)
+        else:
+            continue
+        asset_id = _reference_asset_id(ref)
+        path = _reference_path(ref)
+        duplicate_index = None
+        for index, existing in enumerate(unique):
+            existing_id = _reference_asset_id(existing)
+            existing_path = _reference_path(existing)
+            same_id = bool(asset_id and existing_id and asset_id == existing_id)
+            legacy_same_path = bool(path and existing_path and path == existing_path and not (asset_id and existing_id))
+            if same_id or legacy_same_path:
+                duplicate_index = index
+                break
+        if duplicate_index is None:
+            unique.append(ref)
+        else:
+            unique[duplicate_index] = _merge_reference_data(unique[duplicate_index], ref)
+    return unique
+
+
 def criar_personagem_oficial(colecao: str, nome: str, dna: dict, color_master: str = "", line_art_master: str = "", reference_pack: list | None = None, metadata: dict | None = None) -> dict:
     pid = uuid.uuid4().hex
     meta = deepcopy(metadata or {})
@@ -71,13 +126,30 @@ def listar_personagens_oficiais(colecao: str | None = None) -> list[dict]:
 
 
 def carregar_personagem_oficial(pid: str) -> dict:
-    obj = materializar_assets_em_objeto(_json(f"character_universe/{pid}.json", {}) or {})
+    path = f"character_universe/{pid}.json"
+    raw = _json(path, {}) or {}
+    if raw:
+        original_refs = raw.get("reference_pack", [])
+        unique_refs = deduplicar_reference_pack(original_refs)
+        if unique_refs != original_refs:
+            # Repara somente os vínculos duplicados; Masters, histórico e bytes
+            # da Asset Library/storage não são tocados.
+            raw = deepcopy(raw)
+            raw["reference_pack"] = unique_refs
+            _save_json(path, raw)
+    obj = materializar_assets_em_objeto(raw)
     if obj:
         obj["dna"] = normalizar_dna(obj.get("dna"))
         obj.setdefault("variacoes", [])
         obj.setdefault("metadata", {})
         obj["metadata"].setdefault("usos_permitidos", list(USOS_PADRAO))
         obj["metadata"].setdefault("presets", {"figurinos": [], "cenarios": [], "estacoes": [], "festividades": [], "emocoes": []})
+        # Refinamento 22: defaults aditivos mantêm documentos legados válidos.
+        obj["metadata"].setdefault("master_history", [])
+        obj["metadata"].setdefault("current_master_asset_ids", {})
+        obj.setdefault("reference_pack", [])
+        obj.setdefault("color_master", "")
+        obj.setdefault("line_art_master", "")
     return obj
 
 
@@ -158,10 +230,11 @@ def personagem_para_prompt(p: dict, modo: str = "color", variaveis: dict | None 
 
 def adicionar_referencia(pid: str, asset: str, tipo: str = "cena", origem: str = "book_doctor", metadata: dict | None = None) -> dict:
     """Adiciona referência ao pack sem substituir Color/Line Art Master."""
-    p = carregar_personagem_oficial(pid)
+    path = f"character_universe/{pid}.json"
+    p = _json(path, {}) or {}
     if not p:
         raise KeyError(pid)
-    refs = list(p.get("reference_pack", []) or [])
+    refs = deduplicar_reference_pack(p.get("reference_pack", []))
     item = {
         "id": uuid.uuid4().hex,
         "asset": asset,
@@ -170,8 +243,12 @@ def adicionar_referencia(pid: str, asset: str, tipo: str = "cena", origem: str =
         "metadata": metadata or {},
         "criada_em": int(time.time()),
     }
-    refs.append(item)
-    return atualizar_personagem_oficial(pid, {"reference_pack": refs})
+    combined = deduplicar_reference_pack([*refs, item])
+    if combined != p.get("reference_pack", []):
+        # Usa o versionamento normal do Character Universe; nenhum arquivo da
+        # Asset Library é removido ou regravado.
+        return atualizar_personagem_oficial(pid, {"reference_pack": combined})
+    return carregar_personagem_oficial(pid)
 
 
 def definir_master_visual(pid: str, asset: str, modo: str = "color") -> dict:
