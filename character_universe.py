@@ -14,6 +14,37 @@ USOS_PADRAO = ["story", "coloring", "activity", "cover"]
 VARIAVEIS_PADRAO = ["pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios", "cenario", "estacao", "festividade"]
 
 
+def _identidade_referencia(ref: dict) -> tuple[str, str] | None:
+    """Retorna a identidade persistente de uma referência, sem tocar no asset."""
+    if not isinstance(ref, dict):
+        return None
+    metadata = ref.get("metadata") if isinstance(ref.get("metadata"), dict) else {}
+    asset_library_id = metadata.get("asset_library_id") or ref.get("asset_library_id")
+    asset_library_id = str(asset_library_id).strip() if asset_library_id is not None else ""
+    if asset_library_id:
+        return "asset_library_id", asset_library_id
+    for campo in ("asset", "storage_uri", "uri", "caminho_arquivo", "path"):
+        valor = ref.get(campo)
+        if isinstance(valor, str) and valor.strip():
+            return "asset", valor.strip()
+    return None
+
+
+def normalizar_reference_pack(reference_pack: list | None) -> list:
+    """Mantém a primeira ocorrência de cada asset e preserva a ordem do pack."""
+    unicas = []
+    identidades = set()
+    for ref in reference_pack or []:
+        identidade = _identidade_referencia(ref)
+        # Registros sem qualquer identidade não podem ser unidos com segurança.
+        if identidade is not None and identidade in identidades:
+            continue
+        unicas.append(ref)
+        if identidade is not None:
+            identidades.add(identidade)
+    return unicas
+
+
 def _index():
     x = _json(INDEX, [])
     return x if isinstance(x, list) else []
@@ -48,7 +79,7 @@ def criar_personagem_oficial(colecao: str, nome: str, dna: dict, color_master: s
         "dna": normalizar_dna(dna),
         "color_master": color_master,
         "line_art_master": line_art_master,
-        "reference_pack": reference_pack or [],
+        "reference_pack": normalizar_reference_pack(reference_pack),
         "metadata": meta,
         "variacoes": [],
         "versoes": [],
@@ -71,7 +102,16 @@ def listar_personagens_oficiais(colecao: str | None = None) -> list[dict]:
 
 
 def carregar_personagem_oficial(pid: str) -> dict:
-    obj = materializar_assets_em_objeto(_json(f"character_universe/{pid}.json", {}) or {})
+    path = f"character_universe/{pid}.json"
+    persistido = _json(path, {}) or {}
+    if persistido:
+        referencias = normalizar_reference_pack(persistido.get("reference_pack", []))
+        if referencias != persistido.get("reference_pack", []):
+            # Migração não destrutiva: altera apenas o índice lógico de referências.
+            persistido = deepcopy(persistido)
+            persistido["reference_pack"] = referencias
+            _save_json(path, persistido)
+    obj = materializar_assets_em_objeto(persistido)
     if obj:
         obj["dna"] = normalizar_dna(obj.get("dna"))
         obj.setdefault("variacoes", [])
@@ -96,6 +136,8 @@ def atualizar_personagem_oficial(pid: str, novos: dict) -> dict:
     novos = deepcopy(novos)
     if "dna" in novos:
         novos["dna"] = normalizar_dna(novos["dna"])
+    if "reference_pack" in novos:
+        novos["reference_pack"] = normalizar_reference_pack(novos["reference_pack"])
     atual.update(novos)
     atual["atualizado_em"] = int(time.time())
     atual = persistir_assets_em_objeto(atual, f"assets/character_universe/{_slug(atual.get('colecao',''))}/{_slug(atual.get('nome',''))}")
@@ -176,6 +218,8 @@ def adicionar_referencia(pid: str, asset: str, tipo: str = "cena", origem: str =
         "metadata": metadata or {},
         "criada_em": int(time.time()),
     }
+    if _identidade_referencia(item) in {_identidade_referencia(ref) for ref in refs}:
+        return p
     refs.append(item)
     return atualizar_personagem_oficial(pid, {"reference_pack": refs})
 
