@@ -10,7 +10,8 @@ from character_guide import (
     MASTER_STATUS, USAGE_LABELS, VARIATION_STATUS, approve_asset_as_variation,
     build_character_free_prompt, build_neutral_base_prompt, character_identity_summary,
     delete_look, generate_character_variations, generate_scene_assets, list_looks,
-    save_look, suggest_scene_concepts,
+    save_look, suggest_scene_concepts, create_character_guide,
+    update_character_guide, select_gallery_asset,
 )
 from character_universe import carregar_personagem_oficial, listar_personagens_oficiais
 from estilo import aplicar_estilo, hero, section_title
@@ -100,7 +101,7 @@ def _show_result_cards(result_ids: list[str], *, key_prefix: str, allow_master_r
                     st.switch_page("pages/31_🖼️_Asset_Library_Media_Manager.py")
                 if d.button("🗄️ Arquivar", key=f"{key_prefix}_archive_{item['id']}", use_container_width=True):
                     set_archived(item["id"], True)
-                    update_asset(item["id"], visual_status="ARCHIVED", metadata={"visual_status": "ARCHIVED"})
+                    st.success("✅ Asset arquivado. O arquivo e o histórico foram preservados.")
                     st.rerun()
 
                 if allow_master_review and item.get("approved"):
@@ -166,8 +167,46 @@ with tabs[1]:
         "Separe identidade permanente de figurino, acessórios e contexto. Crie uma base neutra e Looks sazonais sem engessar a personagem.",
         "Guide profissional",
     )
-    if not characters:
-        st.info("Crie um personagem oficial no Character Universe primeiro.")
+    st.info("Personagem = identidade canônica. Assets = imagens/referências/variações desse personagem.")
+    action = st.radio("Ação", ["Consultar Guide", "➕ Novo personagem", "✏️ Editar Character Guide atual"], horizontal=True, key="guide_crud_action")
+    editing = action.startswith("✏️") and bool(characters)
+    if action.startswith("➕") or editing:
+        current_edit = None
+        if editing:
+            edit_ids = [x["id"] for x in characters]
+            edit_id = st.selectbox("Personagem para editar", edit_ids, format_func=lambda x: _char_label(char_by_id[x]), key="guide_edit_id")
+            current_edit = carregar_personagem_oficial(edit_id)
+        defaults = (current_edit or {}).get("dna", {}).get("campos_bloqueados", {})
+        with st.form("character_guide_crud_form"):
+            name = st.text_input("Nome", value=(current_edit or {}).get("nome", ""))
+            collection = st.text_input("Coleção", value=(current_edit or {}).get("colecao", ""))
+            c_a, c_b = st.columns(2)
+            species = c_a.text_input("Espécie / tipo", value=defaults.get("especie", ""))
+            eyes = c_b.text_input("Olhos", value=defaults.get("olhos", ""))
+            palette = c_a.text_input("Paleta base / pelagem / pele", value=defaults.get("paleta_base", ""))
+            face = c_b.text_input("Rosto", value=defaults.get("rosto", ""))
+            hair = c_a.text_input("Cabelo (quando aplicável)", value=defaults.get("cabelo", ""))
+            proportions = c_b.text_input("Proporções", value=defaults.get("proporcoes", ""))
+            marks = st.text_input("Marcas permanentes", value=defaults.get("marcas_permanentes", ""))
+            description = st.text_area("Descrição master", value=(current_edit or {}).get("dna", {}).get("descricao_master", ""))
+            controlled_names = ["pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios", "cenario", "estacao", "festividade"]
+            controlled = st.multiselect("Variáveis controladas", controlled_names, default=(current_edit or {}).get("dna", {}).get("variaveis_permitidas", controlled_names))
+            usages = st.multiselect("Usos", list(USAGE_LABELS), default=(current_edit or {}).get("metadata", {}).get("usos_permitidos", list(USAGE_LABELS)), format_func=lambda x: USAGE_LABELS[x])
+            submitted = st.form_submit_button("💾 Salvar Character Guide", type="primary", disabled=not name.strip() or not collection.strip())
+        if submitted:
+            locked = {"especie": species, "olhos": eyes, "paleta_base": palette, "rosto": face, "cabelo": hair, "proporcoes": proportions, "marcas_permanentes": marks}
+            try:
+                if editing:
+                    saved = update_character_guide(edit_id, collection=collection, name=name, locked_identity=locked, description=description, controlled_variables={x: True for x in controlled}, usages=usages)
+                else:
+                    saved = create_character_guide(collection=collection, name=name, locked_identity=locked, description=description, controlled_variables={x: True for x in controlled}, usages=usages)
+                st.session_state["guide_character_id"] = saved["id"]
+                st.success("Character Guide salvo no Character Universe. O personagem já pode receber Looks.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Não foi possível salvar o Character Guide: {exc}")
+    elif not characters:
+        st.info("Use ➕ Novo personagem para cadastrar o primeiro Character Guide.")
     else:
         default_id = st.session_state.get("guide_character_id")
         ids = [p["id"] for p in characters]
@@ -391,11 +430,13 @@ with tabs[4]:
         "Assets, não personagens duplicados",
     )
     all_names = sorted({p.get("nome", "") for p in characters if p.get("nome")})
-    g1, g2, g3 = st.columns(3)
+    g1, g2, g3, g4 = st.columns(4)
     name_filter = g1.selectbox("Personagem", ["Todos", *all_names], key="gallery_person")
     status_filter = g2.selectbox("Status visual", ["Todos", "APPROVED_VARIATION", VARIATION_STATUS, MASTER_STATUS, "COLOR_MASTER", "LINEART_MASTER"], key="gallery_status")
     approved_only = g3.checkbox("✅ Só aprovadas", key="gallery_approved")
+    state_filter = g4.selectbox("Estado", ["Ativos", "Arquivados", "Todos"], key="gallery_state")
     filters = {"media_kind": "image"}
+    filters["status"] = {"Ativos": "active", "Arquivados": "archived", "Todos": ""}[state_filter]
     if name_filter != "Todos":
         filters["q"] = name_filter
     if approved_only:
@@ -419,12 +460,67 @@ with tabs[4]:
                         st.caption(" · ".join(tags[:6]))
                     a, b = st.columns(2)
                     if a.button("👁️ Abrir", key=f"gallery_open_{item['id']}", use_container_width=True):
-                        st.session_state["asset_library_detail"] = item["id"]
-                        st.switch_page("pages/31_🖼️_Asset_Library_Media_Manager.py")
-                    if b.button("🗄️", key=f"gallery_archive_{item['id']}", help="Arquivar", use_container_width=True):
-                        set_archived(item["id"], True)
-                        update_asset(item["id"], visual_status="ARCHIVED", metadata={"visual_status": "ARCHIVED"})
-                        st.rerun()
+                        try:
+                            select_gallery_asset(st.session_state, item["id"])
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Não foi possível abrir o asset: {exc}")
+                    archived = item.get("status") == "archived"
+                    if b.button("♻️" if archived else "🗄️", key=f"gallery_archive_{item['id']}", help="Restaurar" if archived else "Arquivar", use_container_width=True):
+                        try:
+                            set_archived(item["id"], not archived)
+                            st.success("Asset restaurado." if archived else "✅ Asset arquivado. O arquivo e o histórico foram preservados.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Não foi possível {'restaurar' if archived else 'arquivar'} o asset: {exc}")
+
+    detail_id = st.session_state.get("gallery_open_asset_id")
+    detail = get_asset(detail_id) if detail_id else None
+    if detail:
+        st.divider()
+        st.markdown("## 👁️ Detalhes do asset")
+        try:
+            _preview_asset(detail)
+            meta = detail.get("metadata") or {}
+            new_name = st.text_input("Nome", value=detail.get("nome", ""), key=f"gallery_detail_name_{detail_id}")
+            d1, d2, d3 = st.columns(3)
+            d1.code(f"ID: {detail.get('id')}")
+            d2.write(f"**Status visual:** {detail.get('visual_status', meta.get('visual_status', ''))}")
+            d3.write(f"**Aprovado:** {'Sim' if detail.get('approved') else 'Não'}")
+            fields = ["personagem", "personagens", "colecao", "livro", "usage", "usos", "asset_role", "cena", "emocao", "estacao", "figurino", "prompt", "origem"]
+            for field in fields:
+                if meta.get(field) not in (None, "", []):
+                    st.write(f"**{field.replace('_', ' ').title()}:** {meta[field]}")
+            st.write(f"**Tipo:** {detail.get('tipo', '')}")
+            st.write(f"**Tags:** {', '.join(detail.get('tags') or []) or '—'}")
+            if detail.get("visual_status") == "APPROVED_VARIATION":
+                st.success("APPROVED_VARIATION")
+            x1, x2, x3 = st.columns(3)
+            if x1.button("✏️ Renomear", key=f"gallery_detail_rename_{detail_id}"):
+                update_asset(detail_id, nome=new_name.strip() or detail.get("nome"))
+                st.rerun()
+            if detail.get("visual_status") in {VARIATION_STATUS, MASTER_STATUS, "RESTORATION_CANDIDATE"} and x2.button("✅ Aprovar variação", key=f"gallery_detail_approve_{detail_id}"):
+                approve_asset_as_variation(detail_id)
+                st.rerun()
+            if x3.button("🔄 Variar", key=f"gallery_detail_vary_{detail_id}"):
+                st.session_state["guide_variation_base_id"] = detail_id
+                st.info("Asset preparado para a aba Prompt Livre & Variações.")
+            y1, y2, y3 = st.columns(3)
+            if y1.button("🖍️ Criar/encaminhar Line Art", key=f"gallery_detail_line_{detail_id}"):
+                st.session_state["faithbloom_selected_asset_id"] = detail_id
+                st.session_state["faithbloom_selected_asset_path"] = detail.get("caminho_arquivo", "")
+                st.switch_page("pages/20_🖍️_Coloring_Book_Doctor.py")
+            if y2.button("🖼️ Abrir na Asset Library", key=f"gallery_detail_library_{detail_id}"):
+                st.session_state["asset_library_detail"] = detail_id
+                st.session_state["faithbloom_selected_asset_id"] = detail_id
+                st.switch_page("pages/31_🖼️_Asset_Library_Media_Manager.py")
+            archived = detail.get("status") == "archived"
+            if y3.button("♻️ Restaurar" if archived else "🗄️ Arquivar", key=f"gallery_detail_archive_{detail_id}"):
+                set_archived(detail_id, not archived)
+                st.success("Asset restaurado." if archived else "✅ Asset arquivado. O arquivo e o histórico foram preservados.")
+                st.rerun()
+        except Exception as exc:
+            st.error(f"Não foi possível exibir ou atualizar o asset: {exc}")
 
 st.divider()
 st.caption("Regra FaithBloom: gerar ≠ aprovar ≠ promover Master. Uma candidata pode ser aprovada como variação no mesmo asset; Color/Line Art Master só muda por confirmação humana explícita.")
