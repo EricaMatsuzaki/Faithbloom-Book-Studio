@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import mimetypes
 import os
 import time
 import uuid
@@ -118,28 +119,28 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
             ref_sig+=f"|ref:{os.path.basename(ref)}:{st.st_size}:{int(st.st_mtime)}"
     req_id,assinatura,estimativa,inicio=iniciar_requisicao("imagem",MODELO_IMAGEM,prompt+ref_sig)
     try:
-        content=[{"type":"text","text":prompt}]
-        import mimetypes
+        imagens_entrada=[]
         for ref in refs:
             if not ref or not os.path.exists(ref):
                 continue
             with open(ref,"rb") as f:
                 b64_ref=base64.b64encode(f.read()).decode()
             mime=mimetypes.guess_type(ref)[0] or "image/png"
-            content.append({"type":"image_url","image_url":{"url":f"data:{mime};base64,{b64_ref}"}})
-        payload={"model":MODELO_IMAGEM,"messages":[{"role":"user","content":content}],"modalities":["image","text"]}
-        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions",payload,180)
+            imagens_entrada.append(f"data:{mime};base64,{b64_ref}")
+        payload={"model":MODELO_IMAGEM,"prompt":prompt,"response_format":"b64_json"}
+        if imagens_entrada:
+            payload["image"] = imagens_entrada
+        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/images",payload,180)
         dados=_json_resposta(resp)
-        imagens=dados.get("choices",[{}])[0].get("message",{}).get("images",[])
-        if not imagens:
-            raise OpenRouterFaithBloomError("O modelo não retornou imagem nesta chamada. Tente novamente ou revise o modelo selecionado.")
-        url=imagens[0].get("image_url",{}).get("url","")
-        if "," not in url:
-            raise OpenRouterFaithBloomError("Formato de imagem inesperado na resposta do provedor.")
-        b64_imagem=url.split(",",1)[1]
+        imagens=dados.get("data") or []
+        b64_imagem=imagens[0].get("b64_json","") if imagens and isinstance(imagens[0],dict) else ""
+        if not b64_imagem:
+            raise OpenRouterFaithBloomError(
+                "O provedor não retornou uma imagem nesta chamada. Tente novamente ou revise o modelo selecionado."
+            )
         caminho=os.path.join(PASTA_IMAGENS,f"{uuid.uuid4().hex}.png")
         with open(caminho,"wb") as f:
-            f.write(base64.b64decode(b64_imagem))
+            f.write(base64.b64decode(b64_imagem,validate=True))
         finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"sucesso",extrair_custo_reportado(dados))
         return caminho
     except Exception as exc:
