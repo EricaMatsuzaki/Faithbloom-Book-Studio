@@ -9,7 +9,7 @@ from asset_library import get_asset, get_thumbnail, list_assets, set_archived, u
 from character_guide import (
     MASTER_STATUS, USAGE_LABELS, VARIATION_STATUS, approve_asset_as_variation,
     build_character_free_prompt, build_neutral_base_prompt, character_identity_summary,
-    delete_look, generate_character_variations, generate_scene_assets, list_looks,
+    combine_scene_concepts, delete_look, generate_character_variations, generate_scene_assets, list_looks,
     save_look, suggest_scene_concepts, create_character_guide,
     update_character_guide, select_gallery_asset,
 )
@@ -300,13 +300,16 @@ with tabs[2]:
         selected_ids = st.multiselect("Personagens presentes na cena", ids, format_func=lambda x: _char_label(char_by_id[x]), key="scene_characters")
         excerpt = st.text_area("Trecho da história", height=140, placeholder="Ex.: Mel se sentou perto do vaso e cochichou: ‘Sementinha… você já pode sair.’", key="scene_excerpt")
         if st.button("🎬 Gerar 3 ideias de cenário e pose", type="primary", disabled=not selected_ids or not excerpt.strip()):
-            with st.spinner("O Scene Director está criando 3 direções — sem gerar imagens..."):
-                selected_chars = [carregar_personagem_oficial(x) for x in selected_ids]
-                ideas = suggest_scene_concepts(excerpt, selected_chars, count=3)
-            st.session_state["scene_director_ideas"] = ideas
-            st.session_state["scene_director_character_ids"] = selected_ids
-            st.session_state["scene_director_excerpt"] = excerpt
-            st.rerun()
+            try:
+                with st.spinner("O Scene Director está criando 3 direções — sem gerar imagens..."):
+                    selected_chars = [carregar_personagem_oficial(x) for x in selected_ids]
+                    ideas = suggest_scene_concepts(excerpt, selected_chars, count=3)
+                st.session_state["scene_director_ideas"] = ideas
+                st.session_state["scene_director_character_ids"] = selected_ids
+                st.session_state["scene_director_excerpt"] = excerpt
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
 
         ideas = st.session_state.get("scene_director_ideas") or []
         if ideas:
@@ -331,8 +334,14 @@ with tabs[2]:
             option_ids = [idea.get("id") for idea in ideas]
             chosen_id = st.radio("Direção escolhida", option_ids, horizontal=True, key="scene_chosen_idea")
             chosen = deepcopy(next(x for x in ideas if x.get("id") == chosen_id))
-            adjustment = st.text_area("Ajustar / combinar ideias (opcional)", placeholder="Ex.: use o cenário da A, a pose da C e a iluminação da B; mantenha Manu de vestido amarelo.", key="scene_adjustment")
-            st.caption("Você pode combinar elementos das três opções aqui antes de gerar.")
+            if st.checkbox("Combinar elementos das propostas", key="scene_mix"):
+                mix_columns = st.columns(3)
+                sources = [column.selectbox(label, option_ids, index=option_ids.index(chosen_id), key=key)
+                           for column, label, key in zip(mix_columns, ["Cenário", "Pose", "Iluminação"],
+                                                         ["scene_mix_scenario", "scene_mix_pose", "scene_mix_light"])]
+                chosen = combine_scene_concepts(ideas, chosen_id, scenario_id=sources[0], pose_id=sources[1], lighting_id=sources[2])
+                st.write({field: chosen[field] for field in ("cenario", "poses", "iluminacao")})
+            adjustment = st.text_area("Ajustar ideia (opcional)", placeholder="Ex.: mantenha Manu de vestido amarelo.", key="scene_adjustment")
             usage = _usage_selector("scene_usage", "story")
             qty = st.radio("Resultados de imagem", [1, 3], horizontal=True, format_func=lambda n: "1 imagem" if n == 1 else "A/B/C", key="scene_qty")
             base_candidates = list_assets({"media_kind": "image"}, page_size=100).get("items", [])
@@ -340,12 +349,16 @@ with tabs[2]:
             base_map = {x["id"]: x for x in base_candidates}
             base_id = st.selectbox("Variar a partir de uma imagem/cena existente? (opcional)", base_opts, format_func=lambda x: "— Começar pela direção escolhida —" if not x else f"{base_map[x].get('nome')} · {x[:8]}", key="scene_base_asset")
             if st.button("🎨 Gerar imagem da direção escolhida", type="primary", key="scene_generate_image"):
-                current_ids = st.session_state.get("scene_director_character_ids") or selected_ids
-                selected_chars = [carregar_personagem_oficial(x) for x in current_ids]
-                with st.spinner("Gerando somente agora, com Identity Lock dos personagens..."):
-                    results = generate_scene_assets(chosen, selected_chars, quantity=qty, usage=usage, adjustment=adjustment, base_asset_id=base_id, story_excerpt=st.session_state.get("scene_director_excerpt", excerpt))
-                st.session_state["scene_generated_results"] = [x["id"] for x in results]
-                st.rerun()
+                try:
+                    current_ids = st.session_state.get("scene_director_character_ids") or selected_ids
+                    selected_chars = [carregar_personagem_oficial(x) for x in current_ids]
+                    with st.spinner("Gerando somente agora, com Identity Lock dos personagens..."):
+                        results = generate_scene_assets(chosen, selected_chars, quantity=qty, usage=usage, adjustment=adjustment, base_asset_id=base_id, story_excerpt=st.session_state.get("scene_director_excerpt", excerpt))
+                    st.session_state["scene_generated_results"] = [x["id"] for x in results]
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+
             _show_result_cards(st.session_state.get("scene_generated_results", []), key_prefix="scene")
 
 with tabs[3]:
@@ -401,26 +414,30 @@ with tabs[3]:
                 look_name = st.text_input("Nome do novo Look", placeholder="Primavera — Jardim", key="free_look_name")
 
         if st.button("✨ Gerar variação com Identity Lock", type="primary", disabled=not selected_chars or not request.strip(), key="free_generate"):
-            variables = {"pose": pose, "emocao": emotion, "estacao": season, "figurino": outfit, "acessorios_temporarios": accessories, "cenario": scenario}
-            if len(selected_chars) == 1:
-                p = selected_chars[0]
-                prompt = build_character_free_prompt(p, request, usage=usage, variables=variables, look=chosen_look)
-                if save_as_look and look_name.strip():
-                    save_look(p["id"], look_name.strip(), figurino=outfit or (chosen_look or {}).get("figurino",""), acessorios_temporarios=accessories or (chosen_look or {}).get("acessorios_temporarios",""), estacao=season or (chosen_look or {}).get("estacao",""), cenario=scenario or (chosen_look or {}).get("cenario",""), emocao=emotion or (chosen_look or {}).get("emocao",""), usos=[usage])
-                with st.spinner("Gerando variação sem perder a identidade..."):
-                    results = generate_character_variations(p, prompt, quantity=qty, usage=usage, base_asset_id=base_id, metadata={"free_request": request, **variables})
-            else:
-                concept = {
-                    "id": "FREE", "titulo": "Prompt livre", "cenario": scenario, "acao": request,
-                    "poses": {p.get("nome", ""): pose for p in selected_chars}, "emocao": emotion,
-                    "psicologia_cores": "Aplicar psicologia das cores coerente com a emoção, sem alterar cores canônicas dos personagens.",
-                    "iluminacao": "", "camera": "", "figurino_acessorios": f"Figurino: {outfit}. Acessórios: {accessories}. Estação/tema: {season}.", "objetos": "",
-                }
-                with st.spinner("Gerando cena multi-personagem com todos os Identity Locks..."):
-                    results = generate_scene_assets(concept, selected_chars, quantity=qty, usage=usage, base_asset_id=base_id)
-            st.session_state["free_generated_results"] = [x["id"] for x in results]
-            st.session_state.pop("guide_variation_base_id", None)
-            st.rerun()
+            try:
+                variables = {"pose": pose, "emocao": emotion, "estacao": season, "figurino": outfit, "acessorios_temporarios": accessories, "cenario": scenario}
+                if len(selected_chars) == 1:
+                    p = selected_chars[0]
+                    prompt = build_character_free_prompt(p, request, usage=usage, variables=variables, look=chosen_look)
+                    if save_as_look and look_name.strip():
+                        save_look(p["id"], look_name.strip(), figurino=outfit or (chosen_look or {}).get("figurino",""), acessorios_temporarios=accessories or (chosen_look or {}).get("acessorios_temporarios",""), estacao=season or (chosen_look or {}).get("estacao",""), cenario=scenario or (chosen_look or {}).get("cenario",""), emocao=emotion or (chosen_look or {}).get("emocao",""), usos=[usage])
+                    with st.spinner("Gerando variação sem perder a identidade..."):
+                        results = generate_character_variations(p, prompt, quantity=qty, usage=usage, base_asset_id=base_id, metadata={"free_request": request, **variables})
+                else:
+                    concept = {
+                        "id": "FREE", "titulo": "Prompt livre", "cenario": scenario, "acao": request,
+                        "poses": {p.get("nome", ""): pose for p in selected_chars}, "emocao": emotion,
+                        "psicologia_cores": "Aplicar psicologia das cores coerente com a emoção, sem alterar cores canônicas dos personagens.",
+                        "iluminacao": "", "camera": "", "figurino_acessorios": f"Figurino: {outfit}. Acessórios: {accessories}. Estação/tema: {season}.", "objetos": "",
+                    }
+                    with st.spinner("Gerando cena multi-personagem com todos os Identity Locks..."):
+                        results = generate_scene_assets(concept, selected_chars, quantity=qty, usage=usage, base_asset_id=base_id)
+                st.session_state["free_generated_results"] = [x["id"] for x in results]
+                st.session_state.pop("guide_variation_base_id", None)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+
         _show_result_cards(st.session_state.get("free_generated_results", []), key_prefix="free")
 
 with tabs[4]:
@@ -441,10 +458,23 @@ with tabs[4]:
         filters["q"] = name_filter
     if approved_only:
         filters["approved"] = True
-    result = list_assets(filters, page_size=72)
-    items = result.get("items", [])
     if status_filter != "Todos":
-        items = [x for x in items if x.get("visual_status") == status_filter]
+        filters["visual_status"] = status_filter
+    signature = repr(sorted(filters.items()))
+    if st.session_state.get("gallery_filter_signature") != signature:
+        st.session_state["gallery_page"] = 1
+        st.session_state["gallery_filter_signature"] = signature
+    result = list_assets(filters, page=st.session_state.get("gallery_page", 1), page_size=72)
+    st.session_state["gallery_page"] = result["page"]
+    previous, counter, following = st.columns(3)
+    if previous.button("← Anterior", disabled=result["page"] <= 1):
+        st.session_state["gallery_page"] = result["page"] - 1
+        st.rerun()
+    counter.caption(f"Página {result['page']} de {result['pages']} · {result['total']} imagens")
+    if following.button("Próxima →", disabled=result["page"] >= result["pages"]):
+        st.session_state["gallery_page"] = result["page"] + 1
+        st.rerun()
+    items = result.get("items", [])
     if not items:
         st.info("Nenhum asset corresponde aos filtros.")
     else:

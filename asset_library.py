@@ -214,6 +214,8 @@ def _matches(item: dict, filters: dict) -> bool:
         return False
     if filters.get("status") and item.get("status") != filters["status"]:
         return False
+    if filters.get("visual_status") and (item.get("visual_status") or meta.get("visual_status")) != filters["visual_status"]:
+        return False
     if filters.get("approved") is True and not item.get("approved"):
         return False
     if filters.get("master_role") and filters["master_role"] not in item.get("master_roles", []):

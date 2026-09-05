@@ -127,7 +127,7 @@ def verificar_natal() -> list[dict]:
 
 def rodar_unit_tests() -> dict:
     proc = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        [sys.executable, "-m", "pytest", "tests", "-q"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -142,7 +142,7 @@ def verificar_tests() -> list[dict]:
     try:
         r = rodar_unit_tests()
         linhas = [x.strip() for x in r["saida"].splitlines() if x.strip()]
-        resumo = next((x for x in reversed(linhas) if x.startswith("Ran ")), "testes executados")
+        resumo = next((x for x in reversed(linhas) if "passed" in x or "failed" in x), "testes executados")
         return [_item("Testes automatizados", r["ok"], resumo if r["ok"] else r["saida"][-1200:])]
     except Exception as exc:
         return [_item("Testes automatizados", False, f"{type(exc).__name__}: {exc}")]
