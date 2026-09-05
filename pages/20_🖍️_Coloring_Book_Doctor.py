@@ -32,6 +32,40 @@ hero(
 )
 st.info("🔒 Diagnosticar primeiro, corrigir depois. Nenhum lote é alterado automaticamente e nenhuma versão original é sobrescrita.")
 
+# A selected gallery image can be converted without importing a book.
+selected_id = st.session_state.get("faithbloom_selected_asset_id")
+if selected_id:
+    from asset_library import get_asset
+    from character_guide import generate_asset_line_art, approve_asset_as_variation
+    selected = get_asset(selected_id)
+    if selected:
+        st.subheader("Criar Line Art da imagem selecionada")
+        st.image(selected["caminho_arquivo"], caption=selected.get("nome"), use_container_width=True)
+        st.caption("A geração usa créditos de IA e salva uma nova candidata. Revise antes de aprovar.")
+        if st.button("Gerar candidata a Line Art", key="selected_line_generate"):
+            try:
+                with st.spinner("Criando desenho para colorir..."):
+                    result = generate_asset_line_art(selected_id)
+                st.session_state[f"line_result_{selected_id}"] = result["id"]
+            except Exception as exc:
+                st.error(str(exc))
+        result_id = st.session_state.get(f"line_result_{selected_id}")
+        result = get_asset(result_id) if result_id else None
+        if result:
+            st.image(result["caminho_arquivo"], caption=result.get("nome"), use_container_width=True)
+            if result.get("approved"):
+                st.success("Line Art aprovada como variação.")
+            elif st.button("Aprovar Line Art como variação", key="selected_line_approve"):
+                approve_asset_as_variation(result_id)
+                st.rerun()
+    else:
+        st.warning("A imagem selecionada não foi encontrada. Selecione novamente na galeria.")
+    if st.button("Voltar aos projetos Coloring Book"):
+        st.session_state.pop("faithbloom_selected_asset_id", None)
+        st.session_state.pop("faithbloom_selected_asset_path", None)
+        st.rerun()
+    st.stop()
+
 projetos = [p for p in listar_projetos() if p.get("tipo_projeto") == "coloring"]
 if not projetos:
     st.warning("Ainda não existe um projeto Book Doctor do tipo Coloring / Line Art.")

@@ -47,6 +47,9 @@ def test_scene_ideas_normalize_three_concepts():
         {"id": "B", "titulo": "Cinematográfica", "cenario": "jardim ao amanhecer", "pose": "deitada"},
         {"id": "C", "titulo": "Humor", "cenario": "canteiro", "pose": "Téo escutando junto"},
     ]}
+    for idea in raw["ideas"]:
+        for field in ("acao", "emocao", "psicologia_cores", "iluminacao", "camera"):
+            idea.setdefault(field, "detalhe visual")
     ideas = guide._normalize_scene_ideas(raw, 3)
     assert [x["id"] for x in ideas] == ["A", "B", "C"]
     assert ideas[0]["poses"]["Mel"] == "ajoelhada"

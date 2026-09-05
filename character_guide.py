@@ -42,8 +42,6 @@ USAGE_LABELS = {
     "printable": "🖨️ Printable",
 }
 
-USAGE_CONTEXT_FALLBACK = {"marketing": "cover", "printable": "activity"}
-
 NO_GENERATED_TEXT_INSTRUCTION = (
     "TEXT POLICY: NO_GENERATED_TEXT. Generate artwork with zero text, letters, words, titles, subtitles, logos, "
     "captions, speech bubbles, watermarks, or readable/pseudo-readable decorative typography. REFERENCE IMAGES MAY "
@@ -174,15 +172,11 @@ def character_reference_paths(character: dict, limit: int = 8) -> list[str]:
 
 
 def _context_for(character: dict, usage: str) -> str:
-    allowed = list((character.get("metadata") or {}).get("usos_permitidos") or [])
-    if usage in allowed:
-        return usage
-    fallback = USAGE_CONTEXT_FALLBACK.get(usage)
-    if fallback and fallback in allowed:
-        return fallback
-    if "story" in allowed:
-        return "story"
-    return allowed[0] if allowed else "story"
+    from character_universe import USOS_PADRAO
+    allowed = (character.get("metadata") or {}).get("usos_permitidos", USOS_PADRAO)
+    if usage not in USAGE_LABELS or usage not in (allowed or []):
+        raise ValueError(f"{character.get('nome', 'Personagem')} não está autorizado para o uso '{usage}'.")
+    return usage
 
 
 def _identity_block(character: dict, variables: dict | None, usage: str) -> str:
@@ -261,7 +255,15 @@ def _normalize_scene_ideas(raw: Any, count: int = 3) -> list[dict]:
             "objetos": str(idea.get("objetos") or idea.get("props") or ""),
             "por_que_funciona": str(idea.get("por_que_funciona") or idea.get("why") or ""),
         })
-    if len(normalized) < count:
+    required = ("cenario", "acao", "emocao", "psicologia_cores", "iluminacao", "camera")
+    for idea in normalized:
+        if any(not idea[field].strip() for field in required) or not idea["poses"] or any(
+            not isinstance(pose, str) or not pose.strip() for pose in idea["poses"].values()
+        ):
+            raise ValueError("O Scene Director retornou uma ideia incompleta. Tente novamente.")
+    if len({idea["id"] for idea in normalized}) != len(normalized):
+        raise ValueError("O Scene Director retornou identificadores repetidos. Tente novamente.")
+    if len(normalized) != count:
         raise ValueError("O Scene Director não retornou 3 ideias completas. Tente novamente.")
     return normalized[:count]
 
@@ -299,6 +301,15 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
     return _normalize_scene_ideas(raw, count=count)
 
 
+def combine_scene_concepts(ideas: list[dict], chosen_id: str, *, scenario_id: str, pose_id: str, lighting_id: str) -> dict:
+    by_id = {idea["id"]: idea for idea in ideas}
+    result = deepcopy(by_id[chosen_id])
+    for field, source in (("cenario", scenario_id), ("poses", pose_id), ("iluminacao", lighting_id)):
+        result[field] = deepcopy(by_id[source][field])
+    result["combined_sources"] = {"cenario": scenario_id, "poses": pose_id, "iluminacao": lighting_id}
+    return result
+
+
 def compose_scene_prompt(concept: dict, characters: list[dict], *, usage: str = "story", adjustment: str = "") -> str:
     if not characters:
         raise ValueError("Selecione ao menos um personagem.")
@@ -326,7 +337,7 @@ def create_character_guide(*, collection: str, name: str, locked_identity: dict,
         "campos_bloqueados": {k: str(v).strip() for k, v in locked_identity.items() if str(v).strip()},
         "variaveis_permitidas": list((controlled_variables or {}).keys()) or ["pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios", "cenario", "estacao", "festividade"],
     }
-    return criar_personagem_oficial(collection.strip(), name.strip(), dna, metadata={"usos_permitidos": usages or list(USAGE_LABELS)})
+    return criar_personagem_oficial(collection.strip(), name.strip(), dna, metadata={"usos_permitidos": list(USAGE_LABELS) if usages is None else usages})
 
 
 def update_character_guide(character_id: str, *, collection: str, name: str, locked_identity: dict, description: str = "", controlled_variables: dict | None = None, usages: list[str] | None = None) -> dict:
@@ -340,7 +351,7 @@ def update_character_guide(character_id: str, *, collection: str, name: str, loc
         "variaveis_permitidas": list((controlled_variables or {}).keys()) or dna.get("variaveis_permitidas", []),
     })
     meta = deepcopy(current.get("metadata") or {})
-    meta["usos_permitidos"] = usages or meta.get("usos_permitidos", list(USAGE_LABELS))
+    meta["usos_permitidos"] = meta.get("usos_permitidos", list(USAGE_LABELS)) if usages is None else usages
     return atualizar_personagem_oficial(character_id, {"colecao": collection.strip(), "nome": name.strip(), "dna": dna, "metadata": meta})
 
 
@@ -371,6 +382,7 @@ def _persist_generated(path: str, *, name: str, characters: list[dict], prompt: 
 
 
 def generate_character_variations(character: dict, prompt: str, *, quantity: int = 1, usage: str = "story", base_asset_id: str = "", neutral_base: bool = False, metadata: dict | None = None) -> list[dict]:
+    _context_for(character, usage)
     quantity = 3 if int(quantity) == 3 else 1
     base_asset = get_asset(base_asset_id) if base_asset_id else None
     base_path = (base_asset or {}).get("caminho_arquivo") or ""
@@ -421,3 +433,26 @@ def approve_asset_as_variation(asset_id: str) -> dict:
     if asset.get("visual_status") not in {VARIATION_STATUS, MASTER_STATUS, "RESTORATION_CANDIDATE"}:
         raise ValueError("Somente uma candidata visual pode ser aprovada como variação.")
     return update_asset(asset_id, approved=True, visual_status="APPROVED_VARIATION", metadata={"visual_status": "APPROVED_VARIATION", "approved_at": _now(), "approval": "human"})
+
+
+def generate_asset_line_art(asset_id: str) -> dict:
+    """Create an unapproved derivative of the selected asset; never replace its source."""
+    from pathlib import Path
+    asset = get_asset(asset_id)
+    if not asset or not Path(asset.get("caminho_arquivo") or "").is_file():
+        raise ValueError("A imagem selecionada não está disponível. Selecione-a novamente na galeria.")
+    prompt = (
+        "Converta a imagem fornecida em desenho para colorir: contornos pretos limpos em fundo branco, "
+        "sem cores, preenchimentos, sombras ou cinzas. Preserve exatamente personagens, proporções, "
+        "expressões, poses, objetos e composição. Não acrescente elementos. " + artwork_text_policy("coloring")
+    )
+    path = gerar_imagem(prompt, imagem_base=asset["caminho_arquivo"])
+    return _persist_generated(
+        path, name=f"{asset.get('nome', 'Imagem')} — Line Art", characters=[], prompt=prompt,
+        visual_status=VARIATION_STATUS, usage="coloring", label="Line Art", origin="selected_asset_line_art",
+        base_asset_id=asset_id, metadata={
+            **{key: value for key, value in (asset.get("metadata") or {}).items()
+               if key in {"personagem", "personagens", "colecao", "livro", "character_ids"}},
+            "transformation": "line_art", "asset_role": "line_art",
+        },
+    )
