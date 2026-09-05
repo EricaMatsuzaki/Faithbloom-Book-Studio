@@ -1,0 +1,19 @@
+{
+  "refinamento": 23,
+  "correcao": "Character Guide / Galeria / politica de texto em imagens",
+  "branch_base": "release/2.0.0-rc5-skills",
+  "base_commit": "9cc3de8b251d8cffcb970be0874b0000772ec841",
+  "text_policy": "NO_GENERATED_TEXT",
+  "storage_architecture": "Character Universe + Asset Library (fonte unica)",
+  "tests": {"command": "PYTHONPATH=. pytest -q", "passed": 247, "skipped": 1, "failed": 0},
+  "regressions_covered": [
+    "prompts sem texto gerado", "filtro de referencias com texto/capa",
+    "cover art com espaco editorial", "detalhe inline da galeria",
+    "arquivamento e restauracao atomicos", "cadastro e edicao canonicos",
+    "Looks apos edicao", "aprovacao in-place sem promocao a Master"
+  ],
+  "protected_configuration_changed": false,
+  "main_changed": false,
+  "secrets_changed": false,
+  "deployment_changed": false
+}

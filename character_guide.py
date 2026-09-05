@@ -17,10 +17,11 @@ from copy import deepcopy
 from typing import Any
 
 from armazenamento import salvar_na_galeria
-from asset_library import create_version, get_asset, update_asset
+from asset_library import create_version, get_asset, get_asset_by_uri, update_asset
 from character_universe import (
     atualizar_personagem_oficial,
     carregar_personagem_oficial,
+    criar_personagem_oficial,
     normalizar_dna,
     personagem_para_prompt,
 )
@@ -28,6 +29,7 @@ from openrouter_client import chamar_llm, gerar_imagem
 from storage_backend import is_storage_uri, materializar, persistir_arquivo
 
 GUIDE_VERSION = 1
+TEXT_POLICY = "NO_GENERATED_TEXT"
 VARIATION_STATUS = "VARIATION_CANDIDATE"
 MASTER_STATUS = "MASTER_CANDIDATE"
 
@@ -41,6 +43,13 @@ USAGE_LABELS = {
 }
 
 USAGE_CONTEXT_FALLBACK = {"marketing": "cover", "printable": "activity"}
+
+NO_GENERATED_TEXT_INSTRUCTION = (
+    "TEXT POLICY: NO_GENERATED_TEXT. Generate artwork with zero text, letters, words, titles, subtitles, logos, "
+    "captions, speech bubbles, watermarks, or readable/pseudo-readable decorative typography. REFERENCE IMAGES MAY "
+    "CONTAIN TYPOGRAPHY OR BOOK TITLES. Use them ONLY for character/style/visual identity. DO NOT copy, imitate, "
+    "reproduce or invent any letters, words, titles, logos or typography visible in reference images."
+)
 
 
 def _now() -> int:
@@ -124,20 +133,40 @@ def _materialize_if_possible(value: str) -> str:
     return ""
 
 
+def _reference_path_and_metadata(ref: dict | str) -> tuple[str, dict]:
+    if isinstance(ref, str):
+        value, ref_meta, aid = ref, {}, ""
+    else:
+        ref_meta = dict(ref.get("metadata") or {})
+        aid = str(ref_meta.get("asset_library_id") or ref.get("asset_library_id") or "")
+        value = str(ref.get("asset") or ref.get("storage_uri") or ref.get("caminho_arquivo") or "")
+    asset = get_asset(aid) if aid else get_asset_by_uri(value)
+    meta = {**((asset or {}).get("metadata") or {}), **ref_meta}
+    if asset:
+        value = str(asset.get("caminho_arquivo") or value)
+        meta.setdefault("tipo", asset.get("tipo", ""))
+        meta.setdefault("asset_role", (asset.get("metadata") or {}).get("asset_role", ""))
+    return _materialize_if_possible(value), meta
+
+
+def _safe_identity_reference(meta: dict) -> bool:
+    explicit = bool(meta.get("allow_identity_reference")) or meta.get("reference_purpose") == "identity_explicit"
+    text_bearing = bool(meta.get("contains_text"))
+    cover_like = meta.get("asset_role") == "cover_art" or meta.get("usage") == "cover" or meta.get("tipo") in {"cover", "capa"}
+    return explicit or not (text_bearing or cover_like)
+
+
 def character_reference_paths(character: dict, limit: int = 8) -> list[str]:
-    out: list[str] = []
-    color_master = _materialize_if_possible(str(character.get("color_master") or ""))
-    if color_master:
-        out.append(color_master)
+    """Prioriza referências limpas e nunca usa capa/texto sem opt-in explícito."""
+    candidates: list[tuple[str, dict]] = []
+    if character.get("color_master"):
+        candidates.append(_reference_path_and_metadata(str(character["color_master"])))
     for ref in character.get("reference_pack") or []:
         aid = (ref.get("metadata") or {}).get("asset_library_id") or ref.get("asset_library_id")
-        path = ""
-        if aid:
-            asset = get_asset(str(aid))
-            path = (asset or {}).get("caminho_arquivo") or ""
-        if not path:
-            path = _materialize_if_possible(str(ref.get("asset") or ref.get("storage_uri") or ref.get("caminho_arquivo") or ""))
-        if path and path not in out:
+        candidates.append(_reference_path_and_metadata({**ref, "asset_library_id": aid or ref.get("asset_library_id")}))
+    out: list[str] = []
+    for path, meta in candidates:
+        if path and _safe_identity_reference(meta) and path not in out:
             out.append(path)
         if len(out) >= limit:
             break
@@ -160,7 +189,17 @@ def _identity_block(character: dict, variables: dict | None, usage: str) -> str:
     return personagem_para_prompt(character, modo="color", variaveis=variables or {}, contexto=_context_for(character, usage))
 
 
-def build_character_free_prompt(character: dict, request: str, *, usage: str = "story", variables: dict | None = None, look: dict | None = None, neutral_base: bool = False) -> str:
+def artwork_text_policy(usage: str = "story", reserve_title_space: str = "none") -> str:
+    policy = NO_GENERATED_TEXT_INSTRUCTION
+    if usage == "cover":
+        position = reserve_title_space if reserve_title_space in {"top", "center", "bottom"} else "none"
+        policy += f" COVER ART ONLY; never render the book title. reserve_title_space={position}."
+        if position != "none":
+            policy += f" Leave intentional negative space at the {position} for later editorial typography."
+    return policy
+
+
+def build_character_free_prompt(character: dict, request: str, *, usage: str = "story", variables: dict | None = None, look: dict | None = None, neutral_base: bool = False, reserve_title_space: str = "none") -> str:
     request = str(request or "").strip()
     merged = {k: v for k, v in (look or {}).items() if k in {"figurino", "acessorios_temporarios", "estacao", "festividade", "emocao", "cenario"} and v not in (None, "")}
     merged.update({k: v for k, v in (variables or {}).items() if v not in (None, "")})
@@ -180,7 +219,14 @@ def build_character_free_prompt(character: dict, request: str, *, usage: str = "
             f"PEDIDO LIVRE DA AUTORA: {request or 'Crie uma variação coerente e reutilizável.'} "
             "Altere somente o que foi explicitamente pedido/autorizado. Sem texto, letras, balões ou marcas d'água."
         )
-    return f"{identity}\n{color_rule}\n{direction}\nUso pretendido: {USAGE_LABELS.get(usage, usage)}."
+    cover_rule = ""
+    if usage == "cover":
+        position = reserve_title_space if reserve_title_space in {"top", "center", "bottom"} else "none"
+        cover_rule = (
+            f"\nCAPA: gere somente COVER ART, sem título. reserve_title_space={position}. "
+            + (f"Reserve espaço negativo na região {position} para tipografia editorial aplicada depois." if position != "none" else "Não renderize tipografia; o título será aplicado pelo pipeline editorial.")
+        )
+    return f"{identity}\n{color_rule}\n{direction}\n{artwork_text_policy(usage, reserve_title_space)}\nUso pretendido: {USAGE_LABELS.get(usage, usage)}.{cover_rule}"
 
 
 def build_neutral_base_prompt(character: dict) -> str:
@@ -235,7 +281,7 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
         "Receba um trecho de história e personagens oficiais. Proponha exatamente 3 direções visuais DISTINTAS. Não gere imagens. "
         "Não altere o Character DNA. A psicologia das cores deve reforçar emoção, mas nunca recolorir identidade canônica. "
         "As ideias devem ser práticas para ilustração editorial, com composição clara, movimento, leitura visual infantil e reaproveitamento futuro. "
-        "Responda apenas JSON válido."
+        f"Responda apenas JSON válido. Toda direção deve respeitar {TEXT_POLICY}: nenhuma tipografia na arte."
     )
     instruction = {
         "trecho": excerpt,
@@ -269,8 +315,39 @@ def compose_scene_prompt(concept: dict, characters: list[dict], *, usage: str = 
         f"Figurino/acessórios: {concept.get('figurino_acessorios','')}\nObjetos essenciais: {concept.get('objetos','')}\n"
         f"Ajuste adicional da autora: {adjustment.strip() or 'nenhum'}\n"
         "REGRAS: preserve rigorosamente a identidade de TODOS os personagens. A psicologia das cores atua no ambiente/iluminação "
-        "e não altera olhos, cabelo, pele/pelagem ou marcas canônicas. Sem texto, letras, balões, logotipos ou marcas d'água."
+        f"e não altera olhos, cabelo, pele/pelagem ou marcas canônicas. {artwork_text_policy(usage)}"
     )
+
+
+def create_character_guide(*, collection: str, name: str, locked_identity: dict, description: str = "", controlled_variables: dict | None = None, usages: list[str] | None = None) -> dict:
+    """Cria a entidade canônica no Character Universe (assets não são personagens)."""
+    dna = {
+        "descricao_master": str(description or "").strip(),
+        "campos_bloqueados": {k: str(v).strip() for k, v in locked_identity.items() if str(v).strip()},
+        "variaveis_permitidas": list((controlled_variables or {}).keys()) or ["pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios", "cenario", "estacao", "festividade"],
+    }
+    return criar_personagem_oficial(collection.strip(), name.strip(), dna, metadata={"usos_permitidos": usages or list(USAGE_LABELS)})
+
+
+def update_character_guide(character_id: str, *, collection: str, name: str, locked_identity: dict, description: str = "", controlled_variables: dict | None = None, usages: list[str] | None = None) -> dict:
+    current = carregar_personagem_oficial(character_id)
+    if not current:
+        raise KeyError(character_id)
+    dna = normalizar_dna(current.get("dna"))
+    dna.update({
+        "descricao_master": str(description or "").strip(),
+        "campos_bloqueados": {k: str(v).strip() for k, v in locked_identity.items() if str(v).strip()},
+        "variaveis_permitidas": list((controlled_variables or {}).keys()) or dna.get("variaveis_permitidas", []),
+    })
+    meta = deepcopy(current.get("metadata") or {})
+    meta["usos_permitidos"] = usages or meta.get("usos_permitidos", list(USAGE_LABELS))
+    return atualizar_personagem_oficial(character_id, {"colecao": collection.strip(), "nome": name.strip(), "dna": dna, "metadata": meta})
+
+
+def select_gallery_asset(state: Any, asset_id: str) -> str:
+    """Seleciona o detalhe inline sem exigir navegação entre páginas."""
+    state["gallery_open_asset_id"] = asset_id
+    return asset_id
 
 
 def _persist_generated(path: str, *, name: str, characters: list[dict], prompt: str, visual_status: str, usage: str, label: str, origin: str, base_asset_id: str = "", metadata: dict | None = None) -> dict:
@@ -279,7 +356,9 @@ def _persist_generated(path: str, *, name: str, characters: list[dict], prompt: 
     meta = {
         "personagem": names[0] if len(names) == 1 else ("Cena multi-personagem" if names else ""),
         "personagens": names, "colecao": collection, "origem": origin, "prompt": prompt,
-        "visual_status": visual_status, "usage": usage, "guide_version": GUIDE_VERSION, **(metadata or {}),
+        "visual_status": visual_status, "usage": usage, "usos": [usage], "scope": "reusable",
+        "asset_role": "cover_art" if usage == "cover" else ("scene" if len(names) != 1 else "character_reference"),
+        "contains_text": False, "text_policy": TEXT_POLICY, "guide_version": GUIDE_VERSION, **(metadata or {}),
     }
     tags = [x for x in [*names, collection, visual_status, usage, "character-guide"] if x]
     base = get_asset(base_asset_id, materialize_file=False) if base_asset_id else None
@@ -298,7 +377,7 @@ def generate_character_variations(character: dict, prompt: str, *, quantity: int
     refs = [x for x in character_reference_paths(character) if x != base_path]
     results = []
     for label in ["A", "B", "C"][:quantity]:
-        p = prompt + f"\nVariação {label}: composição independente, mantendo o mesmo Character DNA."
+        p = prompt + f"\n{artwork_text_policy(usage)}\nVariação {label}: composição independente, mantendo o mesmo Character DNA."
         generated = gerar_imagem(p, imagem_base=base_path or None, imagens_referencia=refs)
         results.append(_persist_generated(
             generated, name=f"{character.get('nome','Personagem')} — {'Base neutra' if neutral_base else 'Variação'} {label}",

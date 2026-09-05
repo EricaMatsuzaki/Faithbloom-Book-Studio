@@ -33,3 +33,13 @@ O refinamento reutiliza a infraestrutura existente:
 - OpenRouter para LLM de texto e geração de imagem.
 
 Nenhum Secret, configuração de deploy ou branch `main` é alterado por este refinamento.
+
+## Correção de regressão — política de texto, galeria e cadastro no Guide
+
+Esta correção mantém Character Universe como entidade canônica e Asset Library como catálogo único das representações visuais. Não há armazenamento paralelo.
+
+- `TEXT_POLICY = "NO_GENERATED_TEXT"` é injetada em Base Neutra, Prompt Livre, Scene Director e variações. Referências com `contains_text=true`, papel `cover_art` ou tipo capa não são usadas automaticamente para identidade; opt-in explícito continua possível.
+- Para `usage=cover`, o modelo cria apenas **cover art**. `reserve_title_space` (`none`, `top`, `center`, `bottom`) prepara espaço negativo; a tipografia real continua no pipeline editorial de capas.
+- `👁️ Abrir` apresenta detalhes na própria Galeria por `gallery_open_asset_id`. Arquivar/restaurar usa uma gravação atômica e mantém arquivo, ID, parent e version group.
+- A aba Character Guide cadastra e edita pela API canônica de `character_universe.py`; uma edição mantém ID, histórico e Looks.
+- A normalização de assets adiciona, sem invalidar registros antigos, `usage/usos`, `scope`, `asset_role` e `contains_text`.
