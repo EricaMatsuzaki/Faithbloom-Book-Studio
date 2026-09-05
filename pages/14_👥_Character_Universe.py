@@ -8,6 +8,7 @@ from character_universe import (
     adicionar_referencia
 )
 from asset_library import get_asset, get_thumbnail, list_assets
+from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
 from openrouter_client import gerar_imagem
 from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
 from visual_master_manager import (
@@ -94,12 +95,17 @@ for item in itens:
 
         library = list_assets({'media_kind': 'image'}, page_size=100).get('items', [])
         with st.expander('🖼️ Escolher da Asset Library'):
-            options = {f"{a.get('nome')} · {a.get('visual_status', 'asset')}": a for a in library}
-            chosen_label = st.selectbox('Imagem', ['—'] + list(options), key=f"libpick_{p['id']}")
-            if chosen_label != '—':
-                chosen = options[chosen_label]
+            options = assets_by_id(library)
+            chosen_id = st.selectbox(
+                'Imagem', [''] + list(options),
+                format_func=lambda aid: '—' if not aid else asset_option_label(options[aid]),
+                key=f"libpick_{p['id']}",
+            )
+            if chosen_id:
+                chosen = options[chosen_id]
                 thumb = get_thumbnail(chosen['id'])
                 if thumb: st.image(thumb, width=240)
+                st.caption(asset_preview_details(chosen))
                 if st.button('Adicionar como referência', key=f"pickref_{p['id']}"):
                     adicionar_referencia(p['id'], chosen.get('storage_uri') or chosen.get('caminho_arquivo',''), 'outra', 'asset_library', {'asset_library_id': chosen['id']})
                     st.success('Adicionada sem substituir o Master.'); st.rerun()
@@ -111,9 +117,16 @@ for item in itens:
             if asset: refs_with_assets.append((ref, asset))
         if refs_with_assets:
             with st.expander('🛠️ Restaurar / Melhorar', expanded=False):
-                labels = {f"{a.get('nome')} · {r.get('tipo','outra')}": a for r,a in refs_with_assets}
-                source_label = st.selectbox('Imagem original', list(labels), key=f"source_{p['id']}")
-                source = labels[source_label]
+                source_options = assets_by_id([asset for _, asset in refs_with_assets])
+                source_id = st.selectbox(
+                    'Imagem original', list(source_options),
+                    format_func=lambda aid: asset_option_label(source_options[aid]),
+                    key=f"source_{p['id']}",
+                )
+                source = source_options[source_id]
+                source_thumb = get_thumbnail(source_id)
+                if source_thumb: st.image(source_thumb, width=240)
+                st.caption(asset_preview_details(source))
                 action_labels = {
                     'Restauração leve': 'light', 'Controlled Remaster': 'controlled_remaster',
                     'DNA Reconstruction': 'dna_reconstruction', '🌷 Melhorar cenário': 'improve_scene',
