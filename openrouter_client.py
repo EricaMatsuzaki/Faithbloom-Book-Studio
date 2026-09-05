@@ -56,14 +56,23 @@ def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
             return resp
         except requests.RequestException as exc:
             ultimo=exc
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status is not None and 400 <= status < 500 and status != 429:
+                break
             if tentativa < POLITICA.tentativas_http:
                 time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
     codigo=getattr(getattr(ultimo,"response",None),"status_code",None)
     sufixo=f" (HTTP {codigo})" if codigo else ""
-    raise OpenRouterFaithBloomError(
-        "A OpenRouter não respondeu corretamente após novas tentativas" + sufixo + ". "
-        "Nenhuma chave ou payload foi gravado no log."
-    ) from ultimo
+    orientacao = {
+        400: "A OpenRouter rejeitou os parâmetros da geração. Revise modelo, referências e resolução.",
+        401: "A OpenRouter não aceitou a autenticação. Verifique a chave nas configurações do aplicativo.",
+        402: "A OpenRouter informou saldo ou limite de créditos insuficiente.",
+        403: "A OpenRouter não autorizou esta solicitação. Verifique as permissões do modelo.",
+        404: "O modelo ou serviço solicitado não está disponível na OpenRouter.",
+        422: "A OpenRouter não aceitou o formato ou as opções da imagem.",
+        429: "A OpenRouter atingiu um limite temporário. Aguarde antes de tentar novamente.",
+    }.get(codigo, "Não foi possível concluir a geração na OpenRouter. Tente novamente mais tarde.")
+    raise OpenRouterFaithBloomError(orientacao + sufixo) from None
 
 
 def _json_resposta(resp: requests.Response) -> dict[str,Any]:
@@ -99,21 +108,25 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
         raise
 
 
-def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None) -> str:
+def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None) -> str:
     """Gera imagem aceitando cena-base + múltiplas referências visuais oficiais.
 
     `imagem_base` continua compatível com chamadas antigas. `imagens_referencia` é
     usado pelo Restoration Studio para anexar Character Masters sem substituir a
     cena original como referência principal.
     """
+    if resolution not in {None, "1K", "2K", "4K"}:
+        raise ValueError("Resolução inválida. Escolha 1K, 2K ou 4K.")
     refs=[]
     if imagem_base:
         refs.append(imagem_base)
     for r in imagens_referencia or []:
         if r and r not in refs:
             refs.append(r)
-    ref_sig=""
+    ref_sig=f"|resolution:{resolution or 'default'}"
     for ref in refs:
+        if not os.path.isfile(ref):
+            raise OpenRouterFaithBloomError("Uma imagem de referência não está disponível. Selecione-a novamente antes de gerar.")
         if os.path.exists(ref):
             st=os.stat(ref)
             ref_sig+=f"|ref:{os.path.basename(ref)}:{st.st_size}:{int(st.st_mtime)}"
@@ -127,9 +140,11 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
                 b64_ref=base64.b64encode(f.read()).decode()
             mime=mimetypes.guess_type(ref)[0] or "image/png"
             imagens_entrada.append(f"data:{mime};base64,{b64_ref}")
-        payload={"model":MODELO_IMAGEM,"prompt":prompt,"response_format":"b64_json"}
+        payload={"model":MODELO_IMAGEM,"prompt":prompt,"output_format":"png"}
+        if resolution:
+            payload["resolution"] = resolution
         if imagens_entrada:
-            payload["image"] = imagens_entrada
+            payload["input_references"] = [{"type": "image_url", "image_url": {"url": url}} for url in imagens_entrada]
         resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/images",payload,180)
         dados=_json_resposta(resp)
         imagens=dados.get("data") or []

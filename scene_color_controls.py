@@ -20,6 +20,13 @@ def build_restoration_prompt(action: str, *, dna: dict | None = None, request: s
     lock = identity_lock(dna)
     canonical = lock["canonical_values"]
     allowed = {
+        "neutral_master": (
+            "Prepare uma candidata a Color Master de alta qualidade usando a PRIMEIRA imagem como base. "
+            "Preserve a mesma personagem, rosto, olhos, expressão, pose, proporções e laço permanente. "
+            "Use fundo neutro branco ou creme claro uniforme, sem cenário ou objetos. "
+            "Remova acessórios sazonais, incluindo cachecol; preserve acessórios permanentes do DNA. "
+            "Melhore nitidez e acabamento sem mudar a identidade. Não oficialize a candidata."
+        ),
         "light": "Melhore apenas nitidez, limpeza, pequenos artefatos, resolucao e exposicao leve; nao redesenhe.",
         "controlled_remaster": "Melhore acabamento editorial e somente os elementos autorizados.",
         "dna_reconstruction": "Reconstrua a partir das referencias e DNA; a saida e apenas MASTER_CANDIDATE.",
@@ -30,10 +37,14 @@ def build_restoration_prompt(action: str, *, dna: dict | None = None, request: s
     }
     if action not in allowed:
         raise ValueError("Acao visual invalida.")
+    from character_guide import artwork_text_policy
     return (
         f"{allowed[action]} IDENTITY LOCK ATIVO. Preserve: {', '.join(lock['protected'])}. "
         f"Valores canonicos que jamais podem receber recoloracao: {canonical}. "
         f"Tratamento de cor: {color}; aplique apenas em luz, atmosfera, fundo e elementos secundarios. "
         f"Iluminacao: {lighting}. Pedido adicional: {request or 'nenhum'}. "
-        "Nao altere traits canonicos mesmo que a direcao cromatica sugira outra cor."
+        "Nao altere traits canonicos mesmo que a direcao cromatica sugira outra cor. "
+        "Exceção à mudança somente de cenário: alterações adicionais explicitamente pedidas em acessórios temporários são permitidas. "
+        + artwork_text_policy()
+
     )
