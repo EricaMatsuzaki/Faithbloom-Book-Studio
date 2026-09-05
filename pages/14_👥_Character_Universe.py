@@ -9,10 +9,10 @@ from character_universe import (
 )
 from asset_library import get_asset, get_thumbnail, list_assets
 from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
-from openrouter_client import gerar_imagem
+from openrouter_client import gerar_imagem, OpenRouterFaithBloomError
 from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
 from visual_master_manager import (
-    IDENTITY_REVIEW_NOTICE, REFERENCE_CATEGORIES, approve_candidate, archive_asset, create_abc,
+    IDENTITY_REVIEW_NOTICE, REFERENCE_CATEGORIES, approve_candidate, archive_asset, create_candidate,
     promote_master, register_upload,
 )
 
@@ -131,6 +131,7 @@ for item in itens:
                 if source_thumb: st.image(source_thumb, width=240)
                 st.caption(asset_preview_details(source))
                 action_labels = {
+                    'Preparar Master neutra (alta qualidade)': 'neutral_master',
                     'Restauração leve': 'light', 'Controlled Remaster': 'controlled_remaster',
                     'DNA Reconstruction': 'dna_reconstruction', '🌷 Melhorar cenário': 'improve_scene',
                     '🖼️ Trocar cenário': 'replace_scene', 'Modificar somente isto': 'modify_only',
@@ -143,17 +144,32 @@ for item in itens:
                 col1,col2 = st.columns(2)
                 color_treatment = col1.selectbox('🎨 Tratamento de cor', COLOR_TREATMENTS, key=f"color_{p['id']}")
                 lighting = col2.selectbox('💡 Iluminação', LIGHTING, key=f"light_{p['id']}")
+                resolution_label = st.selectbox('Resolução de saída', ['Padrão do modelo', '1K', '2K', '4K'], key=f"resolution_{p['id']}")
+                st.caption('2K/4K dependem do modelo e podem consumir mais créditos. Revise a candidata antes de promovê-la a Master.')
                 quantity = st.radio('Resultados independentes', [1, 3], format_func=lambda n: '1 versão' if n == 1 else '🔄 Criar A/B/C', horizontal=True, key=f"qty_{p['id']}")
                 prompt = build_restoration_prompt(action, dna=dna, request=request, scene='' if scene == '—' else scene, color=color_treatment, lighting=lighting)
                 with st.expander('Identity Lock · detalhes preservados'):
                     st.write('✅ identidade, espécie, rosto, olhos, pelagem/cabelo, proporções, marcas e acessórios permanentes, Style DNA')
                     st.code(prompt)
                 if st.button('Gerar candidata(s)', type='primary', key=f"generate_{p['id']}"):
-                    references = [a.get('caminho_arquivo','') for _,a in refs_with_assets if a['id'] != source['id']]
-                    paths = [gerar_imagem(prompt, imagem_base=source.get('caminho_arquivo'), imagens_referencia=references) for _ in range(quantity)]
-                    created = create_abc(source['id'], paths, transformation=action, prompt=prompt, dna_version=str(dna.get('version','')))
-                    st.session_state[f"results_{p['id']}"] = [x['id'] for x in created]
-                    st.rerun()
+                    from character_guide import character_reference_paths
+                    references = [path for path in character_reference_paths(p) if path != source.get('caminho_arquivo')]
+                    result_key = f"results_{p['id']}"
+                    st.session_state[result_key] = []
+                    try:
+                        for label in ['A', 'B', 'C'][:quantity]:
+                            path = gerar_imagem(
+                                prompt, imagem_base=source.get('caminho_arquivo'), imagens_referencia=references,
+                                resolution=None if resolution_label == 'Padrão do modelo' else resolution_label,
+                            )
+                            candidate = create_candidate(source['id'], path, transformation=action, prompt=prompt, label=label, dna_version=str(dna.get('version','')))
+                            st.session_state[result_key].append(candidate['id'])
+                        st.rerun()
+                    except (OpenRouterFaithBloomError, RuntimeError, ValueError) as exc:
+                        st.error(str(exc))
+                        if st.session_state[result_key]:
+                            st.info('As candidatas já concluídas foram preservadas abaixo.')
+
 
         result_ids = st.session_state.get(f"results_{p['id']}", [])
         if result_ids:
