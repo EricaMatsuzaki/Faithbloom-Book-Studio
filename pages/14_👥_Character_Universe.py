@@ -106,6 +106,9 @@ for item in itens:
                 thumb = get_thumbnail(chosen['id'])
                 if thumb: st.image(thumb, width=240)
                 st.caption(asset_preview_details(chosen))
+                if chosen.get('visual_status') == 'MASTER_CANDIDATE':
+                    if st.button('✅ Aprovar como variação', key=f"approve_library_{p['id']}_{chosen['id']}"):
+                        approve_candidate(chosen['id']); st.rerun()
                 if st.button('Adicionar como referência', key=f"pickref_{p['id']}"):
                     adicionar_referencia(p['id'], chosen.get('storage_uri') or chosen.get('caminho_arquivo',''), 'outra', 'asset_library', {'asset_library_id': chosen['id']})
                     st.success('Adicionada sem substituir o Master.'); st.rerun()

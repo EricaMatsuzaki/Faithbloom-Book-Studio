@@ -60,6 +60,8 @@ def create_abc(source_asset_id: str, result_paths: list[str], *, transformation:
 
 def approve_candidate(asset_id: str) -> dict:
     asset = get_asset(asset_id, materialize_file=False)
+    if asset and asset.get("visual_status") == "APPROVED_VARIATION":
+        return asset
     if not asset or asset.get("visual_status") not in {"MASTER_CANDIDATE", "RESTORATION_CANDIDATE"}:
         raise ValueError("Somente uma candidata pode ser aprovada.")
     return update_asset(asset_id, approved=True, visual_status="APPROVED_VARIATION", metadata={"visual_status": "APPROVED_VARIATION", "approved_at": int(time.time()), "approval": "human"})
