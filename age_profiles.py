@@ -2,11 +2,14 @@
 
 A faixa etária é uma decisão editorial por LIVRO. Ela orienta linguagem,
 ritmo, densidade de texto, musicalidade, onomatopeias, tensão, perguntas
-pedagógicas e profundidade da explicação cristã.
+pedagógicas, profundidade da explicação cristã e tipografia do miolo.
 
 O perfil 3–8 é mantido por compatibilidade com a coleção clássica atual.
 Para novos projetos, perfis mais específicos (3–5, 6–8, 9–12) dão
 resultados mais precisos.
+
+Os limites de palavras e páginas são HEURÍSTICAS editoriais internas, não
+promessas de mercado nem regras universais de desenvolvimento infantil.
 """
 from __future__ import annotations
 
@@ -33,6 +36,9 @@ AGE_PROFILES: dict[str, dict] = {
         "moral": "curta, explícita e fácil de repetir",
         "perguntas_pedagogicas": 2,
         "densidade_visual": "muito alta; a imagem ajuda a carregar a compreensão",
+        "paginas_recomendadas": "24–32 páginas para o formato ilustrado padrão",
+        "pdf_font_size": 20.0,
+        "pdf_leading": 30.0,
     },
     "3-8": {
         "label": "3–8 anos — Faixa ampla da coleção",
@@ -51,6 +57,9 @@ AGE_PROFILES: dict[str, dict] = {
         "moral": "clara, explícita e curta",
         "perguntas_pedagogicas": 3,
         "densidade_visual": "alta; texto e imagem trabalham juntos",
+        "paginas_recomendadas": "24–40 páginas para o formato ilustrado amplo",
+        "pdf_font_size": 18.0,
+        "pdf_leading": 28.0,
     },
     "6-8": {
         "label": "6–8 anos — Leitor iniciante",
@@ -69,6 +78,9 @@ AGE_PROFILES: dict[str, dict] = {
         "moral": "clara, podendo ter uma frase adicional de reflexão",
         "perguntas_pedagogicas": 3,
         "densidade_visual": "alta a moderada; ilustração continua essencial",
+        "paginas_recomendadas": "28–40 páginas para o formato ilustrado",
+        "pdf_font_size": 17.0,
+        "pdf_leading": 25.0,
     },
     "9-12": {
         "label": "9–12 anos — Leitor independente / história ilustrada",
@@ -87,6 +99,9 @@ AGE_PROFILES: dict[str, dict] = {
         "moral": "clara, mas pode ser mais reflexiva e menos repetitiva",
         "perguntas_pedagogicas": 4,
         "densidade_visual": "moderada; a história ainda é ilustrada, mas o texto pode sustentar mais informação",
+        "paginas_recomendadas": "32–64 páginas para a história ilustrada, conforme o projeto",
+        "pdf_font_size": 15.5,
+        "pdf_leading": 22.0,
     },
 }
 
@@ -117,6 +132,7 @@ def perfil_etario(value: str | None) -> dict:
 
 
 def opcoes_faixa_etaria() -> list[str]:
+    # As três faixas específicas aparecem primeiro; 3–8 fica como compatibilidade.
     return ["3-5", "6-8", "9-12", "3-8"]
 
 
