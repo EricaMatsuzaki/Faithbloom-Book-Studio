@@ -1,4 +1,4 @@
-"""Refinamento 24 — Criação da história em quatro estilos.
+"""Refinamento 24 — Criação e comparação de versões narrativas.
 
 Fluxo editorial:
 1. Define coleção e autoria do projeto.
@@ -6,11 +6,14 @@ Fluxo editorial:
 3. Traz ideia/resumo/relato OU pede ideias à IA.
 4. Informa personagens narrativos antes do Character DNA visual.
 5. Confirma título, emoção, lição e referência bíblica editáveis.
-6. Compara a mesma premissa nos quatro estilos, como amostra ou história completa.
-7. A escolha é preservada e segue para personagens/revisão antes de qualquer ilustração.
+6. Pode ver a visão autoral do Roteirista, comparar os quatro estilos formais
+   e gerar uma quinta versão completa usando a skill real de storyteller.
+7. Todas as versões podem ser preservadas na Biblioteca de Versões Narrativas.
+8. A versão ativa segue para personagens/revisão antes de qualquer ilustração.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import streamlit as st
 
 from state import LivroState
@@ -37,6 +40,11 @@ from agents.estilos_narrativos import (
     aplicar_estilo_ao_state,
     gerar_comparativo_estilos,
 )
+from agents.roteirista_autoral import (
+    LABEL_ROTEIRISTA,
+    gerar_proposta_roteirista,
+    gerar_versao_autoral_roteirista,
+)
 from age_profiles import (
     normalizar_faixa_etaria,
     opcoes_faixa_etaria,
@@ -47,7 +55,7 @@ st.set_page_config(page_title="História em 4 Estilos", page_icon="✍️", layo
 aplicar_estilo()
 hero(
     "✍️ História em 4 Estilos",
-    "Defina coleção e idade, comece com sua própria ideia ou peça ideias à IA e compare a mesma história nos quatro estilos narrativos.",
+    "Defina coleção e idade, comece com sua própria ideia ou peça ideias à IA, compare quatro estilos formais e, se quiser, veja também a versão autoral do Roteirista.",
 )
 
 if "state" not in st.session_state:
@@ -58,17 +66,118 @@ s.setdefault("paginas_minimas", 24)
 s.setdefault("idiomas_alvo", [])
 s.setdefault("personagens", {})
 s.setdefault("faixa_etaria", "3-8")
+s.setdefault("versoes_narrativas_salvas", {})
 s["faixa_etaria"] = normalizar_faixa_etaria(s.get("faixa_etaria"))
 s["age_profile_id"] = s["faixa_etaria"]
 
 st.info(
-    "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide coleção, autoria, idade, ideia, personagens narrativos e estilo."
+    "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide coleção, autoria, idade, ideia, personagens narrativos e versão da história."
+)
+
+DERIVADOS_NARRATIVOS = (
+    "revisao_aprovada",
+    "notas_revisor",
+    "mapa_emocional",
+    "cenas_imagem",
+    "imagens_cenas_enviadas",
+    "cenas_imagem_aprovadas",
+    "paginas_colorir",
+    "traducoes",
+    "roteiro_audiobook",
+    "audio_gerado",
+    "layout_paginas",
+    "pacote_pronto",
+    "checklist_kdp",
+    "preflight_impressao",
+    "pdf_miolo_print_ready",
+    "sinopse_vendas_curta",
+    "sinopse_contracapa",
+    "material_lancamento",
 )
 
 
+def _persistir_estado() -> str:
+    """Salva/atualiza o projeto atual, inclusive a biblioteca de versões."""
+    caminho = str(s.get("storage_path") or st.session_state.get("historia4_storage_path") or "")
+    if caminho:
+        caminho = atualizar_livro_salvo(caminho, dict(s))
+    else:
+        caminho = salvar_livro(dict(s))
+    s["storage_path"] = caminho
+    st.session_state.historia4_storage_path = caminho
+    return caminho
+
+
+def _sincronizar_biblioteca_versoes() -> None:
+    biblioteca = deepcopy(s.get("versoes_narrativas_salvas") or {})
+    for chave, versao in (s.get("comparativo_estilos") or {}).items():
+        if not isinstance(versao, dict):
+            continue
+        item = deepcopy(versao)
+        item["origem"] = "comparative_story_director"
+        item["faixa_etaria"] = s.get("faixa_etaria")
+        item["colecao"] = s.get("colecao")
+        item["status"] = "atual"
+        biblioteca[chave] = item
+    autoral = s.get("versao_roteirista_autoral")
+    if isinstance(autoral, dict) and autoral:
+        item = deepcopy(autoral)
+        item["faixa_etaria"] = s.get("faixa_etaria")
+        item["colecao"] = s.get("colecao")
+        item["status"] = "atual"
+        biblioteca["roteirista_autoral"] = item
+    s["versoes_narrativas_salvas"] = biblioteca
+
+
+def _arquivar_derivados_da_versao_ativa() -> None:
+    ativa = str(s.get("versao_narrativa_ativa") or "").strip()
+    if not ativa:
+        return
+    snapshot = {}
+    for campo in DERIVADOS_NARRATIVOS:
+        if campo in s and s.get(campo) not in (None, "", [], {}, False):
+            snapshot[campo] = deepcopy(s.get(campo))
+    if not snapshot:
+        return
+    historico = deepcopy(s.get("historico_derivados_por_versao") or {})
+    historico.setdefault(ativa, []).append(snapshot)
+    s["historico_derivados_por_versao"] = historico
+
+
+def _ativar_versao(chave: str, versao: dict) -> None:
+    """Troca a história ativa sem apagar as outras versões nem seus derivados anteriores."""
+    _arquivar_derivados_da_versao_ativa()
+    if chave == "roteirista_autoral":
+        estilo_base = versao.get("estilo_recomendado") or "misto"
+        novo = aplicar_estilo_ao_state(dict(s), estilo_base, versao)
+        novo["versao_narrativa_origem"] = "storyteller_skill"
+        novo["estilo_narrativo_label"] = LABEL_ROTEIRISTA
+    else:
+        novo = aplicar_estilo_ao_state(dict(s), chave, versao)
+        novo["versao_narrativa_origem"] = "comparative_story_director"
+
+    for campo in DERIVADOS_NARRATIVOS:
+        novo.pop(campo, None)
+    novo["revisao_aprovada"] = False
+    novo["pacote_pronto"] = False
+    novo["versao_narrativa_ativa"] = chave
+    novo["estilo_escolhido_no_comparador"] = True
+    novo["modo_comparacao_escolhido"] = versao.get("modo", "completa")
+    novo["idade_historia_precisa_regenerar"] = False
+    s.clear()
+    s.update(novo)
+
+
 def _invalidar_comparativo_por_mudanca_editorial() -> None:
-    """Invalida somente derivados; nunca apaga a premissa ou uma história existente."""
+    """Arquiva versões antigas se idade/coleção mudar, sem destruí-las."""
+    biblioteca = deepcopy(s.get("versoes_narrativas_salvas") or {})
+    for item in biblioteca.values():
+        if isinstance(item, dict) and item.get("status") == "atual":
+            item["status"] = "arquivada_por_mudanca_editorial"
+    s["versoes_narrativas_salvas"] = biblioteca
     s.pop("comparativo_estilos", None)
+    s.pop("versao_roteirista_autoral", None)
+    s.pop("proposta_roteirista", None)
     s.pop("estilo_escolhido_no_comparador", None)
     s.pop("modo_comparacao_escolhido", None)
     st.session_state.pop("ideias_4_estilos", None)
@@ -78,8 +187,6 @@ def _invalidar_comparativo_por_mudanca_editorial() -> None:
 # ------------------------------------------------------- COLEÇÃO E AUTORIA
 st.subheader("1. Coleção e autoria")
 
-# Se já existem personagens formais ou cenas, a coleção fica protegida para não
-# misturar Character Universe entre coleções por um clique acidental.
 colecao_travada = bool(s.get("colecao") and (s.get("personagens") or s.get("cenas_texto")))
 colecao_anterior = str(s.get("colecao") or "").strip()
 
@@ -174,8 +281,6 @@ if faixa_escolhida != faixa_atual:
     s["age_profile_id"] = faixa_escolhida
     _invalidar_comparativo_por_mudanca_editorial()
     if s.get("cenas_texto"):
-        # Não apaga história anterior. Apenas impede que uma versão escrita para
-        # outra idade siga adiante sem ser regenerada/revisada conscientemente.
         s["idade_historia_precisa_regenerar"] = True
         s["revisao_aprovada"] = False
     st.rerun()
@@ -189,7 +294,7 @@ st.caption(
 if s.get("idade_historia_precisa_regenerar"):
     st.warning(
         "A faixa etária foi alterada depois de já existir uma história. A versão anterior foi preservada, "
-        "mas precisa ser regenerada ou escolhida novamente nos 4 estilos antes de seguir para aprovação."
+        "mas precisa ser regenerada ou escolhida novamente antes de seguir para aprovação."
     )
 
 # ----------------------------------------------------------------- ORIGEM
@@ -300,7 +405,7 @@ s["personagens_historia_brief"] = st.text_area(
 )
 
 st.caption(
-    "Os quatro estilos usarão os MESMOS personagens. A IA não deve trocar nomes, relações, papéis ou características pedidas."
+    "Todas as versões usarão os MESMOS personagens. A IA não deve trocar nomes, relações, papéis ou características pedidas."
 )
 
 # -------------------------------------------------------------- CURADORIA
@@ -323,60 +428,109 @@ s["versiculo_referencia"] = st.text_input(
 premissa_ok = bool(str(s.get("_entrada_tema_livre") or s.get("titulo") or "").strip())
 colecao_ok = bool(str(s.get("colecao") or "").strip())
 if not colecao_ok:
-    st.warning("Escolha ou crie uma coleção antes de gerar os quatro estilos.")
+    st.warning("Escolha ou crie uma coleção antes de gerar as versões.")
 if not premissa_ok:
-    st.warning("Defina ou escolha uma ideia antes de gerar os quatro estilos.")
+    st.warning("Defina ou escolha uma ideia antes de gerar as versões.")
 
-# Salvamento manual: primeira vez cria um rascunho; depois atualiza o mesmo arquivo.
+if st.button(
+    "✍️ Ver a proposta do Roteirista para esta ideia",
+    disabled=not bool(premissa_ok and colecao_ok),
+    help="Usa a skill formal do Roteirista para mostrar como ele desenvolveria a ideia, sem gerar o livro inteiro.",
+):
+    with st.spinner("O Roteirista está estudando a melhor direção narrativa..."):
+        s["proposta_roteirista"] = gerar_proposta_roteirista(dict(s), chamar_llm)
+    st.rerun()
+
+proposta = s.get("proposta_roteirista") or {}
+if proposta:
+    with st.container(border=True):
+        st.markdown("### ✍️ Visão do Roteirista")
+        if proposta.get("titulo_alternativo"):
+            st.write(f"**Título alternativo:** {proposta['titulo_alternativo']}")
+        if proposta.get("gancho"):
+            st.write(f"**Gancho:** {proposta['gancho']}")
+        if proposta.get("direcao_narrativa"):
+            st.write(f"**Direção narrativa:** {proposta['direcao_narrativa']}")
+        if proposta.get("arco_emocional"):
+            st.write(f"**Arco emocional:** {proposta['arco_emocional']}")
+        if proposta.get("momento_de_virada"):
+            st.write(f"**Momento de virada:** {proposta['momento_de_virada']}")
+        if proposta.get("final_sugerido"):
+            st.write(f"**Final sugerido:** {proposta['final_sugerido']}")
+        estilo_rec = proposta.get("estilo_recomendado")
+        if estilo_rec in ESTILOS_NARRATIVOS:
+            st.write(f"**Estilo formal mais próximo:** {ESTILOS_NARRATIVOS[estilo_rec]['label']}")
+        if proposta.get("justificativa_criativa"):
+            st.caption(proposta["justificativa_criativa"])
+        st.caption("Esta é apenas a visão criativa do Roteirista. Nada é aplicado à história sem sua escolha.")
+
 if st.button(
     "💾 Salvar rascunho",
     disabled=not bool(colecao_ok and str(s.get("titulo") or "").strip()),
-    help="Salva o estado atual do projeto sem aprovar história nem gerar imagens.",
+    help="Salva o estado atual do projeto, inclusive propostas e versões já geradas.",
 ):
     try:
-        caminho = str(s.get("storage_path") or st.session_state.get("historia4_storage_path") or "")
-        if caminho:
-            caminho = atualizar_livro_salvo(caminho, dict(s))
-        else:
-            caminho = salvar_livro(dict(s))
-        s["storage_path"] = caminho
-        st.session_state.historia4_storage_path = caminho
+        _persistir_estado()
         st.success("Rascunho salvo com sucesso.")
     except Exception as exc:
         st.error(f"Não foi possível salvar o rascunho: {exc}")
 
 # ------------------------------------------------------------ COMPARAÇÃO
 st.divider()
-st.subheader("6. Veja a MESMA história nos 4 estilos")
+st.subheader("6. Compare os 4 estilos + a versão autoral do Roteirista")
 
 st.markdown(
     "**Estilo 1 — Aventura**  •  **Estilo 2 — Poético/Rimado**  •  "
-    "**Estilo 3 — Fábula cristã**  •  **Estilo misto**"
+    "**Estilo 3 — Fábula cristã**  •  **Estilo misto**  •  **⭐ Roteirista (opcional)**"
 )
 st.caption(
     f"A premissa, os personagens, a lição cristã, a referência bíblica e a faixa **{perfil['short_label']}** permanecem iguais. "
-    "Somente a maneira de contar muda."
+    "Nos quatro estilos formais muda a maneira de contar; na versão autoral, o Roteirista usa livremente sua skill para buscar a melhor solução narrativa."
 )
 
 pode_comparar = bool(premissa_ok and colecao_ok)
-c1, c2 = st.columns(2)
+c1, c2, c3 = st.columns(3)
 if c1.button("✨ Ver amostras dos 4 estilos", use_container_width=True, disabled=not pode_comparar):
     with st.spinner("Criando quatro amostras da mesma história..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="amostra")
+        _sincronizar_biblioteca_versoes()
     st.rerun()
 
-if c2.button("📚 Gerar a história COMPLETA nos 4 estilos", use_container_width=True, disabled=not pode_comparar):
+if c2.button("📚 Gerar COMPLETAS nos 4 estilos", use_container_width=True, disabled=not pode_comparar):
     with st.spinner("Criando as quatro histórias completas com a mesma ideia, personagens e faixa etária..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="completa")
+        _sincronizar_biblioteca_versoes()
+    st.rerun()
+
+if c3.button("⭐ Gerar versão do Roteirista", use_container_width=True, disabled=not pode_comparar):
+    with st.spinner("O Roteirista está escrevendo sua melhor versão autoral..."):
+        s["versao_roteirista_autoral"] = gerar_versao_autoral_roteirista(dict(s), chamar_llm)
+        _sincronizar_biblioteca_versoes()
     st.rerun()
 
 comparativo = s.get("comparativo_estilos") or {}
-if comparativo:
-    tabs = st.tabs([ESTILOS_NARRATIVOS[k]["label"] for k in ORDEM_ESTILOS])
-    for tab, estilo in zip(tabs, ORDEM_ESTILOS):
+autoral = s.get("versao_roteirista_autoral") or {}
+entradas = []
+for estilo in ORDEM_ESTILOS:
+    if comparativo.get(estilo):
+        entradas.append((estilo, ESTILOS_NARRATIVOS[estilo]["label"], comparativo[estilo]))
+if autoral:
+    entradas.append(("roteirista_autoral", LABEL_ROTEIRISTA, autoral))
+
+if entradas:
+    tabs = st.tabs([label for _, label, _ in entradas])
+    for tab, (chave, label, versao) in zip(tabs, entradas):
         with tab:
-            versao = comparativo.get(estilo) or {}
-            st.caption(ESTILOS_NARRATIVOS[estilo]["descricao"])
+            if chave == "roteirista_autoral":
+                st.caption("Versão livre gerada pela skill formal do Roteirista; não é obrigada a imitar um dos quatro estilos.")
+                estilo_rec = versao.get("estilo_recomendado")
+                if estilo_rec in ESTILOS_NARRATIVOS:
+                    st.caption(f"Estilo formal mais próximo: {ESTILOS_NARRATIVOS[estilo_rec]['label']}")
+                if versao.get("justificativa_criativa"):
+                    st.info(versao["justificativa_criativa"])
+            else:
+                st.caption(ESTILOS_NARRATIVOS[chave]["descricao"])
+
             if versao.get("titulo"):
                 st.markdown(f"### {versao['titulo']}")
             if versao.get("sinopse_poetica"):
@@ -396,25 +550,66 @@ if comparativo:
                 st.markdown(f"**⭐ Lição de Moral:** {versao['licao_final']}")
 
             if st.button(
-                f"✅ Escolher {ESTILOS_NARRATIVOS[estilo]['label']}",
-                key=f"escolher_historia_estilo_{estilo}",
+                f"✅ Tornar ativa — {label}",
+                key=f"escolher_historia_{chave}",
                 use_container_width=True,
             ):
-                novo = aplicar_estilo_ao_state(dict(s), estilo, versao)
-                s.clear()
-                s.update(novo)
-                s["estilo_escolhido_no_comparador"] = True
-                s["modo_comparacao_escolhido"] = versao.get("modo", "amostra")
-                s["idade_historia_precisa_regenerar"] = False
+                _ativar_versao(chave, versao)
                 st.rerun()
+
+# --------------------------------------------------------- BIBLIOTECA DE VERSÕES
+biblioteca = s.get("versoes_narrativas_salvas") or {}
+if biblioteca:
+    st.divider()
+    st.subheader("7. 📚 Biblioteca de Versões Narrativas")
+    st.caption(
+        "As versões geradas permanecem guardadas no projeto. Escolher uma não apaga as outras. "
+        "Se você mudar de ideia depois, pode voltar e tornar outra versão ativa sem regenerar."
+    )
+    ativa = s.get("versao_narrativa_ativa")
+    for chave, versao in biblioteca.items():
+        if not isinstance(versao, dict):
+            continue
+        if chave == "roteirista_autoral":
+            label = LABEL_ROTEIRISTA
+        else:
+            label = ESTILOS_NARRATIVOS.get(chave, {}).get("label") or versao.get("label") or chave
+        status = versao.get("status", "atual")
+        marcador = " ✅ ATIVA" if ativa == chave else ""
+        with st.expander(f"{label}{marcador}"):
+            st.caption(f"Modo: {versao.get('modo', 'completa')} · Status: {status}")
+            if versao.get("titulo"):
+                st.write(f"**{versao['titulo']}**")
+            if versao.get("sinopse_poetica"):
+                st.write(versao["sinopse_poetica"])
+            if status == "atual" and st.button(
+                f"Tornar {label} a versão ativa",
+                key=f"biblioteca_ativar_{chave}",
+                disabled=ativa == chave,
+            ):
+                _ativar_versao(chave, versao)
+                st.rerun()
+
+    if st.button(
+        "💾 Salvar todas as versões no projeto",
+        disabled=not bool(colecao_ok and str(s.get("titulo") or "").strip()),
+        use_container_width=True,
+    ):
+        try:
+            _persistir_estado()
+            st.success("Biblioteca de versões salva no projeto. Você poderá voltar a ela depois.")
+        except Exception as exc:
+            st.error(f"Não foi possível salvar a biblioteca: {exc}")
 
 # ------------------------------------------------------------- CONTINUAR
 if s.get("estilo_escolhido_no_comparador"):
     st.divider()
+    ativa = s.get("versao_narrativa_ativa")
     estilo = s.get("estilo_narrativo", "estilo_1")
     modo_escolhido = s.get("modo_comparacao_escolhido", "amostra")
+    label_ativa = LABEL_ROTEIRISTA if ativa == "roteirista_autoral" else ESTILOS_NARRATIVOS.get(estilo, {}).get("label", estilo)
     st.success(
-        f"Estilo escolhido: {ESTILOS_NARRATIVOS[estilo]['label']} · Faixa: {perfil_etario(s.get('faixa_etaria'))['short_label']}."
+        f"Versão ativa: {label_ativa} · Faixa: {perfil_etario(s.get('faixa_etaria'))['short_label']}."
     )
 
     if modo_escolhido == "completa" and s.get("cenas_texto"):
@@ -446,5 +641,5 @@ if s.get("estilo_escolhido_no_comparador"):
         st.switch_page("pages/1_📖_Criar_do_Zero.py")
 
 st.caption(
-    "Nenhuma das quatro versões é aprovada automaticamente. A escolha da autora continua obrigatória antes das ilustrações."
+    "Nenhuma versão é aprovada automaticamente. A escolha da autora continua obrigatória antes das ilustrações."
 )
