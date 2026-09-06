@@ -30,6 +30,7 @@ LOG_PATH = DATA_DIR / "geracoes.jsonl"
 _LOCK = threading.Lock()
 _IN_FLIGHT: set[str] = set()
 _RECENT: dict[str, float] = {}
+_EXECUTIONS: dict[str, dict[str, Any]] = {}
 
 
 def _env_float(nome: str, padrao: float) -> float:
@@ -169,22 +170,54 @@ def iniciar_requisicao(modalidade: str, modelo: str, conteudo_assinatura: str,
     validar_orcamento(estimativa)
     assinatura = assinatura_requisicao(modalidade, modelo, conteudo_assinatura)
     agora=time.monotonic()
+    request_id = uuid.uuid4().hex
     with _LOCK:
         if assinatura in _IN_FLIGHT:
-            raise GeracaoBloqueada("Esta mesma geração já está em andamento. Aguarde o resultado antes de clicar novamente.")
+            execution = _EXECUTIONS.get(assinatura)
+            if execution and not execution["thread"].is_alive():
+                _IN_FLIGHT.discard(assinatura)
+                _EXECUTIONS.pop(assinatura, None)
+                _RECENT.pop(assinatura, None)
+                raise GeracaoBloqueada(
+                    "A execução local anterior foi encerrada e seu bloqueio foi removido. "
+                    "Nenhuma nova geração foi enviada. Confira a última tentativa na OpenRouter "
+                    "antes de solicitar outra imagem."
+                )
+            if execution:
+                elapsed = int(agora - execution["started"])
+                raise GeracaoBloqueada(
+                    f"Existe uma execução local ativa há {elapsed}s. "
+                    f"Etapa: {execution['stage']}. Código: {execution['request_id'][:12]}. "
+                    "Este clique não enviou outra geração."
+                )
+            raise GeracaoBloqueada("Há um bloqueio de uma versão anterior sem diagnóstico disponível. Nenhuma nova geração foi enviada.")
         ultimo=_RECENT.get(assinatura)
         if ultimo is not None and agora-ultimo < POLITICA.cooldown_duplicado_seg:
             restante=POLITICA.cooldown_duplicado_seg-(agora-ultimo)
             raise GeracaoBloqueada(f"Clique duplicado bloqueado. Aguarde cerca de {restante:.1f}s e tente novamente se desejar.")
         _IN_FLIGHT.add(assinatura)
         _RECENT[assinatura]=agora
-    return uuid.uuid4().hex, assinatura, float(estimativa), time.perf_counter()
+        _EXECUTIONS[assinatura] = {"thread": threading.current_thread(), "started": agora,
+                                   "stage": "preparando entrada", "request_id": request_id}
+    return request_id, assinatura, float(estimativa), time.perf_counter()
+
+
+def atualizar_etapa(assinatura: str, etapa: str) -> None:
+    """Só aceita fases conhecidas; não registra prompt, imagens ou credenciais."""
+    if etapa not in {"preparando entrada", "aguardando OpenRouter", "salvando resultado"}:
+        raise ValueError("Etapa inválida")
+    with _LOCK:
+        execution = _EXECUTIONS.get(assinatura)
+        if execution:
+            execution["stage"] = etapa
+
 
 
 def liberar_requisicao(assinatura: str) -> None:
     """Libera a execução local encerrada, inclusive após interrupção do Streamlit."""
     with _LOCK:
         _IN_FLIGHT.discard(assinatura)
+        _EXECUTIONS.pop(assinatura, None)
 
 
 def finalizar_requisicao(request_id: str, assinatura: str, modalidade: str, modelo: str,
