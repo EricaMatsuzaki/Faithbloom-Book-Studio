@@ -57,14 +57,23 @@ ESTILOS_NARRATIVOS = {
 }
 
 # Biblioteca opcional: não entra automaticamente nas quatro chamadas principais.
+# Metadados `dna`, `faixas_recomendadas`, `meta_editorial` e `ui_nome_curto`
+# são usados pela interface para crescer sem hardcode por estilo.
 ESTILOS_ADICIONAIS = {
     "cumulativo_lengalenga": {
         "label": "🔁 Cumulativo / Lengalenga",
+        "ui_nome_curto": "Cumulativo/Lengalenga",
         "skill_base": "storyteller",
         "descricao": (
             "Roteirista + especialização Cumulativa/Lengalenga: progressão por acumulação, refrão memorável, "
             "musicalidade, antecipação, participação e humor crescente."
         ),
+        "dna": (
+            "acumulação progressiva + refrão original + musicalidade + antecipação + participação da criança + "
+            "humor crescente + clímax e resolução satisfatória"
+        ),
+        "faixas_recomendadas": "Especialmente forte para 3–5; funciona muito bem em 6–8 com variações mais criativas. Em 9–12, só quando houver sofisticação suficiente.",
+        "meta_editorial": "Criar prazer de antecipação e releitura: a criança reconhece o padrão, participa, ri e quer ouvir de novo.",
         "instrucao": (
             "Use uma estrutura cumulativa original: a cada nova passagem acrescente personagem, ação, objeto, "
             "som, tentativa ou consequência, retomando de modo intencional parte do padrão anterior. Crie um "
@@ -75,6 +84,34 @@ ESTILOS_ADICIONAIS = {
             "claro e encerre o padrão com uma resolução satisfatória, transformação emocional e lição cristã natural. "
             "Para 3–5, privilegie simplicidade, refrão e participação; para 6–8, acrescente variações e causa-consequência; "
             "para 9–12, só use se a estrutura puder ganhar sofisticação suficiente para não infantilizar."
+        ),
+    },
+    "cotidiano_comico_diario_visual": {
+        "label": "😄 Cotidiano Cômico / Diário Visual",
+        "ui_nome_curto": "Cotidiano Cômico/Diário Visual",
+        "skill_base": "storyteller",
+        "descricao": (
+            "Roteirista + especialização Cotidiano Cômico/Diário Visual: conflitos reais da infância, terceira pessoa próxima, "
+            "diálogos ágeis, humor de personalidade, emoções oscilantes e recursos gráficos originais."
+        ),
+        "dna": (
+            "cotidiano identificável + terceira pessoa próxima + humor de personalidade + diálogos rápidos + mini-ganchos + "
+            "mudanças emocionais claras + pequenos planos que dão errado + elementos gráficos ocasionais"
+        ),
+        "faixas_recomendadas": "Muito forte para 6–8 e 9–12. Para 3–5, usar somente uma versão simplificada, mais visual e com conflito cotidiano muito concreto.",
+        "meta_editorial": "Criar identificação e impulso de continuidade: a criança pensa ‘isso poderia acontecer comigo’ e quer acompanhar a próxima confusão da protagonista.",
+        "instrucao": (
+            "Use narrativa original de cotidiano cômico infantil. Prefira terceira pessoa próxima/focalizada na protagonista: "
+            "o narrador observa de fora, mas acompanha de perto pensamentos, sentimentos, interpretações e reações da criança. "
+            "Construa conflitos reconhecíveis da infância — escola, família, irmãos, amizades, tarefas, animais, pequenas competições, "
+            "vergonha, ciúme, frustração, planos e mal-entendidos — sempre adequados à faixa etária. Faça o humor nascer da personalidade, "
+            "das situações, das tentativas e das consequências, não de piadas aleatórias nem da humilhação de personagens. Use frases relativamente "
+            "curtas, diálogos ágeis, pequenos exageros cômicos originais e mini-ganchos entre cenas. Permita mudanças emocionais perceptíveis e rápidas "
+            "quando coerentes — entusiasmo, irritação, vergonha, esperança, alegria — ajudando a criança a reconhecer emoções sem transformar a narrativa "
+            "em sermão. Crie motivos recorrentes, listas, bilhetes, lembretes, rabiscos ou notas de diário SOMENTE como sugestões editoriais de elementos gráficos; "
+            "não copie bordões, slogans, layouts, voz autoral, personagens ou identidade visual de séries existentes. A lição cristã deve emergir das escolhas, "
+            "consequências, reconciliação, gratidão e transformação da personagem, sem pregação longa. Para 6–8, privilegie humor visual, diálogos curtos e conflitos simples; "
+            "para 9–12, permita pensamentos mais elaborados, conflitos sociais mais ricos, ironia infantil leve e maior autonomia da protagonista; para 3–5, simplifique bastante."
         ),
     },
 }
@@ -149,6 +186,9 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
     amostra = resposta.get("amostra") or resposta.get("preview") or ""
     if not amostra and cenas:
         amostra = "\n\n".join(str(c.get("texto", "")) for c in cenas[:4] if isinstance(c, dict))
+    elementos = resposta.get("elementos_graficos_sugeridos") or []
+    if not isinstance(elementos, list):
+        elementos = []
     return {
         "estilo": estilo,
         "label": TODOS_ESTILOS[estilo]["label"],
@@ -157,6 +197,7 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
         "sinopse_poetica": resposta.get("sinopse_poetica") or resposta.get("sinopse") or "",
         "amostra": str(amostra or ""),
         "cenas_texto": cenas,
+        "elementos_graficos_sugeridos": elementos,
         "licao_final": normalizar_licao_final(resposta.get("licao_final")),
     }
 
@@ -191,12 +232,13 @@ PERSONAGENS — identidade, nomes, papéis e características pedidas devem perm
         instrucao_saida = (
             "Crie uma AMOSTRA REPRESENTATIVA da história nesse estilo: 4 a 6 pequenos blocos/cenas, "
             "suficientes para a autora sentir ritmo, linguagem, mecanismo narrativo e atmosfera. "
-            "Não precisa escrever o livro inteiro. Retorne JSON com titulo, sinopse_poetica, amostra e licao_final."
+            "Não precisa escrever o livro inteiro. Retorne JSON com titulo, sinopse_poetica, amostra, "
+            "elementos_graficos_sugeridos (lista opcional) e licao_final."
         )
     else:
         instrucao_saida = (
             f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
-            "Retorne JSON com titulo, sinopse_poetica, cenas_texto e licao_final. "
+            "Retorne JSON com titulo, sinopse_poetica, cenas_texto, elementos_graficos_sugeridos (lista opcional) e licao_final. "
             "Cada cena deve conter numero, texto, emocao, emocao_secundaria, intensidade_emocional (1-5), "
             "transicao_emocional, figurino, contexto_visual, personagem_principal e expressao. "
             f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
@@ -235,9 +277,10 @@ Regras invariáveis:
 - não invente o texto completo do versículo: preserve somente a referência fornecida;
 - não altere Character DNA;
 - não troque nomes, relações ou papéis informados pela autora;
-- não copie frases, refrões, estruturas textuais distintivas ou personagens de livros existentes;
+- não copie frases, refrões, bordões, voz autoral, estruturas textuais distintivas, layouts distintivos ou personagens de livros/séries existentes;
 - quando gerar história completa, registre emoção principal, subemoção opcional,
   intensidade 1–5 e transição emocional coerentes com cada cena;
+- elementos gráficos sugeridos são orientação editorial; texto legível deve ser diagramado depois, nunca embutido na ilustração pela IA;
 - a psicologia das cores será aplicada depois pelo Emotional & Color Director.
 """.strip() + "\n\n" + skill_contract("storyteller")
 
