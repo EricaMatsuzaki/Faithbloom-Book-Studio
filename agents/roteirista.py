@@ -10,7 +10,7 @@ ritmo, densidade, musicalidade, humor, tensão e profundidade reflexiva.
 
 from state import LivroState, CenaTexto
 from agent_skills import skill_contract
-from agents.estilos_narrativos import normalizar_estilo, instrucao_estilo
+from agents.estilos_narrativos import normalizar_estilo, instrucao_estilo, normalizar_licao_final
 from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria, perfil_etario
 
 PROMPT_BASE = """\
@@ -158,7 +158,7 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     )
     state["sinopse_poetica"] = resposta.get("sinopse_poetica", "")
     state["cenas_texto"] = resposta.get("cenas_texto", [])
-    state["licao_final"] = resposta.get("licao_final", "")
+    state["licao_final"] = normalizar_licao_final(resposta.get("licao_final", ""))
     state["historia_escolhida_preservar"] = False
     return state
 
