@@ -105,6 +105,20 @@ def test_tres_paginas_colorir_sao_o_padrao_atual():
     assert not any(x["codigo"] == "COLORIR_INCOMPLETO" for x in relatorio["recomendacoes"])
 
 
+def test_psicologia_cores_e_pagina_por_pagina():
+    cenas = [
+        {"numero": 1, "texto": "Cena 1", "emocao": "alegria", "intensidade_emocional": 2},
+        {"numero": 2, "texto": "Cena 2", "emocao": "tristeza", "intensidade_emocional": 3},
+    ]
+    relatorio = avaliar_prompt_mestre({
+        "licao_final": "Moral",
+        "cenas_texto": cenas,
+        "mapa_emocional": [{"numero": 1}, {"numero": 2}],
+    })
+    assert relatorio["regra_psicologia_cores"] == "pagina_por_pagina"
+    assert "Psicologia das cores página por página" in relatorio["aprovados"]
+
+
 def test_complementos_editoriais_normalizados():
     def fake_llm(*, sistema, instrucao):
         return {
