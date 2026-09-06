@@ -10,6 +10,7 @@ from copy import deepcopy
 from typing import Any
 
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
+from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
 
 ESTILOS_NARRATIVOS = {
     "estilo_1": {
@@ -23,19 +24,19 @@ ESTILOS_NARRATIVOS = {
     },
     "estilo_2": {
         "label": "Estilo 2 — Poético/Rimado",
-        "descricao": "Musicalidade, repetição e rimas naturais sem perder clareza infantil.",
+        "descricao": "Musicalidade, repetição e rimas naturais sem perder clareza para a faixa escolhida.",
         "instrucao": (
-            "Use linguagem poética infantil, musicalidade, repetição suave e rimas naturais. "
-            "Nunca force rimas, nunca sacrifique clareza, e mantenha frases simples para 3–8 anos."
+            "Use linguagem poética adequada à idade, musicalidade, repetição suave e rimas naturais. "
+            "Nunca force rimas nem sacrifique clareza; ajuste a intensidade da repetição à faixa etária."
         ),
     },
     "estilo_3": {
         "label": "Estilo 3 — Fábula cristã",
-        "descricao": "Fábula cristã com simbolismo simples, imediatamente compreensível para 3–8 anos.",
+        "descricao": "Fábula cristã com simbolismo compatível com a maturidade da faixa etária.",
         "instrucao": (
-            "Use estrutura de fábula cristã. Símbolos e metáforas, se usados, devem ser simples, "
-            "concretos e imediatamente compreensíveis por crianças de 3–8 anos. A personagem "
-            "precisa viver a lição, não apenas ouvi-la."
+            "Use estrutura de fábula cristã. Símbolos e metáforas, se usados, devem ser simples o suficiente "
+            "para a faixa escolhida e nunca virar abstração teológica. A personagem precisa viver a lição, "
+            "não apenas ouvi-la."
         ),
     },
     "misto": {
@@ -43,8 +44,8 @@ ESTILOS_NARRATIVOS = {
         "descricao": "Combina aventura, emoção, musicalidade e fábula cristã sem perder unidade.",
         "instrucao": (
             "Combine aventura e emoção do Estilo 1, musicalidade/repetição do Estilo 2 e a "
-            "clareza moral da fábula cristã do Estilo 3. Não misture de forma caótica: preserve "
-            "uma voz narrativa única, simples e adequada a 3–8 anos."
+            "clareza moral da fábula cristã do Estilo 3. Preserve uma voz narrativa única e "
+            "compatível com a faixa etária escolhida."
         ),
     },
 }
@@ -63,11 +64,7 @@ def instrucao_estilo(estilo: str | None) -> str:
 
 
 def _personagens_resumo(state: dict) -> str:
-    """Combina Character DNA já formalizado com o briefing livre da autora.
-
-    Isso permite comparar os quatro estilos ANTES de finalizar a aparência dos
-    personagens, sem perder nomes, papéis ou características narrativas pedidas.
-    """
+    """Combina Character DNA já formalizado com o briefing livre da autora."""
     personagens = state.get("personagens") or {}
     partes = []
     for nome, dados in personagens.items():
@@ -111,15 +108,13 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
 
 
 def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
-    """Gera a mesma história/premissa nos quatro estilos.
-
-    modo='amostra': preview curto e econômico.
-    modo='completa': história inteira em cada estilo para comparação profunda.
-    """
+    """Gera a mesma história/premissa nos quatro estilos e na mesma faixa etária."""
     modo = "completa" if modo == "completa" else "amostra"
     min_cenas = max(12, int(state.get("paginas_minimas") or 24) // 2)
     emocoes_validas = ", ".join(EMOCOES.keys())
     subemocoes_validas = ", ".join(EMOCOES_COMPLEMENTARES.keys())
+    faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
+    perfil = perfil_etario(faixa)
     base = f"""
 PREMISSA/TEMA:
 {state.get('_entrada_tema_livre') or state.get('titulo') or ''}
@@ -128,7 +123,9 @@ Título atual: {state.get('titulo','')}
 Emoção central: {state.get('emocao_central','')}
 Lição cristã: {state.get('aprendizado_cristao') or state.get('licao_final') or ''}
 Referência bíblica: {state.get('versiculo_referencia','')}
-Faixa etária: {state.get('faixa_etaria') or '3–8 anos'}
+Faixa etária oficial: {perfil['short_label']}
+
+{instrucao_faixa_etaria(faixa)}
 
 PERSONAGENS — identidade, nomes, papéis e características pedidas devem permanecer iguais em todas as versões:
 {_personagens_resumo(state)}
@@ -152,30 +149,35 @@ PERSONAGENS — identidade, nomes, papéis e características pedidas devem perm
                 "contexto_visual, personagem_principal e expressao. "
                 f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
                 f"A subemoção opcional pode ser uma destas: {subemocoes_validas}. "
-                "Não escolha cores no texto da história: o Emotional & Color Director aplicará a "
-                "tabela canônica do Prompt-Mestre depois."
+                f"Use até aproximadamente {perfil['max_words_sentence']} palavras por frase e "
+                f"{perfil['max_words_scene']} palavras por cena como TETOS heurísticos de revisão, nunca como meta. "
+                "Não escolha cores no texto da história: o Emotional & Color Director aplicará a tabela canônica "
+                "do Prompt-Mestre depois."
             )
 
         sistema = f"""
 Você é o Comparative Story Director do FaithBloom Book Studio.
-Gere UMA versão da MESMA história, sem mudar fatos centrais, personagens, lição cristã
-ou referência bíblica. Varie somente o ESTILO NARRATIVO.
+Gere UMA versão da MESMA história, sem mudar fatos centrais, personagens, lição cristã,
+referência bíblica OU faixa etária. Varie somente o ESTILO NARRATIVO.
+
+FAIXA ETÁRIA OBRIGATÓRIA:
+{instrucao_faixa_etaria(faixa)}
 
 ESTILO OBRIGATÓRIO:
 {spec['label']}
 {spec['instrucao']}
 
 Regras invariáveis:
-- público 3–8 anos;
-- frases claras e adequadas à leitura em voz alta;
-- musicalidade infantil leve em todos os estilos; no Estilo 2 ela pode ser mais intensa;
-- repetição suave e onomatopeias naturais quando ligadas a ação, humor ou surpresa, sem excesso;
-- emoções concretas;
+- linguagem, densidade, humor, tensão, musicalidade e onomatopeias seguem a faixa etária;
+- frases claras e agradáveis de ler/ouvir;
+- musicalidade natural em todos os estilos; no Estilo 2 ela pode ser mais intensa;
+- repetição e onomatopeias somente na intensidade apropriada para a idade;
+- emoções compreensíveis e coerentes com a maturidade do público;
 - ação visual e movimento;
-- humor leve quando couber;
-- tensão infantil segura, nunca medo excessivo ou sofrimento pesado;
+- humor quando couber, sem infantilizar leitores maiores;
+- tensão segura e adequada à idade, nunca medo excessivo ou sofrimento pesado;
 - transformação emocional, descoberta espiritual e recompensa/celebração;
-- mensagem cristã amorosa, sem sermão longo;
+- mensagem cristã amorosa, sem culpa religiosa, ameaça ou sermão longo;
 - a personagem vive a lição;
 - não invente o texto completo do versículo: preserve somente a referência fornecida;
 - não altere Character DNA;
@@ -196,6 +198,8 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     chave = normalizar_estilo(estilo)
     novo["estilo_narrativo"] = chave
     novo["estilo_narrativo_label"] = ESTILOS_NARRATIVOS[chave]["label"]
+    novo["faixa_etaria"] = normalizar_faixa_etaria(novo.get("faixa_etaria"))
+    novo["age_profile_id"] = novo["faixa_etaria"]
 
     # Amostra serve apenas para escolher o estilo; não altera título, moral nem cenas.
     if not versao or versao.get("modo") != "completa":
@@ -211,7 +215,5 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     if versao.get("cenas_texto"):
         novo["cenas_texto"] = versao["cenas_texto"]
         novo["revisao_aprovada"] = False
-        # Quando a autora já escolheu uma das quatro histórias completas, o
-        # Roteirista não deve reescrevê-la ao voltar ao fluxo principal.
         novo["historia_escolhida_preservar"] = True
     return novo
