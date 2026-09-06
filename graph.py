@@ -2,8 +2,9 @@
 Monta o pipeline completo em LangGraph.
 
 Ordem: Roteirista -> Revisor -(loop se reprovado)-> Roteirista
-                   -(aprovado)-> Ilustrador -> Dedicatória Dinâmica
-                   -> Tradutor -> Sinopse de Vendas -> Diagramador/KDP
+                   -(aprovado)-> Complementos Editoriais -> Ilustrador
+                   -> Dedicatória Dinâmica -> Tradutor -> Sinopse de Vendas
+                   -> Diagramador/KDP
 """
 
 from langgraph.graph import StateGraph, END
@@ -12,6 +13,7 @@ from state import LivroState
 from agents.curador_tema import curador_tema_node
 from agents.roteirista import roteirista_node
 from agents.revisor import revisor_node, precisa_retrabalho
+from agents.complementos_editoriais import gerar_complementos_editoriais
 from agents.ilustrador import ilustrador_node
 from agents.atividades_colorir import atividades_colorir_node
 from agents.audiobook import audiobook_node, narracao_node
@@ -22,6 +24,14 @@ from agents.pesquisa_mercado import pesquisa_palavras_chave_node, pesquisa_categ
 from agents.diagramador import diagramador_node
 from agents.capa import capa_node
 from agents.marketing import marketing_lancamento_node
+
+
+def _complementos_node(state: LivroState, chamar_llm) -> LivroState:
+    extras = gerar_complementos_editoriais(dict(state), chamar_llm)
+    state["boas_vindas"] = extras.get("boas_vindas", "")
+    state["pais_educadores"] = extras.get("pais_educadores", {})
+    state["ficha_pedagogica"] = extras.get("ficha_pedagogica", {})
+    return state
 
 
 def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
@@ -36,6 +46,7 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_node("curador_tema", lambda s: curador_tema_node(s, chamar_llm))
     grafo.add_node("roteirista", lambda s: roteirista_node(s, chamar_llm))
     grafo.add_node("revisor", lambda s: revisor_node(s, chamar_llm))
+    grafo.add_node("complementos_editoriais", lambda s: _complementos_node(s, chamar_llm))
     grafo.add_node("ilustrador", lambda s: ilustrador_node(s, gerar_imagem))
     grafo.add_node("atividades_colorir", lambda s: atividades_colorir_node(s, gerar_imagem))
     grafo.add_node("audiobook", lambda s: audiobook_node(s, chamar_llm))
@@ -55,8 +66,9 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_conditional_edges(
         "revisor",
         precisa_retrabalho,
-        {"roteirista": "roteirista", "ilustrador": "ilustrador"},
+        {"roteirista": "roteirista", "ilustrador": "complementos_editoriais"},
     )
+    grafo.add_edge("complementos_editoriais", "ilustrador")
     grafo.add_edge("ilustrador", "atividades_colorir")
     grafo.add_edge("atividades_colorir", "audiobook")
     grafo.add_edge("audiobook", "narrador")
