@@ -181,11 +181,16 @@ def iniciar_requisicao(modalidade: str, modelo: str, conteudo_assinatura: str,
     return uuid.uuid4().hex, assinatura, float(estimativa), time.perf_counter()
 
 
+def liberar_requisicao(assinatura: str) -> None:
+    """Libera a execução local encerrada, inclusive após interrupção do Streamlit."""
+    with _LOCK:
+        _IN_FLIGHT.discard(assinatura)
+
+
 def finalizar_requisicao(request_id: str, assinatura: str, modalidade: str, modelo: str,
                          estimativa_usd: float, inicio_perf: float, status: str,
                          custo_reportado_usd: float | None = None, detalhe: str = "") -> None:
-    with _LOCK:
-        _IN_FLIGHT.discard(assinatura)
+    liberar_requisicao(assinatura)
     # Remover qualquer sequência que pareça uma chave OpenRouter de detalhes/logs.
     detalhe = sanitizar_texto(detalhe)[:500]
     _gravar(RegistroGeracao(
