@@ -1,12 +1,13 @@
 """Refinamento 24 — Criação da história em quatro estilos.
 
 Fluxo editorial:
-1. A autora escolhe a faixa etária oficial do livro.
-2. Pode trazer ideia/resumo/relato OU pedir ideias à IA.
-3. Pode informar os personagens que deseja antes do Character DNA visual.
-4. O Curador prepara título, emoção, lição e referência bíblica editáveis.
-5. A mesma premissa pode ser vista nos quatro estilos, como amostra ou história completa.
-6. A escolha é preservada e segue para personagens/revisão antes de qualquer ilustração.
+1. Define coleção e autoria do projeto.
+2. Escolhe a faixa etária oficial do livro.
+3. Traz ideia/resumo/relato OU pede ideias à IA.
+4. Informa personagens narrativos antes do Character DNA visual.
+5. Confirma título, emoção, lição e referência bíblica editáveis.
+6. Compara a mesma premissa nos quatro estilos, como amostra ou história completa.
+7. A escolha é preservada e segue para personagens/revisão antes de qualquer ilustração.
 """
 from __future__ import annotations
 
@@ -15,8 +16,18 @@ import streamlit as st
 from state import LivroState
 from estilo import aplicar_estilo, hero
 from openrouter_client import chamar_llm
-from armazenamento import listar_livros
-from author_profiles import author_display_from_state
+from armazenamento import (
+    listar_livros,
+    listar_colecoes,
+    salvar_livro,
+    atualizar_livro_salvo,
+)
+from author_profiles import (
+    author_display_from_state,
+    list_author_profiles,
+    profile_display_name,
+    set_project_authors,
+)
 from agents.curador_tema import curador_tema_node
 from agents.gerador_ideias import gerador_ideias_node
 from agents.estilos_narrativos import (
@@ -35,7 +46,7 @@ st.set_page_config(page_title="História em 4 Estilos", page_icon="✍️", layo
 aplicar_estilo()
 hero(
     "✍️ História em 4 Estilos",
-    "Escolha a faixa etária, comece com sua própria ideia ou peça ideias à IA e compare a mesma história nos quatro estilos narrativos.",
+    "Defina coleção e idade, comece com sua própria ideia ou peça ideias à IA e compare a mesma história nos quatro estilos narrativos.",
 )
 
 if "state" not in st.session_state:
@@ -50,11 +61,72 @@ s["faixa_etaria"] = normalizar_faixa_etaria(s.get("faixa_etaria"))
 s["age_profile_id"] = s["faixa_etaria"]
 
 st.info(
-    "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide a idade, a ideia, os personagens narrativos e o estilo da história."
+    "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide coleção, autoria, idade, ideia, personagens narrativos e estilo."
 )
 
+# ------------------------------------------------------- COLEÇÃO E AUTORIA
+st.subheader("1. Coleção e autoria")
+
+# Se já existem personagens formais ou cenas, a coleção fica protegida para não
+# misturar Character Universe entre coleções por um clique acidental.
+colecao_travada = bool(s.get("colecao") and (s.get("personagens") or s.get("cenas_texto")))
+if colecao_travada:
+    st.text_input("Coleção deste projeto", value=s.get("colecao", ""), disabled=True)
+    st.caption("A coleção fica protegida depois que personagens formais ou cenas existem, evitando misturar universos de personagens.")
+else:
+    colecoes = listar_colecoes()
+    atual = str(s.get("colecao") or "").strip()
+    opcoes_colecao = list(colecoes)
+    if atual and atual not in opcoes_colecao:
+        opcoes_colecao.insert(0, atual)
+    opcoes_colecao.append("➕ Criar nova coleção")
+    default_idx = opcoes_colecao.index(atual) if atual in opcoes_colecao else 0
+    escolha_colecao = st.selectbox(
+        "Coleção",
+        options=opcoes_colecao,
+        index=default_idx,
+        help="Cada coleção mantém seu próprio universo de personagens e identidade editorial.",
+    )
+    if escolha_colecao == "➕ Criar nova coleção":
+        nova_colecao = st.text_input("Nome da nova coleção", value="")
+        if nova_colecao.strip():
+            s["colecao"] = nova_colecao.strip()
+    else:
+        s["colecao"] = escolha_colecao
+
+profiles = list_author_profiles()
+if profiles:
+    profile_map = {p["id"]: p for p in profiles}
+    atuais = [
+        x.get("profile_id")
+        for x in (s.get("authorship") or {}).get("authors", [])
+        if isinstance(x, dict) and x.get("profile_id") in profile_map
+    ]
+    autores = st.multiselect(
+        "Autoria deste livro",
+        options=list(profile_map),
+        default=atuais,
+        format_func=lambda pid: profile_display_name(profile_map[pid]),
+        help="O primeiro selecionado é o autor principal; os demais entram como coautores. Isso é independente de quem está usando o app.",
+    )
+    if autores:
+        s.update(set_project_authors(dict(s), autores))
+else:
+    s["autora"] = st.text_input(
+        "Autor(a) / nome de publicação",
+        value=s.get("autora", ""),
+        help="Você pode criar perfis reutilizáveis depois em Autores & Colaboradores.",
+    )
+
+credito = author_display_from_state(s)
+if credito:
+    st.caption(f"Crédito atual: **{credito}**")
+else:
+    st.warning("A autoria ainda não foi definida. Você pode explorar ideias, mas confirme o crédito antes de salvar/publicar o projeto.")
+
 # --------------------------------------------------------------- FAIXA ETÁRIA
-st.subheader("1. Para qual faixa etária é este livro?")
+st.divider()
+st.subheader("2. Para qual faixa etária é este livro?")
 opcoes = opcoes_faixa_etaria()
 faixa_atual = normalizar_faixa_etaria(s.get("faixa_etaria"))
 idx_atual = opcoes.index(faixa_atual) if faixa_atual in opcoes else opcoes.index("3-8")
@@ -97,7 +169,7 @@ if s.get("idade_historia_precisa_regenerar"):
 
 # ----------------------------------------------------------------- ORIGEM
 st.divider()
-st.subheader("2. Como você quer começar a história?")
+st.subheader("3. Como você quer começar a história?")
 modo = st.radio(
     "Escolha uma opção",
     [
@@ -134,7 +206,7 @@ elif modo.startswith("✨"):
         f"A IA vai sugerir ideias pensadas para **{perfil['short_label']}**, mas nenhuma vira história sem a sua decisão."
     )
     quantidade = st.select_slider("Quantas ideias você quer ver?", options=[3, 4, 5, 6], value=4)
-    temas_usados = [l.get("titulo", "") for l in listar_livros() if l.get("titulo")]
+    temas_usados = [l.get("titulo", "") for l in listar_livros(s.get("colecao") or None) if l.get("titulo")]
 
     if st.button("✨ Sugerir ideias novas"):
         with st.spinner("Criando ideias diferentes para sua coleção e faixa etária..."):
@@ -178,7 +250,7 @@ else:
 
 # ------------------------------------------------------------- PERSONAGENS
 st.divider()
-st.subheader("3. Quais personagens você quer nessa história?")
+st.subheader("4. Quais personagens você quer nessa história?")
 
 if s.get("personagens"):
     st.markdown("**Personagens já formalizados no projeto:**")
@@ -208,7 +280,7 @@ st.caption(
 
 # -------------------------------------------------------------- CURADORIA
 st.divider()
-st.subheader("4. Confirme a direção da história")
+st.subheader("5. Confirme a direção da história")
 
 s["titulo"] = st.text_input("Título ou título provisório", value=s.get("titulo", ""))
 s["emocao_central"] = st.text_input("Emoção central", value=s.get("emocao_central", ""))
@@ -224,12 +296,33 @@ s["versiculo_referencia"] = st.text_input(
 )
 
 premissa_ok = bool(str(s.get("_entrada_tema_livre") or s.get("titulo") or "").strip())
+colecao_ok = bool(str(s.get("colecao") or "").strip())
+if not colecao_ok:
+    st.warning("Escolha ou crie uma coleção antes de gerar os quatro estilos.")
 if not premissa_ok:
     st.warning("Defina ou escolha uma ideia antes de gerar os quatro estilos.")
 
+# Salvamento manual: primeira vez cria um rascunho; depois atualiza o mesmo arquivo.
+if st.button(
+    "💾 Salvar rascunho",
+    disabled=not bool(colecao_ok and str(s.get("titulo") or "").strip()),
+    help="Salva o estado atual do projeto sem aprovar história nem gerar imagens.",
+):
+    try:
+        caminho = str(s.get("storage_path") or st.session_state.get("historia4_storage_path") or "")
+        if caminho:
+            caminho = atualizar_livro_salvo(caminho, dict(s))
+        else:
+            caminho = salvar_livro(dict(s))
+        s["storage_path"] = caminho
+        st.session_state.historia4_storage_path = caminho
+        st.success("Rascunho salvo com sucesso.")
+    except Exception as exc:
+        st.error(f"Não foi possível salvar o rascunho: {exc}")
+
 # ------------------------------------------------------------ COMPARAÇÃO
 st.divider()
-st.subheader("5. Veja a MESMA história nos 4 estilos")
+st.subheader("6. Veja a MESMA história nos 4 estilos")
 
 st.markdown(
     "**Estilo 1 — Aventura**  •  **Estilo 2 — Poético/Rimado**  •  "
@@ -240,13 +333,14 @@ st.caption(
     "Somente a maneira de contar muda."
 )
 
+pode_comparar = bool(premissa_ok and colecao_ok)
 c1, c2 = st.columns(2)
-if c1.button("✨ Ver amostras dos 4 estilos", use_container_width=True, disabled=not premissa_ok):
+if c1.button("✨ Ver amostras dos 4 estilos", use_container_width=True, disabled=not pode_comparar):
     with st.spinner("Criando quatro amostras da mesma história..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="amostra")
     st.rerun()
 
-if c2.button("📚 Gerar a história COMPLETA nos 4 estilos", use_container_width=True, disabled=not premissa_ok):
+if c2.button("📚 Gerar a história COMPLETA nos 4 estilos", use_container_width=True, disabled=not pode_comparar):
     with st.spinner("Criando as quatro histórias completas com a mesma ideia, personagens e faixa etária..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="completa")
     st.rerun()
