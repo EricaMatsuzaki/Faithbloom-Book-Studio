@@ -165,6 +165,14 @@ for item in itens:
                 source_thumb = get_thumbnail(source_id)
                 if source_thumb: st.image(source_thumb, width=240)
                 st.caption(asset_preview_details(source))
+                direct_edit = st.checkbox('Edição direta — somente esta imagem e meu pedido', key=f"direct_edit_{p['id']}")
+                if direct_edit:
+                    st.info('Envia apenas a imagem selecionada e o texto abaixo, como no Playground. Os controles de DNA, cenário, cor e iluminação não são acrescentados. Revise a identidade no resultado.')
+                provider_name = st.selectbox('Fornecedor de imagem', ['Automático', 'Google Vertex', 'Google AI Studio'],
+                    index=1 if direct_edit else 0, key=f"image_provider_{p['id']}_{direct_edit}")
+                provider = {'Automático': None, 'Google Vertex': 'google-vertex', 'Google AI Studio': 'google-ai-studio'}[provider_name]
+                ratio_label = st.selectbox('Proporção da imagem', ['Padrão do modelo', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+                    index=1 if direct_edit else 0, key=f"image_ratio_{p['id']}_{direct_edit}")
                 action_labels = {
                     'Preparar Master neutra (alta qualidade)': 'neutral_master',
                     'Restauração leve': 'light', 'Controlled Remaster': 'controlled_remaster',
@@ -172,33 +180,39 @@ for item in itens:
                     '🖼️ Trocar cenário': 'replace_scene', 'Modificar somente isto': 'modify_only',
                     'Gerar Line Art Candidate': 'line_art',
                 }
-                action_name = st.selectbox('Ação', list(action_labels), key=f"action_{p['id']}")
+                action_name = st.selectbox('Ação', list(action_labels), key=f"action_{p['id']}", disabled=direct_edit)
                 action = action_labels[action_name]
-                scene = st.selectbox('Cenário/preset', ['—'] + list(SCENE_PRESETS), key=f"scene_{p['id']}")
+                scene = st.selectbox('Cenário/preset', ['—'] + list(SCENE_PRESETS), key=f"scene_{p['id']}", disabled=direct_edit)
                 request = st.text_area('O que deseja alterar?', key=f"request_{p['id']}", placeholder='Ex.: Deixe somente o fundo um pouco mais claro.')
                 col1,col2 = st.columns(2)
-                color_treatment = col1.selectbox('🎨 Tratamento de cor', COLOR_TREATMENTS, key=f"color_{p['id']}")
-                lighting = col2.selectbox('💡 Iluminação', LIGHTING, key=f"light_{p['id']}")
+                color_treatment = col1.selectbox('🎨 Tratamento de cor', COLOR_TREATMENTS, key=f"color_{p['id']}", disabled=direct_edit)
+                lighting = col2.selectbox('💡 Iluminação', LIGHTING, key=f"light_{p['id']}", disabled=direct_edit)
                 resolution_label = st.selectbox('Resolução de saída', ['Padrão do modelo', '1K', '2K', '4K'], key=f"resolution_{p['id']}")
                 st.caption('2K/4K dependem do modelo e podem consumir mais créditos. Revise a candidata antes de promovê-la a Master.')
-                quantity = st.radio('Resultados independentes', [1, 3], format_func=lambda n: '1 versão' if n == 1 else '🔄 Criar A/B/C', horizontal=True, key=f"qty_{p['id']}")
+                quantity = st.radio('Resultados independentes', [1] if direct_edit else [1, 3], format_func=lambda n: '1 versão' if n == 1 else '🔄 Criar A/B/C', horizontal=True, key=f"qty_{p['id']}_{direct_edit}")
                 prompt = build_restoration_prompt(action, dna=dna, request=request, scene='' if scene == '—' else scene, color=color_treatment, lighting=lighting)
-                with st.expander('Identity Lock · detalhes preservados'):
-                    st.write('✅ identidade, espécie, rosto, olhos, pelagem/cabelo, proporções, marcas e acessórios permanentes, Style DNA')
+                if direct_edit:
+                    prompt = request
+                with st.expander('Pedido que será enviado'):
+                    st.caption('Revise o pedido antes de gerar; a aprovação da candidata continua manual.')
                     st.code(prompt)
                 if st.button('Gerar candidata(s)', type='primary', key=f"generate_{p['id']}"):
                     from character_guide import character_reference_paths
-                    references = [path for path in character_reference_paths(p) if path != source.get('caminho_arquivo')]
+                    references = [] if direct_edit else [path for path in character_reference_paths(p) if path != source.get('caminho_arquivo')]
                     result_key = f"results_{p['id']}"
                     st.session_state[result_key] = []
                     try:
+                        if direct_edit and not source.get('caminho_arquivo'):
+                            raise ValueError('A imagem selecionada não está disponível para edição.')
                         with st.spinner('Preparando referências e aguardando a OpenRouter. A geração pode levar alguns minutos; aguarde sem clicar novamente.'):
                             for label in ['A', 'B', 'C'][:quantity]:
                                 path = gerar_imagem(
                                     prompt, imagem_base=source.get('caminho_arquivo'), imagens_referencia=references,
                                     resolution=None if resolution_label == 'Padrão do modelo' else resolution_label,
+                                    provider=provider, aspect_ratio=None if ratio_label == 'Padrão do modelo' else ratio_label,
+                                    output_format=None if direct_edit else 'png',
                                 )
-                                candidate = create_candidate(source['id'], path, transformation=action, prompt=prompt, label=label, dna_version=str(dna.get('version','')))
+                                candidate = create_candidate(source['id'], path, transformation='direct_edit' if direct_edit else action, prompt=prompt, label=label, dna_version=str(dna.get('version','')))
                                 st.session_state[result_key].append(candidate['id'])
                         st.rerun()
                     except (OpenRouterFaithBloomError, RuntimeError, ValueError) as exc:

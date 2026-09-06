@@ -118,7 +118,7 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
         raise
 
 
-def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None) -> str:
+def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None, provider: str | None = None, aspect_ratio: str | None = None, output_format: str | None = "png") -> str:
     """Gera imagem aceitando cena-base + múltiplas referências visuais oficiais.
 
     `imagem_base` continua compatível com chamadas antigas. `imagens_referencia` é
@@ -127,13 +127,21 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
     """
     if resolution not in {None, "1K", "2K", "4K"}:
         raise ValueError("Resolução inválida. Escolha 1K, 2K ou 4K.")
+    if provider not in {None, "google-vertex", "google-ai-studio"}:
+        raise ValueError("Fornecedor de imagem inválido.")
+    if aspect_ratio not in {None, "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}:
+        raise ValueError("Proporção de imagem inválida.")
+    if output_format not in {None, "png"}:
+        raise ValueError("Formato de saída inválido.")
+    if not prompt.strip():
+        raise ValueError("Escreva o pedido de edição antes de gerar.")
     refs=[]
     if imagem_base:
         refs.append(imagem_base)
     for r in imagens_referencia or []:
         if r and r not in refs:
             refs.append(r)
-    ref_sig=f"|resolution:{resolution or 'default'}"
+    ref_sig=f"|resolution:{resolution or 'default'}|provider:{provider}|aspect_ratio:{aspect_ratio}|output_format:{output_format}"
     for ref in refs:
         if not os.path.isfile(ref):
             raise OpenRouterFaithBloomError("Uma imagem de referência não está disponível. Selecione-a novamente antes de gerar.")
@@ -150,7 +158,13 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
                 b64_ref=base64.b64encode(f.read()).decode()
             mime=mimetypes.guess_type(ref)[0] or "image/png"
             imagens_entrada.append(f"data:{mime};base64,{b64_ref}")
-        payload={"model":MODELO_IMAGEM,"prompt":prompt,"output_format":"png"}
+        payload={"model":MODELO_IMAGEM,"prompt":prompt}
+        if output_format:
+            payload["output_format"] = output_format
+        if provider:
+            payload["provider"] = {"only": [provider]}
+        if aspect_ratio:
+            payload["aspect_ratio"] = aspect_ratio
         if resolution:
             payload["resolution"] = resolution
         if imagens_entrada:
@@ -165,7 +179,11 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
             raise OpenRouterFaithBloomError(
                 "O provedor não retornou uma imagem nesta chamada. Tente novamente ou revise o modelo selecionado."
             )
-        caminho=os.path.join(PASTA_IMAGENS,f"{uuid.uuid4().hex}.png")
+        media_type = imagens[0].get("media_type", "image/png")
+        extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(media_type)
+        if not extension:
+            raise OpenRouterFaithBloomError("O provedor retornou um formato de imagem não suportado.")
+        caminho=os.path.join(PASTA_IMAGENS,f"{uuid.uuid4().hex}.{extension}")
         with open(caminho,"wb") as f:
             f.write(base64.b64decode(b64_imagem,validate=True))
         finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"sucesso",extrair_custo_reportado(dados))
