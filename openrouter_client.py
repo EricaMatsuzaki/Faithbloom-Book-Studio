@@ -15,6 +15,7 @@ from controle_geracao import (
     POLITICA,
     extrair_custo_reportado,
     finalizar_requisicao,
+    liberar_requisicao,
     iniciar_requisicao,
     sanitizar_texto,
 )
@@ -45,11 +46,14 @@ def _headers() -> dict:
 
 def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
     ultimo: Exception | None = None
-    for tentativa in range(1, POLITICA.tentativas_http + 1):
+    # Uma chamada de imagem pode continuar no provedor após timeout local.
+    # Não reenviar automaticamente uma operação paga sem idempotência.
+    tentativas = 1 if url.rstrip("/").endswith("/images") else max(1, POLITICA.tentativas_http)
+    for tentativa in range(1, tentativas + 1):
         try:
             resp=requests.post(url, headers=_headers(), json=payload, timeout=timeout)
             if resp.status_code == 429 or 500 <= resp.status_code <= 599:
-                if tentativa < POLITICA.tentativas_http:
+                if tentativa < tentativas:
                     time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
                     continue
             resp.raise_for_status()
@@ -59,7 +63,7 @@ def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
             status = getattr(getattr(exc, "response", None), "status_code", None)
             if status is not None and 400 <= status < 500 and status != 429:
                 break
-            if tentativa < POLITICA.tentativas_http:
+            if tentativa < tentativas:
                 time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
     codigo=getattr(getattr(ultimo,"response",None),"status_code",None)
     sufixo=f" (HTTP {codigo})" if codigo else ""
@@ -70,6 +74,7 @@ def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
         403: "A OpenRouter não autorizou esta solicitação. Verifique as permissões do modelo.",
         404: "O modelo ou serviço solicitado não está disponível na OpenRouter.",
         422: "A OpenRouter não aceitou o formato ou as opções da imagem.",
+        502: "O provedor de imagem falhou ou excedeu seu prazo. Esta tentativa terminou com erro; nenhuma nova tentativa de imagem foi enviada automaticamente.",
         429: "A OpenRouter atingiu um limite temporário. Aguarde antes de tentar novamente.",
     }.get(codigo, "Não foi possível concluir a geração na OpenRouter. Tente novamente mais tarde.")
     raise OpenRouterFaithBloomError(orientacao + sufixo) from None
@@ -105,6 +110,10 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
         return resultado
     except Exception as exc:
         finalizar_requisicao(req_id,assinatura,"texto",MODELO_TEXTO,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        raise
+    except BaseException:
+        # Stop/Rerun do Streamlit não herdam de Exception. Libere e propague.
+        liberar_requisicao(assinatura)
         raise
 
 
@@ -161,6 +170,10 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
     except Exception as exc:
         finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
         raise
+    except BaseException:
+        # Stop/Rerun do Streamlit não herdam de Exception. Libere e propague.
+        liberar_requisicao(assinatura)
+        raise
 
 
 def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str, voice: str | None = None) -> str:
@@ -190,6 +203,10 @@ def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str, voice: str | None =
         return caminho
     except Exception as exc:
         finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        raise
+    except BaseException:
+        # Stop/Rerun do Streamlit não herdam de Exception. Libere e propague.
+        liberar_requisicao(assinatura)
         raise
 
 
