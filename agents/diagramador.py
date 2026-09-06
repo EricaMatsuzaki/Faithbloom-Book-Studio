@@ -14,6 +14,7 @@ SKILL_PROFILE_ID = "diagrammer"
 from state import LivroState
 from kdp_rules import validar_contagem_paginas
 from qualidade_impressao import preflight_livro
+from prompt_master_compliance import avaliar_prompt_mestre
 
 
 def montar_layout(state: LivroState) -> list[dict]:
@@ -71,6 +72,13 @@ def diagramador_node(state: LivroState) -> LivroState:
         total_paginas, cor="premium"
     )
 
+    prompt_mestre = avaliar_prompt_mestre(dict(state))
+    state["prompt_mestre_compliance"] = prompt_mestre
+    moral_ok = not any(
+        item.get("codigo") == "MORAL_OBRIGATORIA"
+        for item in prompt_mestre.get("bloqueios", [])
+    )
+
     checklist = {
         "paginas_minimas_ok": ok,
         "dpi_300_confirmado": False,       # calculado abaixo por pixels reais / tamanho impresso
@@ -79,6 +87,12 @@ def diagramador_node(state: LivroState) -> LivroState:
         "divulgacao_ia_preenchida": False,  # exigência KDP 2026 - conteúdo gerado por IA
         "dedicatoria_incluida": bool(state.get("dedicatoria_texto")),
         "sinopse_vendas_pronta": bool(state.get("sinopse_vendas_curta")),
+        "moral_obrigatoria_ok": moral_ok,
+        "boas_vindas_pronta": bool(str(state.get("boas_vindas") or "").strip()),
+        "pais_educadores_pronto": bool(state.get("pais_educadores")),
+        "ficha_pedagogica_pronta": bool(state.get("ficha_pedagogica")),
+        "estilo_narrativo_definido": bool(state.get("estilo_narrativo")),
+        "tres_paginas_colorir_prontas": len(state.get("paginas_colorir") or []) >= 3,
         "capa_ebook_gerada": False,          # arquivo separado - ver agents/capa.py
         "capa_fisica_wrap_gerada": False,    # arquivo separado - ver agents/capa.py
         "pdf_miolo_gerado": bool(state.get("pdf_miolo")),
@@ -90,11 +104,20 @@ def diagramador_node(state: LivroState) -> LivroState:
     state["preflight_impressao"] = preflight
     state["checklist_kdp"]["dpi_300_confirmado"] = preflight["checks"]["imagens_300ppi"]
     state["checklist_kdp"]["bleed_configurado"] = preflight["checks"]["bleed_configurado"]
-    state["pacote_pronto"] = ok and all(
-        checklist[k] for k in ("dedicatoria_incluida", "sinopse_vendas_pronta")
+
+    # Prompt-Mestre: a ausência de Lição de Moral é bloqueio real de finalização.
+    state["pacote_pronto"] = (
+        ok
+        and moral_ok
+        and all(checklist[k] for k in ("dedicatoria_incluida", "sinopse_vendas_pronta"))
     )
+
     if not ok:
         state.setdefault("notas_revisor", []).append(msg)
+    if not moral_ok:
+        state.setdefault("notas_revisor", []).append(
+            "BLOQUEIO PROMPT-MESTRE: a Lição de Moral é obrigatória antes da finalização."
+        )
     return state
 
 
