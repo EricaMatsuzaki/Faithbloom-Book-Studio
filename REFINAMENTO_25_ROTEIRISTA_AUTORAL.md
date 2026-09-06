@@ -23,7 +23,8 @@ A skill-base inclui storytelling infantil, gancho inicial, page-turn structure, 
 6. Todas as versões ficam na **Biblioteca de Versões Narrativas**.
 7. A autora pode tornar outra versão ativa depois, sem regenerar as histórias.
 8. Derivados da versão anterior são preservados em histórico antes da troca.
-9. A área **➕ Explorar outros estilos** permite gerar estilos adicionais somente sob demanda.
+9. A própria tela **História em 4 Estilos** oferece o atalho **➕ Explorar outros estilos narrativos**.
+10. A área de estilos adicionais gera cada alternativa somente sob demanda.
 
 ## Primeiro estilo adicional oficial — 🔁 Cumulativo / Lengalenga
 Este estilo foi adicionado como biblioteca opcional e NÃO entra automaticamente nas quatro chamadas do comparador principal.
@@ -65,8 +66,4 @@ O sistema usa os princípios gerais de conto cumulativo/lengalenga, mas proíbe 
 `licao_final` estruturada em JSON/dict é normalizada para texto editorial limpo antes de aparecer na interface ou seguir para o livro, evitando exibição de objetos como `{'texto': ...}`.
 
 ## Validação
-- GitHub Actions: **337 passed, 1 skipped, 0 failures** no run de validação funcional do estilo adicional.
-- O commit documental subsequente também passou no GitHub Actions com a mesma suíte: **337 passed, 1 skipped**.
-- Testes confirmam que `ESTILOS_NARRATIVOS` continua contendo exatamente os quatro estilos oficiais.
-- Testes confirmam que `Cumulativo/Lengalenga` fica em registro separado de estilos adicionais.
-- Testes confirmam herança da skill `storyteller`, originalidade, aplicação como versão ativa e exposição da biblioteca opcional na interface.
+A suíte automatizada cobre: manutenção dos quatro estilos oficiais, herança da skill `storyteller`, geração opcional do Cumulativo/Lengalenga, originalidade, aplicação como versão ativa, biblioteca de versões e atalho da tela principal para a biblioteca de estilos adicionais.
