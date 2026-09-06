@@ -10,6 +10,7 @@ Ordem: Roteirista -> Revisor -(loop se reprovado)-> Roteirista
 from langgraph.graph import StateGraph, END
 
 from state import LivroState
+from state_prompt_master import LivroStatePromptMestre
 from agents.curador_tema import curador_tema_node
 from agents.roteirista import roteirista_node
 from agents.revisor import revisor_node, precisa_retrabalho
@@ -41,7 +42,7 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     está sendo usado - troca de modelo/API não exige reescrever os
     agentes.
     """
-    grafo = StateGraph(LivroState)
+    grafo = StateGraph(LivroStatePromptMestre)
 
     grafo.add_node("curador_tema", lambda s: curador_tema_node(s, chamar_llm))
     grafo.add_node("roteirista", lambda s: roteirista_node(s, chamar_llm))
