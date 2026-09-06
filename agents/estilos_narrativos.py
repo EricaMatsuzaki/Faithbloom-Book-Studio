@@ -61,14 +61,30 @@ def instrucao_estilo(estilo: str | None) -> str:
 
 
 def _personagens_resumo(state: dict) -> str:
+    """Combina Character DNA já formalizado com o briefing livre da autora.
+
+    Isso permite comparar os quatro estilos ANTES de finalizar a aparência dos
+    personagens, sem perder nomes, papéis ou características narrativas pedidas.
+    """
     personagens = state.get("personagens") or {}
     partes = []
     for nome, dados in personagens.items():
         if isinstance(dados, dict):
-            partes.append(f"{nome}: {dados.get('descricao_fixa','')}")
+            descricao = dados.get("descricao_fixa", "")
+            papel = dados.get("papel", "")
+            rotulo = f"{nome} ({papel})" if papel else str(nome)
+            partes.append(f"{rotulo}: {descricao}".strip())
         else:
             partes.append(str(nome))
-    return "\n".join(partes) or "Use os personagens já definidos no projeto sem alterar identidade."
+
+    brief = str(state.get("personagens_historia_brief") or "").strip()
+    if brief:
+        partes.append("Briefing narrativo informado pela autora:\n" + brief)
+
+    return "\n".join(partes) or (
+        "Ainda não há personagens formalizados. Preserve exatamente os personagens "
+        "descritos na premissa e não invente substitutos sem necessidade."
+    )
 
 
 def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
@@ -110,7 +126,7 @@ Lição cristã: {state.get('aprendizado_cristao') or state.get('licao_final') o
 Referência bíblica: {state.get('versiculo_referencia','')}
 Faixa etária: {state.get('faixa_etaria') or '3–8 anos'}
 
-PERSONAGENS — identidade deve permanecer igual em todas as versões:
+PERSONAGENS — identidade, nomes, papéis e características pedidas devem permanecer iguais em todas as versões:
 {_personagens_resumo(state)}
 """.strip()
 
@@ -147,7 +163,8 @@ Regras invariáveis:
 - mensagem cristã amorosa, sem sermão longo;
 - a personagem vive a lição;
 - não invente o texto completo do versículo: preserve somente a referência fornecida;
-- não altere Character DNA.
+- não altere Character DNA;
+- não troque nomes, relações ou papéis informados pela autora.
 """.strip()
         resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
         resultados[estilo] = _normalizar_resultado(resposta, estilo, modo)
@@ -163,6 +180,7 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
 
     # Amostra serve apenas para escolher o estilo; não altera título, moral nem cenas.
     if not versao or versao.get("modo") != "completa":
+        novo["historia_escolhida_preservar"] = False
         return novo
 
     if versao.get("titulo"):
@@ -174,4 +192,7 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     if versao.get("cenas_texto"):
         novo["cenas_texto"] = versao["cenas_texto"]
         novo["revisao_aprovada"] = False
+        # Quando a autora já escolheu uma das quatro histórias completas, o
+        # Roteirista não deve reescrevê-la ao voltar ao fluxo principal.
+        novo["historia_escolhida_preservar"] = True
     return novo
