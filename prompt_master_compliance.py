@@ -1,6 +1,8 @@
 """Refinamento 24 — conformidade do Prompt-Mestre FaithBloom."""
 from __future__ import annotations
 
+from age_profiles import normalizar_faixa_etaria, perfil_etario
+
 
 def _intensidade_valida(valor) -> bool:
     """Aceita projetos novos/antigos sem lançar exceção por valor legado."""
@@ -15,6 +17,20 @@ def avaliar_prompt_mestre(state: dict) -> dict:
     bloqueios: list[dict] = []
     recomendacoes: list[dict] = []
     aprovados: list[str] = []
+
+    # Faixa etária é central para novos livros. Projetos legados sem esse campo
+    # continuam compatíveis com 3–8, mas recebem recomendação para confirmação.
+    raw_faixa = str(state.get("faixa_etaria") or "").strip()
+    faixa = normalizar_faixa_etaria(raw_faixa or None)
+    perfil = perfil_etario(faixa)
+    if raw_faixa:
+        aprovados.append(f"Faixa etária: {perfil['short_label']}")
+    else:
+        recomendacoes.append({
+            "codigo": "FAIXA_ETARIA_NAO_CONFIRMADA",
+            "campo": "faixa_etaria",
+            "mensagem": "Confirme a faixa etária oficial do livro. Enquanto isso, o projeto usa 3–8 anos por compatibilidade.",
+        })
 
     if str(state.get("licao_final") or "").strip():
         aprovados.append("Lição de Moral")
@@ -52,8 +68,20 @@ def avaliar_prompt_mestre(state: dict) -> dict:
             "mensagem": "Gerar a mensagem e o guia de conversa para pais e educadores.",
         })
 
-    if state.get("ficha_pedagogica"):
+    ficha = state.get("ficha_pedagogica")
+    if ficha:
         aprovados.append("Ficha Pedagógica")
+        if isinstance(ficha, dict):
+            faixa_ficha = str(ficha.get("faixa_etaria") or "").strip()
+            if faixa_ficha and normalizar_faixa_etaria(faixa_ficha) != faixa:
+                recomendacoes.append({
+                    "codigo": "FICHA_FAIXA_ETARIA_DIVERGENTE",
+                    "campo": "ficha_pedagogica.faixa_etaria",
+                    "mensagem": (
+                        f"A Ficha Pedagógica indica '{faixa_ficha}', mas o livro está configurado para "
+                        f"{perfil['short_label']}. Regenere ou ajuste a ficha antes da exportação final."
+                    ),
+                })
     else:
         recomendacoes.append({
             "codigo": "FICHA_PEDAGOGICA_AUSENTE",
@@ -62,8 +90,8 @@ def avaliar_prompt_mestre(state: dict) -> dict:
         })
 
     # Psicologia das cores é regra editorial obrigatória de criação, mas não
-    # vira um segundo bloqueio de exportação neste refinamento: a decisão
-    # explícita da autora foi manter a Moral como bloqueio Prompt-Mestre.
+    # vira um segundo bloqueio de exportação neste refinamento: a Moral continua
+    # sendo o bloqueio Prompt-Mestre definido para compatibilidade do produto.
     cenas = [x for x in (state.get("cenas_texto") or []) if isinstance(x, dict)]
     mapa = [x for x in (state.get("mapa_emocional") or []) if isinstance(x, dict)]
     if cenas:
@@ -111,6 +139,8 @@ def avaliar_prompt_mestre(state: dict) -> dict:
         "aprovados": aprovados,
         "regra_colorir": 3,
         "regra_psicologia_cores": "pagina_por_pagina",
+        "faixa_etaria": faixa,
+        "faixa_etaria_label": perfil["short_label"],
     }
 
 
