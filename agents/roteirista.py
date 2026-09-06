@@ -1,16 +1,17 @@
 """
 Agente Roteirista.
 
-Escreve a história completa: sinopse poética, cenas (texto curto por
-cena, com emoção e figurino marcados) e a lição final + versículo.
+Escreve a história completa: sinopse poética, cenas (com emoção, subemoção,
+intensidade e figurino marcados) e a lição final + versículo.
 
-Cadência narrativa fixa: curiosidade -> desafio -> emoção -> aprendizado
--> fé -> gratidão -> lição final + versículo.
+A faixa etária oficial do livro vem do Age Profile Engine e altera linguagem,
+ritmo, densidade, musicalidade, humor, tensão e profundidade reflexiva.
 """
 
 from state import LivroState, CenaTexto
 from agent_skills import skill_contract
 from agents.estilos_narrativos import normalizar_estilo, instrucao_estilo
+from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria, perfil_etario
 
 PROMPT_BASE = """\
 Você é o Roteirista de um projeto de livro infantil cristão, fiel ao
@@ -18,43 +19,42 @@ Prompt-Mestre editorial do projeto. Preserve a voz da coleção e não presuma
 que o usuário logado é a pessoa creditada como autora.
 Autoria/crédito deste projeto: {author_credit}.
 
+FAIXA ETÁRIA — REGRA OBRIGATÓRIA:
+{instrucao_idade}
+
 ESTILO NARRATIVO FORMAL ESCOLHIDO:
 {estilo_narrativo}
 
-Siga esse estilo sem alterar os fatos centrais, personagens, lição cristã
-ou referência bíblica do projeto.
+Siga o estilo narrativo e a faixa etária simultaneamente, sem alterar os fatos
+centrais, personagens, lição cristã ou referência bíblica do projeto.
 
-Estilo de escrita OBRIGATÓRIO (best-seller infantil cristão, 3-8 anos):
-- Frases muito curtas e diretas (idealmente 5-15 palavras). Uma ideia
-  por frase.
-- Palavras simples, do vocabulário cotidiano de uma criança pequena.
-- Emoções SEMPRE descritas de forma CONCRETA, nunca metafórica ou
-  abstrata. Exemplos do padrão certo: "coração quentinho", "Mel ficou
-  triste", "Mel sorriu", "ficaram muito felizes". Nunca use metáforas
-  complexas ou linguagem adulta para descrever sentimento.
-- Repetição suave e proposital: repita uma frase-chave, um som ou uma
-  estrutura ao longo da história (crianças de 3-8 anos gostam, e isso
-  ajuda a fixar e acalmar).
-- Musicalidade infantil leve e natural em todos os estilos: ritmo gostoso,
-  pequenas repetições, pausas e sons. No Estilo 2 isso pode ser mais forte.
-- Onomatopeias são bem-vindas quando ligadas a uma ação real, humor,
-  movimento ou surpresa (ex.: Toc-toc!, Plof!, Plim!, Ufa!), sem excesso.
-- Ação visual rápida: cada cena tem algo ACONTECENDO (um gesto, um
-  movimento, uma reação), nunca só descrição parada - crianças pequenas
-  entendem a história pelas imagens e ações, não por explicação.
-- A jornada deve ter movimento, humor leve quando couber, tensão infantil
-  segura, descoberta, transformação emocional, descoberta espiritual e
-  recompensa/celebração ao final. Nunca criar medo excessivo ou sofrimento pesado.
-- Sem simbolismo complexo, sem duplo sentido: o tema e a lição devem
-  ficar transparentes e claros para uma criança pequena entender sem
-  ajuda de um adulto.
-- Escreva pensando em leitura EM VOZ ALTA: frases com ritmo natural e
-  musical, fáceis de ler por pais, professores ou contadores de
-  histórias, sem trava-línguas nem orações longas.
+REGRAS NARRATIVAS UNIVERSAIS FAITHBLOOM:
+- Clareza acima de enfeite. O vocabulário, tamanho das frases e densidade de
+  texto devem obedecer ao perfil etário escolhido.
+- Emoções devem ser compreensíveis para a idade. Para os menores, descreva-as
+  de forma concreta; para leitores maiores, permita mais nuance sem linguagem
+  adulta desnecessária.
+- Use musicalidade natural em todos os estilos. A intensidade de repetição,
+  pausas e sons deve seguir o perfil etário.
+- Onomatopeias são bem-vindas quando ligadas a ação real, humor, movimento ou
+  surpresa; use a intensidade recomendada pelo perfil etário e nunca em excesso.
+- Cada cena deve ter algo acontecendo: gesto, movimento, decisão, reação,
+  descoberta ou consequência. Evite exposição parada.
+- A jornada deve ter movimento, humor adequado à idade, tensão segura,
+  descoberta, transformação emocional, descoberta espiritual e
+  recompensa/celebração ao final.
+- Nunca use medo excessivo, sofrimento pesado, culpa religiosa ou ameaça como
+  recurso de ensino cristão.
+- A mensagem cristã deve ser amorosa e adequada à idade; não use doutrina
+  complexa nem sermão longo.
+- Escreva pensando em leitura em voz alta quando isso combinar com a faixa,
+  preservando ritmo natural e frases agradáveis de ouvir.
 
-Cadência narrativa: curiosidade -> desejo -> desafio -> tentativas ->
-humor/movimento -> tensão leve -> emoção -> descoberta -> fé ->
+Cadência narrativa-base: curiosidade -> desejo -> desafio -> tentativas ->
+humor/movimento -> tensão segura -> emoção -> descoberta -> fé ->
 transformação -> recompensa emocional -> gratidão/celebração.
+A cadência pode ganhar mais nuance e duração nas faixas maiores, sem perder
+clareza nem a transformação central.
 
 MAPA EMOCIONAL OBRIGATÓRIO POR CENA:
 - Cada cena tem UMA emoção principal CANÔNICA, escolhida entre: {emocoes_validas}.
@@ -68,22 +68,25 @@ MAPA EMOCIONAL OBRIGATÓRIO POR CENA:
 - Emoção, subemoção e intensidade devem ser coerentes com o que realmente
   acontece na cena; não use emoções aleatórias só para variar paleta.
 
-- Cada cena registra o figurino do personagem principal nessa cena
-  (roupa/acessório). Se a cena é continuação direta da anterior (mesmo
-  dia, mesma situação), repita o mesmo figurino. Se a narrativa muda de
-  contexto (novo dia, nova situação: dormir, chuva, festa...), marque a
-  troca explicitamente - nunca troque roupa sem motivo narrativo.
+CONTINUIDADE VISUAL:
+- Cada cena registra o figurino do personagem principal nessa cena.
+- Se a cena continua no mesmo dia/situação, mantenha o figurino.
+- Se houver mudança de contexto, marque a troca explicitamente.
 - Personagens fixos disponíveis: {personagens}.
 - Briefing adicional de personagens da autora: {personagens_brief}.
-- Gere no mínimo {min_cenas} cenas (o suficiente para {paginas_minimas}
-  páginas físicas, considerando texto e imagem em páginas separadas).
-- Feche a história em 3 camadas: (1) diálogo de resolução, (2) cena de
-  celebração, (3) página final só com Lição + Versículo bíblico
-  ({versiculo_referencia}), marcada como FIM.
+
+ESTRUTURA DO LIVRO:
+- Gere no mínimo {min_cenas} cenas para {paginas_minimas} páginas físicas,
+  considerando a proposta ilustrada e a densidade indicada pelo perfil etário.
+- Teto heurístico de revisão: cerca de {max_words_sentence} palavras por frase e
+  {max_words_scene} palavras por cena. Não use o teto como meta de enchimento.
+- Feche a história em 3 camadas: (1) resolução, (2) recompensa/celebração,
+  (3) Lição de Moral + referência bíblica ({versiculo_referencia}), marcada como FIM.
 - A Lição de Moral é obrigatória. Nunca devolva licao_final vazia.
 
 Dados da história:
 Título: {titulo}
+Faixa etária: {faixa_etaria_label}
 Emoção central: {emocao_central}
 Aprendizado cristão: {aprendizado_cristao}
 Versículo: {versiculo_referencia}
@@ -101,6 +104,8 @@ def montar_prompt(state: LivroState) -> str:
     ) or "ainda não formalizados"
     min_cenas = max(12, state.get("paginas_minimas", 24) // 2)
     estilo = normalizar_estilo(state.get("estilo_narrativo"))
+    faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
+    perfil = perfil_etario(faixa)
     return PROMPT_BASE.format(
         emocoes_validas=", ".join(EMOCOES.keys()),
         subemocoes_validas=", ".join(EMOCOES_COMPLEMENTARES.keys()),
@@ -108,6 +113,10 @@ def montar_prompt(state: LivroState) -> str:
         personagens_brief=state.get("personagens_historia_brief", "") or "nenhum briefing adicional",
         min_cenas=min_cenas,
         paginas_minimas=state.get("paginas_minimas", 24),
+        max_words_sentence=perfil["max_words_sentence"],
+        max_words_scene=perfil["max_words_scene"],
+        faixa_etaria_label=perfil["short_label"],
+        instrucao_idade=instrucao_faixa_etaria(faixa),
         titulo=state.get("titulo", ""),
         emocao_central=state.get("emocao_central", ""),
         aprendizado_cristao=state.get("aprendizado_cristao", ""),
@@ -118,13 +127,11 @@ def montar_prompt(state: LivroState) -> str:
 
 
 def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
-    """Gera a história, exceto quando a autora já escolheu uma versão completa.
-
-    ``historia_escolhida_preservar`` é consumido uma única vez. Assim a versão
-    escolhida nos quatro estilos chega intacta ao Revisor, mas um eventual ciclo
-    posterior de retrabalho continua possível.
-    """
+    """Gera a história, exceto quando a autora já escolheu uma versão completa."""
     estilo = normalizar_estilo(state.get("estilo_narrativo"))
+    faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
+    state["faixa_etaria"] = faixa
+    state["age_profile_id"] = faixa
     state["estilo_narrativo"] = estilo
     state["estilo_narrativo_label"] = __import__(
         "agents.estilos_narrativos", fromlist=["ESTILOS_NARRATIVOS"]
