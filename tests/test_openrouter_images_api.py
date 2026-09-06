@@ -139,3 +139,49 @@ def test_neutral_master_prompt_preserves_identity_and_removes_seasonal_clothes()
     assert "cachecol" in prompt and "fundo neutro" in prompt
     assert "laço permanente" in prompt and "verdes" in prompt
     assert "NO_GENERATED_TEXT" in prompt
+
+
+def test_playground_request_matches_successful_contract(image_call):
+    calls, _, _, tmp = image_call
+    ref = tmp / "mel.jpg"
+    ref.write_bytes(b"original-jpeg")
+    prompt = "Edite a imagem anexada. Remova o cachecol. Não acrescente texto."
+    client.gerar_imagem(prompt, imagem_base=str(ref), resolution="4K",
+                        provider="google-vertex", aspect_ratio="1:1", output_format=None)
+    assert calls[0]["payload"] == {
+        "model": client.MODELO_IMAGEM, "prompt": prompt,
+        "resolution": "4K", "aspect_ratio": "1:1",
+        "input_references": [{"type": "image_url", "image_url": {
+            "url": "data:image/jpeg;base64," + base64.b64encode(b"original-jpeg").decode()}}],
+        "provider": {"only": ["google-vertex"]},
+    }
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("options", [{"provider": "invalid"}, {"aspect_ratio": "invalid"}])
+def test_invalid_routing_rejected_before_request(image_call, options):
+    calls, _, _, _ = image_call
+    with pytest.raises(ValueError):
+        client.gerar_imagem("Mel", **options)
+    assert not calls
+
+
+def test_routing_options_change_duplicate_signature(monkeypatch, image_call):
+    signatures = []
+    def start(kind, model, signature):
+        signatures.append(signature)
+        return "id", "sig", 0.1, 1.0
+    monkeypatch.setattr(client, "iniciar_requisicao", start)
+    client.gerar_imagem("Mel", provider="google-vertex", aspect_ratio="1:1")
+    client.gerar_imagem("Mel", provider="google-ai-studio", aspect_ratio="1:1")
+    client.gerar_imagem("Mel", provider="google-vertex", aspect_ratio="3:4")
+    assert len(set(signatures)) == 3
+
+
+def test_provider_jpeg_keeps_correct_file_extension(monkeypatch, image_call):
+    from pathlib import Path
+    monkeypatch.setattr(client, "_post_com_retry", lambda *a: _Response({"data": [
+        {"b64_json": base64.b64encode(b"jpeg-bytes").decode(), "media_type": "image/jpeg"}]}))
+    result = client.gerar_imagem("Mel", output_format=None)
+    assert Path(result).suffix == ".jpg"
+    assert Path(result).read_bytes() == b"jpeg-bytes"
