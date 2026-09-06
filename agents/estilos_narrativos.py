@@ -1,0 +1,173 @@
+"""Refinamento 24 — estilos narrativos formais do Prompt-Mestre FaithBloom.
+
+Mantém a mesma premissa, personagens, lição cristã e referência bíblica,
+variando somente a forma narrativa. A autora pode comparar os quatro estilos
+antes de escolher qual seguirá para o livro final.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any
+
+ESTILOS_NARRATIVOS = {
+    "estilo_1": {
+        "label": "Estilo 1 — Aventura",
+        "descricao": "Aventura + emoção + superação, com ação visual, humor leve e transformação clara.",
+        "instrucao": (
+            "Use aventura, emoção e superação. Estruture problema -> tentativas -> "
+            "descoberta -> ação -> transformação -> vitória espiritual. Priorize ação "
+            "visual, diálogos naturais, pequenas surpresas e humor leve quando couber."
+        ),
+    },
+    "estilo_2": {
+        "label": "Estilo 2 — Poético/Rimado",
+        "descricao": "Musicalidade, repetição e rimas naturais sem perder clareza infantil.",
+        "instrucao": (
+            "Use linguagem poética infantil, musicalidade, repetição suave e rimas naturais. "
+            "Nunca force rimas, nunca sacrifique clareza, e mantenha frases simples para 3–8 anos."
+        ),
+    },
+    "estilo_3": {
+        "label": "Estilo 3 — Fábula cristã",
+        "descricao": "Fábula cristã com simbolismo simples, imediatamente compreensível para 3–8 anos.",
+        "instrucao": (
+            "Use estrutura de fábula cristã. Símbolos e metáforas, se usados, devem ser simples, "
+            "concretos e imediatamente compreensíveis por crianças de 3–8 anos. A personagem "
+            "precisa viver a lição, não apenas ouvi-la."
+        ),
+    },
+    "misto": {
+        "label": "Estilo misto",
+        "descricao": "Combina aventura, emoção, musicalidade e fábula cristã sem perder unidade.",
+        "instrucao": (
+            "Combine aventura e emoção do Estilo 1, musicalidade/repetição do Estilo 2 e a "
+            "clareza moral da fábula cristã do Estilo 3. Não misture de forma caótica: preserve "
+            "uma voz narrativa única, simples e adequada a 3–8 anos."
+        ),
+    },
+}
+
+ORDEM_ESTILOS = tuple(ESTILOS_NARRATIVOS.keys())
+
+
+def normalizar_estilo(estilo: str | None) -> str:
+    return estilo if estilo in ESTILOS_NARRATIVOS else "estilo_1"
+
+
+def instrucao_estilo(estilo: str | None) -> str:
+    chave = normalizar_estilo(estilo)
+    dados = ESTILOS_NARRATIVOS[chave]
+    return f"{dados['label']}: {dados['instrucao']}"
+
+
+def _personagens_resumo(state: dict) -> str:
+    personagens = state.get("personagens") or {}
+    partes = []
+    for nome, dados in personagens.items():
+        if isinstance(dados, dict):
+            partes.append(f"{nome}: {dados.get('descricao_fixa','')}")
+        else:
+            partes.append(str(nome))
+    return "\n".join(partes) or "Use os personagens já definidos no projeto sem alterar identidade."
+
+
+def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
+    if not isinstance(resposta, dict):
+        resposta = {"amostra": str(resposta or "")}
+    cenas = resposta.get("cenas") or resposta.get("cenas_texto") or []
+    if not isinstance(cenas, list):
+        cenas = []
+    amostra = resposta.get("amostra") or resposta.get("preview") or ""
+    if not amostra and cenas:
+        amostra = "\n\n".join(str(c.get("texto", "")) for c in cenas[:4] if isinstance(c, dict))
+    return {
+        "estilo": estilo,
+        "label": ESTILOS_NARRATIVOS[estilo]["label"],
+        "modo": modo,
+        "titulo": resposta.get("titulo") or "",
+        "sinopse_poetica": resposta.get("sinopse_poetica") or resposta.get("sinopse") or "",
+        "amostra": str(amostra or ""),
+        "cenas_texto": cenas,
+        "licao_final": resposta.get("licao_final") or "",
+    }
+
+
+def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
+    """Gera a mesma história/premissa nos quatro estilos.
+
+    modo='amostra': preview curto e econômico.
+    modo='completa': história inteira em cada estilo para comparação profunda.
+    """
+    modo = "completa" if modo == "completa" else "amostra"
+    min_cenas = max(12, int(state.get("paginas_minimas") or 24) // 2)
+    base = f"""
+PREMISSA/TEMA:
+{state.get('_entrada_tema_livre') or state.get('titulo') or ''}
+
+Título atual: {state.get('titulo','')}
+Emoção central: {state.get('emocao_central','')}
+Lição cristã: {state.get('aprendizado_cristao') or state.get('licao_final') or ''}
+Referência bíblica: {state.get('versiculo_referencia','')}
+Faixa etária: {state.get('faixa_etaria') or '3–8 anos'}
+
+PERSONAGENS — identidade deve permanecer igual em todas as versões:
+{_personagens_resumo(state)}
+""".strip()
+
+    resultados: dict[str, dict] = {}
+    for estilo in ORDEM_ESTILOS:
+        spec = ESTILOS_NARRATIVOS[estilo]
+        if modo == "amostra":
+            instrucao_saida = (
+                "Crie uma AMOSTRA REPRESENTATIVA da história nesse estilo: 4 a 6 pequenos blocos/cenas, "
+                "suficientes para a autora sentir ritmo, linguagem e atmosfera. Não precisa escrever o livro inteiro. "
+                "Retorne JSON com titulo, sinopse_poetica, amostra e licao_final."
+            )
+        else:
+            instrucao_saida = (
+                f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
+                "Retorne JSON com titulo, sinopse_poetica, cenas_texto e licao_final. "
+                "Cada cena deve conter numero, texto, emocao, figurino e contexto_visual."
+            )
+
+        sistema = f"""
+Você é o Comparative Story Director do FaithBloom Book Studio.
+Gere UMA versão da MESMA história, sem mudar fatos centrais, personagens, lição cristã
+ou referência bíblica. Varie somente o ESTILO NARRATIVO.
+
+ESTILO OBRIGATÓRIO:
+{spec['label']}
+{spec['instrucao']}
+
+Regras invariáveis:
+- público 3–8 anos;
+- frases claras e adequadas à leitura em voz alta;
+- emoções concretas;
+- ação visual;
+- mensagem cristã amorosa, sem sermão longo;
+- a personagem vive a lição;
+- não invente o texto completo do versículo: preserve somente a referência fornecida;
+- não altere Character DNA.
+""".strip()
+        resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
+        resultados[estilo] = _normalizar_resultado(resposta, estilo, modo)
+
+    return resultados
+
+
+def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None) -> dict:
+    novo = deepcopy(state)
+    chave = normalizar_estilo(estilo)
+    novo["estilo_narrativo"] = chave
+    novo["estilo_narrativo_label"] = ESTILOS_NARRATIVOS[chave]["label"]
+    if versao:
+        if versao.get("titulo"):
+            novo["titulo"] = versao["titulo"]
+        if versao.get("sinopse_poetica"):
+            novo["sinopse_poetica"] = versao["sinopse_poetica"]
+        if versao.get("licao_final"):
+            novo["licao_final"] = versao["licao_final"]
+        if versao.get("modo") == "completa" and versao.get("cenas_texto"):
+            novo["cenas_texto"] = versao["cenas_texto"]
+            novo["revisao_aprovada"] = False
+    return novo
