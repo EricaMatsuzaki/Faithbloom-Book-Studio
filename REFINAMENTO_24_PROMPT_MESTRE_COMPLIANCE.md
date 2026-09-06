@@ -30,6 +30,7 @@ Transformar os itens ainda não formalizados do Prompt-Mestre em regras e ferram
   - **História completa nos 4 estilos**: permite aplicar uma versão completa; ao aplicar, `revisao_aprovada=False` para obrigar nova revisão editorial.
 - Personagens, premissa, lição cristã e referência bíblica devem permanecer equivalentes entre as versões.
 - A narrativa recebe musicalidade infantil leve, repetição natural, onomatopeias equilibradas quando ligadas à ação e uma jornada com movimento, humor leve, tensão segura, transformação emocional, descoberta espiritual e recompensa/celebração.
+- As quatro histórias completas também geram os metadados emocionais cena a cena, para a versão escolhida não perder a integração com o Emotional & Color Director.
 
 ### Emotional & Color Engine
 
@@ -75,7 +76,7 @@ A intensidade 1–5 é convertida em nível emocional baixo/médio/alto (por exe
 
 #### Metadados por cena
 
-O Roteirista passa a pedir, por cena:
+`CenaTexto` e o Roteirista passam a formalizar, por cena:
 
 - `emocao` principal canônica;
 - `emocao_secundaria` opcional;
@@ -117,7 +118,7 @@ A página `pages/17_🎭_Emotional_Color_Director.py` agora pode trabalhar com o
 - família/nível Plutchik;
 - uso espiritual/editorial.
 
-O mapa pode ser salvo em `mapa_emocional` **antes da geração das ilustrações**. A tela não gera imagens.
+O mapa pode ser salvo em `mapa_emocional` **antes da geração das ilustrações**. A tela não gera imagens. Projetos antigos com emoções acentuadas ou intensidade inválida são normalizados com fallback seguro para revisão, sem crash do Studio.
 
 ### Complementos editoriais
 
@@ -150,7 +151,10 @@ Permite:
 `prompt_master_compliance.py` diferencia:
 
 - **Bloqueio:** Lição de Moral ausente.
-- **Recomendações:** estilo não escolhido, Boas-vindas ausente, Pais/Educadores ausente, Ficha Pedagógica ausente, menos de 3 páginas para colorir.
+- **Recomendações:** estilo não escolhido, Boas-vindas ausente, Pais/Educadores ausente, Ficha Pedagógica ausente, menos de 3 páginas para colorir, mapa emocional ausente/incompleto ou metadados emocionais por cena incompletos.
+- **Aprovado:** psicologia das cores página por página quando o mapa corresponde à estrutura atual da história.
+
+O Quality Guardian existente continua responsável pelo bloqueio grave quando houver evidência de que a direção emocional recoloriu uma característica bloqueada do personagem.
 
 ### Pipeline
 
@@ -169,6 +173,7 @@ Permite:
 6. Plutchik organiza emoção; não substitui a tabela de cores do Prompt-Mestre.
 7. Psicologia das cores altera ambiente/luz/atmosfera, nunca identidade canônica dos personagens.
 8. Cenas não devem ficar monocromáticas apenas para representar emoção.
+9. Transições cromáticas devem acompanhar a mudança emocional gradualmente.
 
 ## Testes dedicados
 
@@ -176,10 +181,13 @@ Além dos testes anteriores do Refinamento 24, `tests/test_refinamento24_emotion
 
 - preservação da tabela canônica;
 - mapeamento Plutchik independente das cores;
-- subemoção e transição;
+- subemoção, intensidade e transição;
+- schema formal dos campos emocionais da cena;
 - regra não monocromática;
 - Character DNA protegido;
-- passagem da direção emocional completa ao prompt do Ilustrador.
+- passagem da direção emocional completa ao prompt do Ilustrador;
+- compatibilidade com intensidade legada inválida;
+- exigência dos metadados emocionais também nas quatro histórias completas.
 
 ## Limite deste refinamento
 
