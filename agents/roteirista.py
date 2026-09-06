@@ -54,6 +54,7 @@ aprendizado -> fé -> gratidão.
   contexto (novo dia, nova situação: dormir, chuva, festa...), marque a
   troca explicitamente - nunca troque roupa sem motivo narrativo.
 - Personagens fixos disponíveis: {personagens}.
+- Briefing adicional de personagens da autora: {personagens_brief}.
 - Gere no mínimo {min_cenas} cenas (o suficiente para {paginas_minimas}
   páginas físicas, considerando texto e imagem em páginas separadas).
 - Feche a história em 3 camadas: (1) diálogo de resolução, (2) cena de
@@ -72,37 +73,52 @@ Versículo: {versiculo_referencia}
 def montar_prompt(state: LivroState) -> str:
     from emotion_colors import EMOCOES
 
+    personagens = state.get("personagens") or {}
     personagens_str = ", ".join(
-        f"{p['nome']} ({p['papel']})" for p in state["personagens"].values()
-    )
+        f"{p.get('nome', nome)} ({p.get('papel', '')})"
+        for nome, p in personagens.items()
+        if isinstance(p, dict)
+    ) or "ainda não formalizados"
     min_cenas = max(12, state.get("paginas_minimas", 24) // 2)
     estilo = normalizar_estilo(state.get("estilo_narrativo"))
     return PROMPT_BASE.format(
         emocoes_validas=", ".join(EMOCOES.keys()),
         personagens=personagens_str,
+        personagens_brief=state.get("personagens_historia_brief", "") or "nenhum briefing adicional",
         min_cenas=min_cenas,
         paginas_minimas=state.get("paginas_minimas", 24),
-        titulo=state["titulo"],
-        emocao_central=state["emocao_central"],
-        aprendizado_cristao=state["aprendizado_cristao"],
-        versiculo_referencia=state["versiculo_referencia"],
+        titulo=state.get("titulo", ""),
+        emocao_central=state.get("emocao_central", ""),
+        aprendizado_cristao=state.get("aprendizado_cristao", ""),
+        versiculo_referencia=state.get("versiculo_referencia", ""),
         author_credit=__import__("author_profiles").author_display_from_state(state) or "não definida",
         estilo_narrativo=instrucao_estilo(estilo),
     ) + skill_contract("storyteller")
 
 
 def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
-    """
-    chamar_llm: função injetada que recebe um prompt de sistema + instrução
-    e devolve texto (abstrai a chamada real à API - ver main.py).
-    Espera-se que o LLM devolva um JSON estruturado; aqui simplificamos
-    a validação para manter o esqueleto legível.
+    """Gera a história, exceto quando a autora já escolheu uma versão completa.
+
+    ``historia_escolhida_preservar`` é consumido uma única vez. Assim a versão
+    escolhida nos quatro estilos chega intacta ao Revisor, mas um eventual ciclo
+    posterior de retrabalho continua possível.
     """
     estilo = normalizar_estilo(state.get("estilo_narrativo"))
     state["estilo_narrativo"] = estilo
     state["estilo_narrativo_label"] = __import__(
         "agents.estilos_narrativos", fromlist=["ESTILOS_NARRATIVOS"]
     ).ESTILOS_NARRATIVOS[estilo]["label"]
+
+    if (
+        state.get("historia_escolhida_preservar")
+        and state.get("cenas_texto")
+        and str(state.get("licao_final") or "").strip()
+    ):
+        # Não gasta nova chamada de IA nem sobrescreve a história que a autora
+        # escolheu no comparador. O Revisor é a próxima etapa.
+        state["historia_escolhida_preservar"] = False
+        state["revisao_aprovada"] = False
+        return state
 
     prompt = montar_prompt(state)
     resposta = chamar_llm(
@@ -115,6 +131,7 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     state["sinopse_poetica"] = resposta.get("sinopse_poetica", "")
     state["cenas_texto"] = resposta.get("cenas_texto", [])
     state["licao_final"] = resposta.get("licao_final", "")
+    state["historia_escolhida_preservar"] = False
     return state
 
 
