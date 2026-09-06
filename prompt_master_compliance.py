@@ -52,6 +52,39 @@ def avaliar_prompt_mestre(state: dict) -> dict:
             "mensagem": "Gerar a ficha pedagógica da obra.",
         })
 
+    # Psicologia das cores é regra editorial obrigatória de criação, mas não
+    # vira um segundo bloqueio de exportação neste refinamento: a decisão
+    # explícita da autora foi manter a Moral como bloqueio Prompt-Mestre.
+    cenas = [x for x in (state.get("cenas_texto") or []) if isinstance(x, dict)]
+    mapa = [x for x in (state.get("mapa_emocional") or []) if isinstance(x, dict)]
+    if cenas:
+        faltando_meta = [
+            int(c.get("numero", i + 1))
+            for i, c in enumerate(cenas)
+            if not str(c.get("emocao") or "").strip()
+            or not (1 <= int(c.get("intensidade_emocional") or 0) <= 5)
+        ]
+        if faltando_meta:
+            recomendacoes.append({
+                "codigo": "EMOCAO_POR_CENA_INCOMPLETA",
+                "campo": "cenas_texto",
+                "mensagem": f"Completar emoção e intensidade 1–5 nas cenas: {faltando_meta}.",
+            })
+        elif not mapa:
+            recomendacoes.append({
+                "codigo": "MAPA_EMOCIONAL_AUSENTE",
+                "campo": "mapa_emocional",
+                "mensagem": "A psicologia das cores é obrigatória página por página; gere/revise o mapa no Emotional & Color Director antes das ilustrações finais.",
+            })
+        elif len(mapa) != len(cenas):
+            recomendacoes.append({
+                "codigo": "MAPA_EMOCIONAL_INCOMPLETO",
+                "campo": "mapa_emocional",
+                "mensagem": f"O mapa emocional possui {len(mapa)} itens para {len(cenas)} cenas. Alinhe o mapa com a história atual.",
+            })
+        else:
+            aprovados.append("Psicologia das cores página por página")
+
     paginas_colorir = state.get("paginas_colorir") or []
     if len(paginas_colorir) >= 3:
         aprovados.append("3 páginas para colorir")
@@ -68,6 +101,7 @@ def avaliar_prompt_mestre(state: dict) -> dict:
         "recomendacoes": recomendacoes,
         "aprovados": aprovados,
         "regra_colorir": 3,
+        "regra_psicologia_cores": "pagina_por_pagina",
     }
 
 
