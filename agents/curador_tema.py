@@ -61,6 +61,7 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
     perfil = perfil_etario(faixa)
     state["faixa_etaria"] = faixa
     state["age_profile_id"] = faixa
+    versiculo_preexistente = bool(str(state.get("versiculo_referencia") or "").strip())
 
     prompt = PROMPT_CURADOR.format(
         emocoes_validas=", ".join(EMOCOES.keys()),
@@ -86,10 +87,14 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
     if not state.get("titulo"):
         state["titulo"] = resposta.get("titulo_sugerido", "")
 
-    # Referência sugerida por IA continua CANDIDATA até validação humana/fonte/contexto.
     state["_justificativa_curadoria"] = resposta.get("justificativa", "")
-    suggested_ref = resposta.get("versiculo_referencia", "")
-    if suggested_ref:
+    suggested_ref = str(resposta.get("versiculo_referencia") or "").strip()
+    adopted_ref = str(state.get("versiculo_referencia") or "").strip()
+
+    # Referência sugerida por IA só vira CANDIDATA se foi realmente adotada.
+    # Se a autora já tinha informado outra referência, não contaminamos a
+    # validação existente com uma sugestão que não está no livro.
+    if (not versiculo_preexistente) and suggested_ref and adopted_ref == suggested_ref:
         state["bible_reference_candidate"] = create_reference_candidate(
             suggested_ref, reason=resposta.get("justificativa", ""), suggested_by="theme_curator"
         )
