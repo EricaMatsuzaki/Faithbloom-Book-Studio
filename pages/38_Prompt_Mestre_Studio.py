@@ -18,6 +18,7 @@ from agents.estilos_narrativos import (
 )
 from agents.complementos_editoriais import gerar_complementos_editoriais
 from prompt_master_compliance import avaliar_prompt_mestre
+from age_profiles import normalizar_faixa_etaria, perfil_etario
 
 st.set_page_config(page_title="Prompt-Mestre Studio", page_icon="🪄", layout="wide")
 aplicar_estilo()
@@ -31,11 +32,16 @@ if "state" not in st.session_state:
     st.stop()
 
 s = st.session_state.state
+faixa = normalizar_faixa_etaria(s.get("faixa_etaria"))
+perfil = perfil_etario(faixa)
+s["faixa_etaria"] = faixa
+s["age_profile_id"] = faixa
+st.caption(f"Faixa etária oficial deste livro: **{perfil['short_label']}**. Este Studio preserva essa decisão em todos os complementos.")
 
 st.subheader("1. Estilo narrativo oficial do livro")
 st.caption(
     "A escolha altera a forma de contar a história, mas deve preservar personagens, premissa, "
-    "lição cristã e referência bíblica."
+    "lição cristã, referência bíblica e faixa etária."
 )
 
 chave_atual = normalizar_estilo(s.get("estilo_narrativo"))
@@ -113,7 +119,7 @@ if comparativo:
 st.divider()
 st.subheader("2. Complementos editoriais do Prompt-Mestre")
 st.caption(
-    "Estes conteúdos são separados da história e podem ser editados pela autora antes da publicação."
+    f"Estes conteúdos são separados da história, seguem a faixa {perfil['short_label']} e podem ser editados pela autora antes da publicação."
 )
 
 if st.button("🌸 Gerar Boas-vindas + Pais/Educadores + Ficha Pedagógica"):
@@ -140,7 +146,7 @@ with st.expander("👨‍👩‍👧 Pais e Educadores", expanded=True):
         "Habilidade socioemocional", value=pais.get("habilidade_socioemocional", "")
     )
     perguntas = st.text_area(
-        "Perguntas para conversar com a criança — uma por linha",
+        "Perguntas para conversar com o leitor — uma por linha",
         value="\n".join(pais.get("perguntas") or []),
         height=110,
     )
@@ -154,8 +160,14 @@ with st.expander("👨‍👩‍👧 Pais e Educadores", expanded=True):
 s["pais_educadores"] = pais
 
 ficha = dict(s.get("ficha_pedagogica") or {})
+ficha["faixa_etaria"] = perfil["short_label"]
 with st.expander("🎓 Ficha Pedagógica", expanded=True):
-    ficha["faixa_etaria"] = st.text_input("Faixa etária", value=ficha.get("faixa_etaria", "3–8 anos"))
+    st.text_input(
+        "Faixa etária",
+        value=perfil["short_label"],
+        disabled=True,
+        help="A faixa é definida no projeto e não deve divergir da ficha pedagógica.",
+    )
     ficha["tema_central"] = st.text_input("Tema central", value=ficha.get("tema_central", ""))
     ficha["emocao_principal"] = st.text_input("Emoção principal", value=ficha.get("emocao_principal", ""))
     ficha["habilidade_socioemocional"] = st.text_input(
