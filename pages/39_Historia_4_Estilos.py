@@ -1,11 +1,12 @@
 """Refinamento 24 — Criação da história em quatro estilos.
 
 Fluxo editorial:
-1. A autora pode trazer ideia/resumo/relato OU pedir ideias à IA.
-2. Pode informar os personagens que deseja antes do Character DNA visual.
-3. O Curador prepara título, emoção, lição e referência bíblica editáveis.
-4. A mesma premissa pode ser vista nos quatro estilos, como amostra ou história completa.
-5. A escolha é preservada e segue para personagens/revisão antes de qualquer ilustração.
+1. A autora escolhe a faixa etária oficial do livro.
+2. Pode trazer ideia/resumo/relato OU pedir ideias à IA.
+3. Pode informar os personagens que deseja antes do Character DNA visual.
+4. O Curador prepara título, emoção, lição e referência bíblica editáveis.
+5. A mesma premissa pode ser vista nos quatro estilos, como amostra ou história completa.
+6. A escolha é preservada e segue para personagens/revisão antes de qualquer ilustração.
 """
 from __future__ import annotations
 
@@ -24,12 +25,17 @@ from agents.estilos_narrativos import (
     aplicar_estilo_ao_state,
     gerar_comparativo_estilos,
 )
+from age_profiles import (
+    normalizar_faixa_etaria,
+    opcoes_faixa_etaria,
+    perfil_etario,
+)
 
 st.set_page_config(page_title="História em 4 Estilos", page_icon="✍️", layout="wide")
 aplicar_estilo()
 hero(
     "✍️ História em 4 Estilos",
-    "Comece com sua própria ideia ou peça ideias à IA. Depois compare a mesma história nos quatro estilos narrativos.",
+    "Escolha a faixa etária, comece com sua própria ideia ou peça ideias à IA e compare a mesma história nos quatro estilos narrativos.",
 )
 
 if "state" not in st.session_state:
@@ -39,13 +45,59 @@ s = st.session_state.state
 s.setdefault("paginas_minimas", 24)
 s.setdefault("idiomas_alvo", [])
 s.setdefault("personagens", {})
+s.setdefault("faixa_etaria", "3-8")
+s["faixa_etaria"] = normalizar_faixa_etaria(s.get("faixa_etaria"))
+s["age_profile_id"] = s["faixa_etaria"]
 
 st.info(
-    "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide a ideia, os personagens narrativos e o estilo da história."
+    "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide a idade, a ideia, os personagens narrativos e o estilo da história."
 )
 
+# --------------------------------------------------------------- FAIXA ETÁRIA
+st.subheader("1. Para qual faixa etária é este livro?")
+opcoes = opcoes_faixa_etaria()
+faixa_atual = normalizar_faixa_etaria(s.get("faixa_etaria"))
+idx_atual = opcoes.index(faixa_atual) if faixa_atual in opcoes else opcoes.index("3-8")
+faixa_escolhida = st.selectbox(
+    "Faixa etária oficial",
+    options=opcoes,
+    index=idx_atual,
+    format_func=lambda x: perfil_etario(x)["label"],
+    help=(
+        "Para novos livros, 3–5, 6–8 e 9–12 dão resultados mais precisos. "
+        "A opção 3–8 é mantida para compatibilidade com a coleção ampla já existente."
+    ),
+)
+faixa_escolhida = normalizar_faixa_etaria(faixa_escolhida)
+
+if faixa_escolhida != faixa_atual:
+    s["faixa_etaria"] = faixa_escolhida
+    s["age_profile_id"] = faixa_escolhida
+    s.pop("comparativo_estilos", None)
+    s.pop("estilo_escolhido_no_comparador", None)
+    s.pop("modo_comparacao_escolhido", None)
+    if s.get("cenas_texto"):
+        # Não apaga história anterior. Apenas impede que uma versão escrita para
+        # outra idade siga adiante sem ser regenerada/revisada conscientemente.
+        s["idade_historia_precisa_regenerar"] = True
+        s["revisao_aprovada"] = False
+    st.rerun()
+
+perfil = perfil_etario(s["faixa_etaria"])
+st.caption(
+    f"**{perfil['short_label']}** · {perfil['publico']}. "
+    f"{perfil['ritmo'].capitalize()}. {perfil['paginas_recomendadas']}."
+)
+
+if s.get("idade_historia_precisa_regenerar"):
+    st.warning(
+        "A faixa etária foi alterada depois de já existir uma história. A versão anterior foi preservada, "
+        "mas precisa ser regenerada ou escolhida novamente nos 4 estilos antes de seguir para aprovação."
+    )
+
 # ----------------------------------------------------------------- ORIGEM
-st.subheader("1. Como você quer começar a história?")
+st.divider()
+st.subheader("2. Como você quer começar a história?")
 modo = st.radio(
     "Escolha uma opção",
     [
@@ -79,19 +131,20 @@ if modo.startswith("📝"):
 elif modo.startswith("✨"):
     s["origem_ideia"] = "ideia_da_ia"
     st.write(
-        "A IA sugere ideias completas o suficiente para você escolher, mas nenhuma vira história sem a sua decisão."
+        f"A IA vai sugerir ideias pensadas para **{perfil['short_label']}**, mas nenhuma vira história sem a sua decisão."
     )
     quantidade = st.select_slider("Quantas ideias você quer ver?", options=[3, 4, 5, 6], value=4)
     temas_usados = [l.get("titulo", "") for l in listar_livros() if l.get("titulo")]
 
     if st.button("✨ Sugerir ideias novas"):
-        with st.spinner("Criando ideias diferentes para sua coleção..."):
+        with st.spinner("Criando ideias diferentes para sua coleção e faixa etária..."):
             st.session_state.ideias_4_estilos = gerador_ideias_node(
                 quantidade,
                 temas_usados,
                 chamar_llm,
                 s.get("colecao", ""),
                 author_display_from_state(s),
+                faixa_etaria=s.get("faixa_etaria", "3-8"),
             )
 
     ideias = st.session_state.get("ideias_4_estilos", [])
@@ -125,7 +178,7 @@ else:
 
 # ------------------------------------------------------------- PERSONAGENS
 st.divider()
-st.subheader("2. Quais personagens você quer nessa história?")
+st.subheader("3. Quais personagens você quer nessa história?")
 
 if s.get("personagens"):
     st.markdown("**Personagens já formalizados no projeto:**")
@@ -155,7 +208,7 @@ st.caption(
 
 # -------------------------------------------------------------- CURADORIA
 st.divider()
-st.subheader("3. Confirme a direção da história")
+st.subheader("4. Confirme a direção da história")
 
 s["titulo"] = st.text_input("Título ou título provisório", value=s.get("titulo", ""))
 s["emocao_central"] = st.text_input("Emoção central", value=s.get("emocao_central", ""))
@@ -176,14 +229,14 @@ if not premissa_ok:
 
 # ------------------------------------------------------------ COMPARAÇÃO
 st.divider()
-st.subheader("4. Veja a MESMA história nos 4 estilos")
+st.subheader("5. Veja a MESMA história nos 4 estilos")
 
 st.markdown(
     "**Estilo 1 — Aventura**  •  **Estilo 2 — Poético/Rimado**  •  "
     "**Estilo 3 — Fábula cristã**  •  **Estilo misto**"
 )
 st.caption(
-    "A premissa, os personagens, a lição cristã e a referência bíblica permanecem iguais. "
+    f"A premissa, os personagens, a lição cristã, a referência bíblica e a faixa **{perfil['short_label']}** permanecem iguais. "
     "Somente a maneira de contar muda."
 )
 
@@ -194,7 +247,7 @@ if c1.button("✨ Ver amostras dos 4 estilos", use_container_width=True, disable
     st.rerun()
 
 if c2.button("📚 Gerar a história COMPLETA nos 4 estilos", use_container_width=True, disabled=not premissa_ok):
-    with st.spinner("Criando as quatro histórias completas com a mesma ideia e personagens..."):
+    with st.spinner("Criando as quatro histórias completas com a mesma ideia, personagens e faixa etária..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="completa")
     st.rerun()
 
@@ -233,6 +286,7 @@ if comparativo:
                 s.update(novo)
                 s["estilo_escolhido_no_comparador"] = True
                 s["modo_comparacao_escolhido"] = versao.get("modo", "amostra")
+                s["idade_historia_precisa_regenerar"] = False
                 st.rerun()
 
 # ------------------------------------------------------------- CONTINUAR
@@ -240,7 +294,9 @@ if s.get("estilo_escolhido_no_comparador"):
     st.divider()
     estilo = s.get("estilo_narrativo", "estilo_1")
     modo_escolhido = s.get("modo_comparacao_escolhido", "amostra")
-    st.success(f"Estilo escolhido: {ESTILOS_NARRATIVOS[estilo]['label']}.")
+    st.success(
+        f"Estilo escolhido: {ESTILOS_NARRATIVOS[estilo]['label']} · Faixa: {perfil_etario(s.get('faixa_etaria'))['short_label']}."
+    )
 
     if modo_escolhido == "completa" and s.get("cenas_texto"):
         st.info(
@@ -250,7 +306,7 @@ if s.get("estilo_escolhido_no_comparador"):
     else:
         st.info(
             "Você escolheu o estilo pela amostra. Depois de formalizar os personagens, o Roteirista "
-            "gerará a história completa somente nesse estilo."
+            "gerará a história completa somente nesse estilo e na faixa etária escolhida."
         )
 
     tem_personagens_formais = bool(s.get("personagens"))
@@ -259,7 +315,12 @@ if s.get("estilo_escolhido_no_comparador"):
         if tem_personagens_formais
         else "➡️ Continuar para definir os personagens"
     )
-    if st.button(texto_botao, type="primary", use_container_width=True):
+    if st.button(
+        texto_botao,
+        type="primary",
+        use_container_width=True,
+        disabled=bool(s.get("idade_historia_precisa_regenerar")),
+    ):
         st.session_state.etapa = "gerando" if tem_personagens_formais else "personagens"
         st.switch_page("pages/1_#L01f4d6_Criar_do_Zero.py")
 
