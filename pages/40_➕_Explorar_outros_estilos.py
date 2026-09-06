@@ -1,8 +1,8 @@
-"""Biblioteca opcional de estilos narrativos do FaithBloom.
+"""Biblioteca opcional de estilos e formatos narrativos do FaithBloom.
 
 Os estilos desta página não substituem os quatro estilos do Prompt-Mestre e não
-são gerados automaticamente. A autora escolhe quando quer explorar uma forma
-narrativa adicional, preservando custo e controle editorial.
+são gerados automaticamente. Formatos visuais, como Quadrinhos/HQ, são uma camada
+separada e podem ser combinados com a versão literária escolhida.
 """
 from __future__ import annotations
 
@@ -19,13 +19,18 @@ from agents.estilos_narrativos import (
     aplicar_estilo_ao_state,
     gerar_estilo_adicional,
 )
+from agents.formato_quadrinhos import (
+    FORMATO_QUADRINHOS_ID,
+    FORMATO_QUADRINHOS_LABEL,
+    gerar_roteiro_quadrinhos,
+)
 from age_profiles import normalizar_faixa_etaria, perfil_etario
 
 st.set_page_config(page_title="Explorar outros estilos", page_icon="➕", layout="wide")
 aplicar_estilo()
 hero(
     "➕ Explorar outros estilos",
-    "Biblioteca narrativa opcional: todos os estilos usam a skill-base profissional do Roteirista e só são gerados quando você pedir.",
+    "Biblioteca opcional: estilos adicionais usam a skill-base do Roteirista; formatos visuais podem ser combinados com a história escolhida.",
 )
 
 if "state" not in st.session_state:
@@ -35,6 +40,7 @@ s = st.session_state.state
 s.setdefault("paginas_minimas", 24)
 s.setdefault("personagens", {})
 s.setdefault("versoes_narrativas_salvas", {})
+s.setdefault("formatos_narrativos_salvos", {})
 s["faixa_etaria"] = normalizar_faixa_etaria(s.get("faixa_etaria"))
 s["age_profile_id"] = s["faixa_etaria"]
 perfil = perfil_etario(s["faixa_etaria"])
@@ -101,8 +107,19 @@ def _ativar(chave: str, versao: dict) -> None:
     s.update(novo)
 
 
+def _salvar_estilo_gerado(chave: str, versao: dict) -> None:
+    item = deepcopy(versao)
+    item["origem"] = "comparative_story_director_additional"
+    item["faixa_etaria"] = s.get("faixa_etaria")
+    item["colecao"] = s.get("colecao")
+    item["status"] = "atual"
+    biblioteca = deepcopy(s.get("versoes_narrativas_salvas") or {})
+    biblioteca[chave] = item
+    s["versoes_narrativas_salvas"] = biblioteca
+
+
 st.info(
-    "Esses estilos são opcionais. Os quatro estilos principais continuam intactos e esta página não gera nenhuma ilustração."
+    "Nada nesta página é gerado automaticamente. Os quatro estilos principais continuam intactos e nenhuma ilustração é criada aqui."
 )
 st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="← Voltar para História em 4 Estilos", icon="✍️")
 
@@ -122,58 +139,46 @@ if not colecao or not premissa:
 
 pode_gerar = bool(colecao and premissa)
 
+st.divider()
+st.markdown("# 📚 Estilos narrativos adicionais")
+st.caption(
+    "Eles mudam COMO a história é contada. Todos herdam a skill profissional `storyteller`, mas cada um acrescenta um mecanismo narrativo próprio."
+)
+
 for chave in ORDEM_ESTILOS_ADICIONAIS:
     spec = ESTILOS_ADICIONAIS[chave]
+    nome_curto = spec.get("ui_nome_curto") or spec["label"]
     with st.container(border=True):
         st.markdown(f"## {spec['label']}")
         st.write(spec["descricao"])
-        st.markdown(
-            "**DNA deste estilo:** acumulação progressiva + refrão original + musicalidade + antecipação + "
-            "participação da criança + humor crescente + clímax e resolução satisfatória."
-        )
+        st.markdown(f"**DNA deste estilo:** {spec.get('dna', spec['instrucao'])}")
+        if spec.get("faixas_recomendadas"):
+            st.caption(spec["faixas_recomendadas"])
         st.caption(
-            "Especialmente forte para 3–5; funciona muito bem em 6–8 com variações mais criativas. "
-            "Em 9–12, só deve ser usado quando a estrutura puder ganhar sofisticação suficiente."
-        )
-        st.caption(
-            "O FaithBloom usa os princípios de narrativa cumulativa/lengalenga, mas exige texto, refrão, personagens e progressão originais — sem copiar obras existentes."
+            "Originalidade obrigatória: usar princípios literários gerais sem copiar voz, bordões, personagens, refrões, cenas, layouts ou identidade visual de obras existentes."
         )
 
         c1, c2 = st.columns(2)
         if c1.button(
-            "✨ Gerar amostra Cumulativo/Lengalenga",
+            f"✨ Gerar amostra {nome_curto}",
             key=f"amostra_extra_{chave}",
             use_container_width=True,
             disabled=not pode_gerar,
         ):
-            with st.spinner("Criando uma amostra cumulativa original com a skill do Roteirista..."):
+            with st.spinner(f"Criando amostra {nome_curto} com a skill do Roteirista..."):
                 versao = gerar_estilo_adicional(dict(s), chamar_llm, chave, modo="amostra")
-                item = deepcopy(versao)
-                item["origem"] = "comparative_story_director_additional"
-                item["faixa_etaria"] = s.get("faixa_etaria")
-                item["colecao"] = s.get("colecao")
-                item["status"] = "atual"
-                biblioteca = deepcopy(s.get("versoes_narrativas_salvas") or {})
-                biblioteca[chave] = item
-                s["versoes_narrativas_salvas"] = biblioteca
+                _salvar_estilo_gerado(chave, versao)
             st.rerun()
 
         if c2.button(
-            "📚 Gerar história COMPLETA Cumulativo/Lengalenga",
+            f"📚 Gerar história COMPLETA {nome_curto}",
             key=f"completa_extra_{chave}",
             use_container_width=True,
             disabled=not pode_gerar,
         ):
-            with st.spinner("Escrevendo a história cumulativa completa com a skill do Roteirista..."):
+            with st.spinner(f"Escrevendo a história completa {nome_curto} com a skill do Roteirista..."):
                 versao = gerar_estilo_adicional(dict(s), chamar_llm, chave, modo="completa")
-                item = deepcopy(versao)
-                item["origem"] = "comparative_story_director_additional"
-                item["faixa_etaria"] = s.get("faixa_etaria")
-                item["colecao"] = s.get("colecao")
-                item["status"] = "atual"
-                biblioteca = deepcopy(s.get("versoes_narrativas_salvas") or {})
-                biblioteca[chave] = item
-                s["versoes_narrativas_salvas"] = biblioteca
+                _salvar_estilo_gerado(chave, versao)
             st.rerun()
 
         versao = (s.get("versoes_narrativas_salvas") or {}).get(chave) or {}
@@ -193,12 +198,19 @@ for chave in ORDEM_ESTILOS_ADICIONAIS:
                         st.write(cena)
             else:
                 st.write(versao.get("amostra") or "Amostra não disponível.")
+
+            elementos = versao.get("elementos_graficos_sugeridos") or []
+            if elementos:
+                with st.expander("📝 Elementos gráficos sugeridos"):
+                    for item in elementos:
+                        st.write(f"• {item}")
+
             if versao.get("licao_final"):
                 st.markdown(f"**⭐ Lição de Moral:** {versao['licao_final']}")
 
             ativa = s.get("versao_narrativa_ativa")
             if st.button(
-                "✅ Tornar Cumulativo/Lengalenga a versão ativa",
+                f"✅ Tornar {nome_curto} a versão ativa",
                 key=f"ativar_extra_{chave}",
                 type="primary",
                 disabled=ativa == chave,
@@ -207,14 +219,101 @@ for chave in ORDEM_ESTILOS_ADICIONAIS:
                 _ativar(chave, versao)
                 st.rerun()
 
-if s.get("versoes_narrativas_salvas"):
+        if spec.get("meta_editorial"):
+            st.caption(f"Meta editorial: {spec['meta_editorial']}")
+
+# ---------------------------------------------------------------- FORMATO HQ
+st.divider()
+st.markdown("# 🗯️ Formatos narrativos visuais")
+st.caption(
+    "Formato visual responde a COMO a história será apresentada. Ele não substitui o estilo literário: uma HQ pode nascer de Aventura, Misto, Cotidiano Cômico, Cumulativo ou outra versão."
+)
+
+with st.container(border=True):
+    st.markdown(f"## {FORMATO_QUADRINHOS_LABEL}")
+    st.write(
+        "Transforma a história completa escolhida em roteiro sequencial de páginas e painéis, com ações visuais, diálogos, balões, legendas, SFX/onomatopeias e ganchos de virada de página."
+    )
+    st.markdown(
+        "**DNA do formato:** leitura visual sequencial + painéis claros + diálogos curtos + timing cômico + expressões + onomatopeias + page-turn + balões diagramados profissionalmente."
+    )
+    st.caption(
+        "Importante: balões, legendas e SFX ficam como texto estruturado para o Diagramador. O gerador de imagens não deve desenhar texto legível dentro da arte."
+    )
+    st.caption(
+        "Originalidade obrigatória: o FaithBloom pode usar a linguagem geral dos quadrinhos, mas não copia personagens, bordões, traço, humor, composição distintiva ou identidade visual de nenhuma coleção existente."
+    )
+
+    tem_historia_completa = bool(s.get("cenas_texto"))
+    if not tem_historia_completa:
+        st.warning(
+            "Para criar a HQ, escolha primeiro uma história COMPLETA como versão ativa. Assim o formato de quadrinhos adapta sua obra sem criar outra história por cima."
+        )
+
+    if st.button(
+        "🗯️ Gerar roteiro de Quadrinhos/HQ infantil",
+        key="gerar_formato_hq",
+        type="primary",
+        use_container_width=True,
+        disabled=not bool(pode_gerar and tem_historia_completa),
+    ):
+        with st.spinner("Adaptando a história ativa para páginas e painéis de HQ infantil..."):
+            roteiro = gerar_roteiro_quadrinhos(dict(s), chamar_llm)
+            formatos = deepcopy(s.get("formatos_narrativos_salvos") or {})
+            formatos[FORMATO_QUADRINHOS_ID] = roteiro
+            s["formatos_narrativos_salvos"] = formatos
+        st.rerun()
+
+    roteiro_hq = (s.get("formatos_narrativos_salvos") or {}).get(FORMATO_QUADRINHOS_ID) or {}
+    if roteiro_hq:
+        st.divider()
+        st.markdown(f"### {roteiro_hq.get('titulo') or s.get('titulo') or 'Roteiro de HQ'}")
+        st.caption(
+            f"Base narrativa: {roteiro_hq.get('estilo_narrativo_origem') or s.get('versao_narrativa_ativa') or 'história ativa'} · Faixa: {roteiro_hq.get('faixa_etaria') or s.get('faixa_etaria')}"
+        )
+        for pagina in roteiro_hq.get("paginas") or []:
+            numero = pagina.get("numero", "")
+            with st.expander(f"📄 Página {numero}"):
+                if pagina.get("layout_sugerido"):
+                    st.write(f"**Layout sugerido:** {pagina['layout_sugerido']}")
+                for painel in pagina.get("paineis") or []:
+                    st.markdown(f"**Painel {painel.get('numero', '')}**")
+                    if painel.get("acao_visual"):
+                        st.write(painel["acao_visual"])
+                    for fala in painel.get("dialogos") or []:
+                        quem = fala.get("personagem") or "Personagem"
+                        st.write(f"💬 **{quem}:** {fala.get('fala', '')}")
+                    if painel.get("narracao"):
+                        st.write(f"📝 Narração: {painel['narracao']}")
+                    if painel.get("sfx"):
+                        st.write(f"💥 SFX: {painel['sfx']}")
+                if pagina.get("gancho_virada"):
+                    st.write(f"➡️ **Gancho de virada:** {pagina['gancho_virada']}")
+        if roteiro_hq.get("licao_final"):
+            st.markdown(f"**⭐ Lição de Moral:** {roteiro_hq['licao_final']}")
+        if roteiro_hq.get("observacoes_diagramacao"):
+            with st.expander("🎨 Orientações para diagramação da HQ"):
+                st.write(roteiro_hq["observacoes_diagramacao"])
+
+        formato_ativo = s.get("formato_narrativo_ativo")
+        if st.button(
+            "✅ Usar Quadrinhos/HQ como formato ativo",
+            key="ativar_formato_hq",
+            use_container_width=True,
+            disabled=formato_ativo == FORMATO_QUADRINHOS_ID,
+        ):
+            s["formato_narrativo_ativo"] = FORMATO_QUADRINHOS_ID
+            s["roteiro_quadrinhos"] = deepcopy(roteiro_hq)
+            st.success("Formato Quadrinhos/HQ definido como ativo. A história literária original foi preservada.")
+
+if s.get("versoes_narrativas_salvas") or s.get("formatos_narrativos_salvos"):
     if st.button("💾 Salvar Biblioteca de Versões", use_container_width=True, disabled=not pode_gerar):
         try:
             _persistir()
-            st.success("Biblioteca salva. Esta versão poderá ser retomada depois sem regenerar.")
+            st.success("Biblioteca salva. Versões narrativas e formatos poderão ser retomados depois sem regenerar.")
         except Exception as exc:
             st.error(f"Não foi possível salvar a biblioteca: {exc}")
 
 st.caption(
-    "Meta editorial do Cumulativo/Lengalenga FaithBloom: criar prazer de antecipação e releitura — a criança reconhece o padrão, participa, ri e quer ouvir de novo."
+    "FaithBloom separa Estilo Narrativo de Formato Visual: isso permite combinar uma mesma história com diferentes mecanismos de escrita e diferentes experiências de leitura."
 )
