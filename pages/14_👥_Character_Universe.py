@@ -13,7 +13,7 @@ from openrouter_client import gerar_imagem, OpenRouterFaithBloomError
 from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
 from visual_master_manager import (
     IDENTITY_REVIEW_NOTICE, REFERENCE_CATEGORIES, approve_candidate, archive_asset, create_candidate,
-    promote_master, promote_reference_color_master, register_upload,
+    promote_master, promote_reference_color_master, register_upload, current_color_master_details,
 )
 
 st.set_page_config(page_title='Character Universe', page_icon='👥', layout='wide')
@@ -69,8 +69,20 @@ for item in itens:
         c3.metric('Reference Pack',len(p.get('reference_pack',[])))
         c4.metric('Variações preservadas',len(p.get('variacoes',[])))
 
+        master_details = current_color_master_details(p)
+        current_master = master_details['asset'] if master_details['consistent'] else None
+        current_master_id = current_master.get('id') if current_master else None
         if p.get('color_master'):
-            st.success('🟢 Color Master oficial e protegido')
+            if current_master:
+                st.success('🟢 Color Master oficial e protegido')
+                st.caption(f"Master atual: {current_master.get('nome', 'Imagem')} · ID: {current_master_id}")
+                master_thumb = get_thumbnail(current_master_id)
+                if master_thumb: st.image(master_thumb, width=200)
+                if current_master.get('visual_status') != 'COLOR_MASTER':
+                    st.info('Esta imagem está vinculada como Master do personagem. O status do catálogo ainda é ' + str(current_master.get('visual_status') or 'não informado') + '.')
+            else:
+                st.warning('Há um Color Master cadastrado, mas não foi possível confirmar seu vínculo no catálogo.')
+                st.caption('ID registrado: ' + str(master_details['recorded_id'] or 'não informado'))
         elif any((r.get('metadata') or {}).get('visual_status') == 'MASTER_CANDIDATE' for r in p.get('reference_pack', [])):
             st.warning('🟡 Master Candidate — aguardando aprovação')
         elif p.get('reference_pack'):
@@ -125,13 +137,13 @@ for item in itens:
                     and asset.get('status') != 'archived'])
                 if master_options:
                     master_id = st.selectbox('Referência para Color Master', list(master_options),
-                        format_func=lambda aid: asset_option_label(master_options[aid]), key=f"master_reference_{p['id']}")
+                        format_func=lambda aid: ('⭐ MASTER ATUAL · ' if aid == current_master_id else '') + asset_option_label(master_options[aid]), key=f"master_reference_{p['id']}")
                     preview = get_thumbnail(master_id)
                     if preview: st.image(preview, width=320)
                     st.caption('Usa a imagem salva, sem gerar outra. O Master anterior permanece no histórico.')
                     reviewed = st.checkbox('Revisei a imagem e confirmo que ela será o Color Master deste personagem',
                         key=f"review_master_reference_{p['id']}_{master_id}")
-                    if st.button('⭐ Definir como Color Master', disabled=not reviewed,
+                    if st.button('⭐ Definir como Color Master', disabled=not reviewed or master_id == current_master_id,
                             key=f"promote_reference_{p['id']}_{master_id}"):
                         try:
                             promote_reference_color_master(p['id'], master_id, confirmed=reviewed)

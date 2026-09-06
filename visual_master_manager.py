@@ -124,3 +124,14 @@ def archive_asset(asset_id: str) -> dict | None:
 
 def version_history(asset_id: str) -> list[dict]:
     return versions_for(asset_id)
+
+
+def current_color_master_details(character: dict) -> dict:
+    """Resolve the saved master link without changing asset metadata."""
+    uri = character.get("color_master") or ""
+    recorded_id = (character.get("metadata") or {}).get("current_master_asset_ids", {}).get("color_master", "")
+    if not uri:
+        return {"asset": None, "recorded_id": recorded_id, "consistent": False}
+    resolved = get_asset_by_uri(uri, materialize_file=False)
+    consistent = bool(resolved) and (not recorded_id or resolved.get("id") == recorded_id)
+    return {"asset": resolved, "recorded_id": recorded_id, "consistent": consistent}
