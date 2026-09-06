@@ -2,6 +2,7 @@ from pathlib import Path
 
 from agents.estilos_narrativos import (
     ESTILOS_NARRATIVOS,
+    ESTILOS_ADICIONAIS,
     ORDEM_ESTILOS,
     ORDEM_ESTILOS_ADICIONAIS,
     gerar_estilo_adicional,
@@ -22,10 +23,11 @@ def _state_base():
 
 
 def test_cumulativo_e_adicional_e_nao_aumenta_nucleo_de_quatro():
+    assert list(ESTILOS_NARRATIVOS) == ["estilo_1", "estilo_2", "estilo_3", "misto"]
     assert ORDEM_ESTILOS == ("estilo_1", "estilo_2", "estilo_3", "misto")
-    assert "cumulativo_lengalenga" not in ORDEM_ESTILOS
+    assert "cumulativo_lengalenga" not in ESTILOS_NARRATIVOS
     assert "cumulativo_lengalenga" in ORDEM_ESTILOS_ADICIONAIS
-    spec = ESTILOS_NARRATIVOS["cumulativo_lengalenga"]
+    spec = ESTILOS_ADICIONAIS["cumulativo_lengalenga"]
     assert spec["skill_base"] == "storyteller"
     assert "refrão" in spec["instrucao"]
     assert "releitura" in spec["instrucao"]
@@ -50,7 +52,7 @@ def test_cumulativo_herda_skill_storyteller_e_exige_originalidade():
     assert out["modo"] == "amostra"
     assert "storytelling infantil" in capturado["sistema"]
     assert "estrutura cumulativa original" in capturado["sistema"]
-    assert "não copiar" in capturado["sistema"].lower() or "não copie" in capturado["sistema"].lower()
+    assert "não copie" in capturado["sistema"].lower()
 
 
 def test_ui_expoe_biblioteca_opcional_sem_geracao_automatica():
