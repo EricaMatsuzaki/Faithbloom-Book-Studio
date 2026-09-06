@@ -19,6 +19,7 @@ from openrouter_client import chamar_llm
 from armazenamento import (
     listar_livros,
     listar_colecoes,
+    carregar_biblioteca_personagens,
     salvar_livro,
     atualizar_livro_salvo,
 )
@@ -64,35 +65,61 @@ st.info(
     "Nesta etapa nenhuma ilustração é gerada. Primeiro você decide coleção, autoria, idade, ideia, personagens narrativos e estilo."
 )
 
+
+def _invalidar_comparativo_por_mudanca_editorial() -> None:
+    """Invalida somente derivados; nunca apaga a premissa ou uma história existente."""
+    s.pop("comparativo_estilos", None)
+    s.pop("estilo_escolhido_no_comparador", None)
+    s.pop("modo_comparacao_escolhido", None)
+    st.session_state.pop("ideias_4_estilos", None)
+    st.session_state.pop("ideia_4_estilos_escolhida", None)
+
+
 # ------------------------------------------------------- COLEÇÃO E AUTORIA
 st.subheader("1. Coleção e autoria")
 
 # Se já existem personagens formais ou cenas, a coleção fica protegida para não
 # misturar Character Universe entre coleções por um clique acidental.
 colecao_travada = bool(s.get("colecao") and (s.get("personagens") or s.get("cenas_texto")))
+colecao_anterior = str(s.get("colecao") or "").strip()
+
 if colecao_travada:
-    st.text_input("Coleção deste projeto", value=s.get("colecao", ""), disabled=True)
+    st.text_input("Coleção deste projeto", value=colecao_anterior, disabled=True)
     st.caption("A coleção fica protegida depois que personagens formais ou cenas existem, evitando misturar universos de personagens.")
+    st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(colecao_anterior)
 else:
     colecoes = listar_colecoes()
-    atual = str(s.get("colecao") or "").strip()
     opcoes_colecao = list(colecoes)
-    if atual and atual not in opcoes_colecao:
-        opcoes_colecao.insert(0, atual)
+    if colecao_anterior and colecao_anterior not in opcoes_colecao:
+        opcoes_colecao.insert(0, colecao_anterior)
     opcoes_colecao.append("➕ Criar nova coleção")
-    default_idx = opcoes_colecao.index(atual) if atual in opcoes_colecao else 0
+    default_idx = opcoes_colecao.index(colecao_anterior) if colecao_anterior in opcoes_colecao else 0
     escolha_colecao = st.selectbox(
         "Coleção",
         options=opcoes_colecao,
         index=default_idx,
         help="Cada coleção mantém seu próprio universo de personagens e identidade editorial.",
     )
+
     if escolha_colecao == "➕ Criar nova coleção":
         nova_colecao = st.text_input("Nome da nova coleção", value="")
-        if nova_colecao.strip():
-            s["colecao"] = nova_colecao.strip()
+        colecao_nova = nova_colecao.strip()
+        if colecao_nova != colecao_anterior:
+            s["colecao"] = colecao_nova
+            st.session_state.biblioteca_colecao = {}
+            _invalidar_comparativo_por_mudanca_editorial()
+            if colecao_nova:
+                st.rerun()
     else:
-        s["colecao"] = escolha_colecao
+        colecao_nova = escolha_colecao
+        if colecao_nova != colecao_anterior:
+            s["colecao"] = colecao_nova
+            st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(colecao_nova)
+            _invalidar_comparativo_por_mudanca_editorial()
+            st.rerun()
+        else:
+            s["colecao"] = colecao_nova
+            st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(colecao_nova)
 
 profiles = list_author_profiles()
 if profiles:
@@ -109,7 +136,7 @@ if profiles:
         format_func=lambda pid: profile_display_name(profile_map[pid]),
         help="O primeiro selecionado é o autor principal; os demais entram como coautores. Isso é independente de quem está usando o app.",
     )
-    if autores:
+    if autores != atuais:
         s.update(set_project_authors(dict(s), autores))
 else:
     s["autora"] = st.text_input(
@@ -145,9 +172,7 @@ faixa_escolhida = normalizar_faixa_etaria(faixa_escolhida)
 if faixa_escolhida != faixa_atual:
     s["faixa_etaria"] = faixa_escolhida
     s["age_profile_id"] = faixa_escolhida
-    s.pop("comparativo_estilos", None)
-    s.pop("estilo_escolhido_no_comparador", None)
-    s.pop("modo_comparacao_escolhido", None)
+    _invalidar_comparativo_por_mudanca_editorial()
     if s.get("cenas_texto"):
         # Não apaga história anterior. Apenas impede que uma versão escrita para
         # outra idade siga adiante sem ser regenerada/revisada conscientemente.
@@ -415,6 +440,8 @@ if s.get("estilo_escolhido_no_comparador"):
         use_container_width=True,
         disabled=bool(s.get("idade_historia_precisa_regenerar")),
     ):
+        colecao = str(s.get("colecao") or "").strip()
+        st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(colecao) if colecao else {}
         st.session_state.etapa = "gerando" if tem_personagens_formais else "personagens"
         st.switch_page("pages/1_#L01f4d6_Criar_do_Zero.py")
 
