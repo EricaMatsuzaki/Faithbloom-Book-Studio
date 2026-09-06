@@ -6,12 +6,12 @@ que precisa e escreve de volta o que produziu, sem apagar o que os
 agentes anteriores já colocaram.
 """
 
-from typing import TypedDict, Literal
+from typing import TypedDict
 
 
 class CenaTexto(TypedDict):
     numero: int
-    texto: str                 # texto narrativo da cena (10-25 palavras, curto)
+    texto: str                 # texto narrativo da cena; densidade depende da faixa etária
     emocao: str                # emoção principal canônica de emotion_colors.EMOCOES
     emocao_secundaria: str     # subemoção complementar opcional para nuance emocional/visual
     transicao_emocional: str   # ex.: "tristeza → começando a surgir esperança"
@@ -30,7 +30,7 @@ class CenaImagem(TypedDict):
     prompt_final: str          # prompt de imagem já com DNA fixo + figurino + paleta de emoção
     caminho_arquivo: str       # onde a imagem gerada foi salva
     aprovado: bool             # marcado True depois de revisão humana ou automática
-    origem: str                 # "gerada_pelo_agente" ou "enviada_pela_autora"
+    origem: str                # "gerada_pelo_agente" ou "enviada_pela_autora"
 
 
 class PersonagemDNA(TypedDict, total=False):
@@ -42,14 +42,14 @@ class PersonagemDNA(TypedDict, total=False):
     variacoes_visuais: list[dict]      # opções preservadas; pedir outra nunca apaga a anterior
     variacao_selecionada_id: str       # opção atualmente selecionada na etapa de aprovação
     aparencia_aprovada: bool           # True somente após confirmação explícita da autora
-    dna_visual_travado: bool            # protege identidade visual nas cenas seguintes
-    character_universe_id: str          # vínculo opcional com personagem oficial
-    usos_permitidos: list[str]          # story/coloring/activity/cover
-    presets_visuais: dict               # roupas/cenários/estações/festividades/emoções salvos
+    dna_visual_travado: bool           # protege identidade visual nas cenas seguintes
+    character_universe_id: str         # vínculo opcional com personagem oficial
+    usos_permitidos: list[str]         # story/coloring/activity/cover
+    presets_visuais: dict              # roupas/cenários/estações/festividades/emoções salvos
 
 
 class LivroState(TypedDict, total=False):
-    # --- Entrada (fornecida pela Erica) ---
+    # --- Entrada / direção editorial ---
     colecao: str                       # ex: "Pequenas Histórias, Grandes Lições"
     titulo: str
     emocao_central: str
@@ -60,12 +60,12 @@ class LivroState(TypedDict, total=False):
     paginas_minimas: int               # padrão 24, nunca abaixo disso
     trim_largura_in: float             # largura do livro físico, em polegadas (padrão 8.5)
     trim_altura_in: float              # altura do livro físico, em polegadas (padrão 8.5)
+    faixa_etaria: str                  # 3-5 | 6-8 | 9-12 | 3-8 (compatibilidade)
+    age_profile_id: str                # id normalizado pelo Age Profile Engine
 
     # --- Curador de Tema (opcional) ---
-    _entrada_tema_livre: str           # tema/resumo livre, se a Erica não
-                                        # quiser preencher os campos acima
-                                        # manualmente
-    _justificativa_curadoria: str      # por que o versículo sugerido combina
+    _entrada_tema_livre: str           # tema/resumo livre, se a autora não quiser preencher tudo manualmente
+    _justificativa_curadoria: str      # por que a referência bíblica sugerida combina
 
     # --- Personagens ---
     personagens: dict[str, PersonagemDNA]
@@ -74,8 +74,8 @@ class LivroState(TypedDict, total=False):
     sinopse_poetica: str
     cenas_texto: list[CenaTexto]
     licao_final: str
-    cenas_bloqueadas: list[int]           # cenas aprovadas pela autora que não devem ser alteradas automaticamente
-    historico_cenas: dict[int, list[dict]] # versões anteriores por cena, para poder voltar sem perder uma versão boa
+    cenas_bloqueadas: list[int]           # cenas aprovadas que não devem ser alteradas automaticamente
+    historico_cenas: dict[int, list[dict]] # versões anteriores por cena
     mapa_emocional: list[dict]             # Emotional & Color Director, aprovado antes da geração em lote
     paleta_emocional_preset: str           # preset editorial do livro/coleção
     style_dna_id: str                      # Style DNA oficial aplicado ao projeto
@@ -86,89 +86,86 @@ class LivroState(TypedDict, total=False):
 
     # --- Ilustrador ---
     cenas_imagem: list[CenaImagem]
-    imagens_cenas_enviadas: dict[int, str]  # {numero_da_cena: caminho_arquivo} - preenchido pela autora ANTES do Ilustrador rodar, pra pular a geração dessas cenas específicas
+    imagens_cenas_enviadas: dict[int, str]  # arte pronta enviada pela autora; pula geração por IA da cena
     historico_imagens_cenas: dict[int, list[dict]]  # versões anteriores preservadas por cena
     instrucoes_imagens_cenas: dict[int, str]        # pedido livre da autora por cena
     cenas_imagem_aprovadas: list[int]               # imagens aprovadas/travadas para finalização
 
-    # --- Capa e Contracapa (arquivos SEPARADOS do miolo, formatos diferentes) ---
-    capa_ebook: str                    # arquivo só com a arte frontal (eBook)
-    capa_fisica_wrap: str              # arquivo único: contracapa + lombada + capa (livro físico)
-    capa_fisica_dimensoes: dict        # medidas usadas (lombada, largura/altura total, DPI) - ver kdp_rules
-    arte_capa_frontal: str             # arte sem tipografia; pode vir da IA ou da autora
-    arte_contracapa: str               # arte sem tipografia; pode vir da IA ou da autora
-    capa_fisica_preview: str           # PNG com guias, apenas para revisão interna
-    capa_fisica_pdf: str               # PDF final de 1 página: verso+lombada+frente
-    capa_fisica_preflight: dict        # valida tamanho/estrutura do PDF da capa
-    autora: str                         # campo legado/snapshot para renderizadores antigos; derivado da autoria estruturada
-    authorship: dict                     # Author & Contributor Profiles: autores/coautores/contribuidores + snapshots
-    cover_author_credit: str             # override opcional de crédito de capa; vazio usa authorship
-    subtitulo: str                      # subtítulo opcional
-    tipo_papel_capa: str               # branco/creme/cor_padrao/cor_premium
+    # --- Capa e Contracapa (arquivos SEPARADOS do miolo) ---
+    capa_ebook: str
+    capa_fisica_wrap: str
+    capa_fisica_dimensoes: dict
+    arte_capa_frontal: str
+    arte_contracapa: str
+    capa_fisica_preview: str
+    capa_fisica_pdf: str
+    capa_fisica_preflight: dict
+    autora: str                         # campo legado/snapshot; derivado da autoria estruturada
+    authorship: dict                    # Author & Contributor Profiles
+    cover_author_credit: str            # override opcional de crédito de capa
+    subtitulo: str
+    tipo_papel_capa: str
 
     # --- Atividades para Colorir ---
-    paginas_colorir: list[CenaImagem]  # 3 cenas-chave em versão line-art
+    paginas_colorir: list[dict]         # padrão atual: 3 páginas line-art com cena_numero/caminho_arquivo
 
     # --- Audiobook ---
-    roteiro_audiobook: list[dict]      # pipeline legado; Refinamento 09 mantém compatibilidade
-    audio_gerado: list[dict]           # pipeline legado
-    audiobook_projects: dict[str, dict] # projetos do Audiobook Studio por locale
-    audiobook_voice_profiles: dict[str, dict] # perfis de voz vinculados ao livro
-    audiobook_pronunciations: list[dict] # dicionário de pronúncia aprovado
-    audiobook_script_versions: dict[str, list[dict]] # versões A/B/C do roteiro de performance
-    audiobook_audio_versions: dict[str, list[dict]] # versões A/B/C por segmento
-    audiobook_approved_audio: dict[str, str] # unit_id -> audio version id aprovada
-    audiobook_final_mix: str           # arquivo completo após aprovação/QA
-    audiobook_final_qa: dict           # QA técnico do mix final
+    roteiro_audiobook: list[dict]
+    audio_gerado: list[dict]
+    audiobook_projects: dict[str, dict]
+    audiobook_voice_profiles: dict[str, dict]
+    audiobook_pronunciations: list[dict]
+    audiobook_script_versions: dict[str, list[dict]]
+    audiobook_audio_versions: dict[str, list[dict]]
+    audiobook_approved_audio: dict[str, str]
+    audiobook_final_mix: str
+    audiobook_final_qa: dict
 
     # --- Quality Guardian (Refinamento 10) ---
-    quality_guardian_report_id: str     # último relatório final independente associado à obra
-    quality_guardian_run: int           # número do último rerun
-    quality_guardian_decisions: dict    # decisões explícitas da autora por alerta
-    guardian_specialist_reviews: dict   # revisões independentes adicionais (editorial/readability/bíblico/multimodal)
-    quality_guardian_certificate: dict  # certificado INTERNO; nunca substitui validação da plataforma
+    quality_guardian_report_id: str
+    quality_guardian_run: int
+    quality_guardian_decisions: dict
+    guardian_specialist_reviews: dict
+    quality_guardian_certificate: dict
 
     # --- Dedicatória Dinâmica ---
-    lista_dedicatoria: list[dict]      # [{"pessoa": "Sedinei", "relacao": "mãe"}, ...]
+    lista_dedicatoria: list[dict]
     dedicatoria_texto: str
 
     # --- Sinopse de vendas ---
-    sinopse_vendas_curta: str          # descrição de produto KDP
-    sinopse_contracapa: str            # texto impresso na contracapa
+    sinopse_vendas_curta: str
+    sinopse_contracapa: str
 
-    # --- Pesquisa de Mercado (ver agents/pesquisa_mercado.py) ---
-    palavras_chave_kdp: list[str]      # 7 frases-chave sugeridas
-    categorias_sugeridas: list[str]    # caminhos de categoria da árvore KDP
-    market_evidence: list[dict]         # evidências observadas com fonte/data/mercado; separadas de inferência da IA
-    market_suggestions_provenance: dict # model_inference_only vs observed_evidence
-    market_intelligence_brief: dict     # brief baseado somente em evidências válidas + hipóteses rotuladas
+    # --- Pesquisa de Mercado ---
+    palavras_chave_kdp: list[str]
+    categorias_sugeridas: list[str]
+    market_evidence: list[dict]
+    market_suggestions_provenance: dict
+    market_intelligence_brief: dict
 
-    # --- Agent Skills & Bestseller Readiness (Refinamento 21) ---
-    agent_skill_audit: dict              # integridade do registry de skills/handoffs
-    bestseller_readiness_report: dict    # fatores controláveis; nunca probabilidade de best-seller
-    bible_reference_candidate: dict      # referência sugerida pela IA, ainda não validada
-    bible_reference_validation: dict     # fonte/contexto/aprovação humana da referência
+    # --- Agent Skills & Bestseller Readiness ---
+    agent_skill_audit: dict
+    bestseller_readiness_report: dict
+    bible_reference_candidate: dict
+    bible_reference_validation: dict
 
-    # --- Marketing de Lançamento (ver agents/marketing.py) ---
-    material_lancamento: dict          # legenda_instagram, descricao_pinterest, email_lancamento, pedido_avaliacao
+    # --- Marketing de Lançamento ---
+    material_lancamento: dict
 
-    # --- Translation & Localization Studio (Refinamento 06) ---
-    traducoes: dict[str, dict]         # versões localizadas por locale, ex. en-US / en-GB
-    translation_profiles: dict[str, dict] # modo, idade, intensidade de onomatopeias e instruções por locale
-    translation_mode: str              # fiel | natural_infantil | localizacao_cultural
-    glossario_colecao: dict[str, str]  # termos/nomenclatura oficial da série
-    bible_records: dict[str, dict]      # texto bíblico aprovado + versão/fonte; IA nunca traduz livremente
-    linguistic_reviews: dict[str, dict] # revisão estrutural/linguística por locale
-    translation_versions: dict[str, list[dict]] # histórico A/B/C por locale
-    onomatopoeia_intensity: str         # baixa | equilibrada | expressiva
-    sound_library_colecao: dict[str, dict] # sons aprovados por evento/locale
+    # --- Translation & Localization Studio ---
+    traducoes: dict[str, dict]
+    translation_profiles: dict[str, dict]
+    translation_mode: str
+    glossario_colecao: dict[str, str]
+    bible_records: dict[str, dict]
+    linguistic_reviews: dict[str, dict]
+    translation_versions: dict[str, list[dict]]
+    onomatopoeia_intensity: str
+    sound_library_colecao: dict[str, dict]
 
     # --- Diagramador / KDP ---
-    layout_paginas: list[dict]         # ordem final página a página (texto/imagem alternando lado)
+    layout_paginas: list[dict]
     pacote_pronto: bool
     checklist_kdp: dict
-    preflight_impressao: dict          # pixels/PPI/bleed/margens e bloqueios antes da publicação
-    pdf_miolo_print_ready: str         # preenchido pelo futuro renderizador PDF após preflight
-
-    # --- Atividades para Colorir ---
-    paginas_colorir: list[dict]        # [{"cena_numero": int, "caminho_arquivo": str}, ...]
+    preflight_impressao: dict
+    pdf_miolo_print_ready: str         # caminho do PDF físico gerado após diagramação + preflight
