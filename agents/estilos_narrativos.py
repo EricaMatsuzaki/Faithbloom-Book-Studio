@@ -1,7 +1,7 @@
-"""Refinamento 24/25 — estilos narrativos formais do Prompt-Mestre FaithBloom.
+"""Refinamento 24/25 — estilos narrativos formais e adicionais do FaithBloom.
 
 Mantém a mesma premissa, personagens, lição cristã e referência bíblica,
-variando somente a forma narrativa. Todos os estilos formais herdam a skill
+variando somente a forma narrativa. Todos os estilos herdam a skill
 `storyteller` do Roteirista e acrescentam sua especialização própria.
 """
 from __future__ import annotations
@@ -53,9 +53,31 @@ ESTILOS_NARRATIVOS = {
             "compatível com a faixa etária escolhida."
         ),
     },
+    "cumulativo_lengalenga": {
+        "label": "🔁 Cumulativo / Lengalenga",
+        "skill_base": "storyteller",
+        "descricao": (
+            "Roteirista + especialização Cumulativa/Lengalenga: progressão por acumulação, refrão memorável, "
+            "musicalidade, antecipação, participação e humor crescente."
+        ),
+        "instrucao": (
+            "Use uma estrutura cumulativa original: a cada nova passagem acrescente personagem, ação, objeto, "
+            "som, tentativa ou consequência, retomando de modo intencional parte do padrão anterior. Crie um "
+            "refrão curto, original e fácil de antecipar, sem copiar frases de obras existentes. Use cadência, "
+            "sons, contagem ou pequenas variações quando combinarem com a premissa. A repetição deve produzir "
+            "prazer de antecipação e releitura, não enchimento. Faça o humor crescer pela progressão das situações, "
+            "reações e pequenas surpresas visuais, sem humilhar personagens. Conduza a acumulação até um clímax "
+            "claro e encerre o padrão com uma resolução satisfatória, transformação emocional e lição cristã natural. "
+            "Para 3–5, privilegie simplicidade, refrão e participação; para 6–8, acrescente variações e causa-consequência; "
+            "para 9–12, só use se a estrutura puder ganhar sofisticação suficiente para não infantilizar."
+        ),
+    },
 }
 
-ORDEM_ESTILOS = tuple(ESTILOS_NARRATIVOS.keys())
+# Núcleo histórico do Prompt-Mestre: continua com exatamente quatro estilos.
+ORDEM_ESTILOS = ("estilo_1", "estilo_2", "estilo_3", "misto")
+# Biblioteca opcional: não aumenta automaticamente o número de chamadas do comparador principal.
+ORDEM_ESTILOS_ADICIONAIS = ("cumulativo_lengalenga",)
 
 
 def normalizar_estilo(estilo: str | None) -> str:
@@ -133,14 +155,16 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
     }
 
 
-def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
-    """Gera a mesma história nos quatro estilos, todos com a skill-base do Roteirista."""
+def _gerar_um_estilo(state: dict, chamar_llm, estilo: str, modo: str) -> dict:
+    chave = normalizar_estilo(estilo)
+    spec = ESTILOS_NARRATIVOS[chave]
     modo = "completa" if modo == "completa" else "amostra"
     min_cenas = max(12, int(state.get("paginas_minimas") or 24) // 2)
     emocoes_validas = ", ".join(EMOCOES.keys())
     subemocoes_validas = ", ".join(EMOCOES_COMPLEMENTARES.keys())
     faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
     perfil = perfil_etario(faixa)
+
     base = f"""
 PREMISSA/TEMA:
 {state.get('_entrada_tema_livre') or state.get('titulo') or ''}
@@ -157,37 +181,30 @@ PERSONAGENS — identidade, nomes, papéis e características pedidas devem perm
 {_personagens_resumo(state)}
 """.strip()
 
-    storyteller_core = skill_contract("storyteller")
-    resultados: dict[str, dict] = {}
-    for estilo in ORDEM_ESTILOS:
-        spec = ESTILOS_NARRATIVOS[estilo]
-        if modo == "amostra":
-            instrucao_saida = (
-                "Crie uma AMOSTRA REPRESENTATIVA da história nesse estilo: 4 a 6 pequenos blocos/cenas, "
-                "suficientes para a autora sentir ritmo, linguagem e atmosfera. Não precisa escrever o livro inteiro. "
-                "Retorne JSON com titulo, sinopse_poetica, amostra e licao_final."
-            )
-        else:
-            instrucao_saida = (
-                f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
-                "Retorne JSON com titulo, sinopse_poetica, cenas_texto e licao_final. "
-                "Cada cena deve conter numero, texto, emocao, emocao_secundaria, "
-                "intensidade_emocional (1-5), transicao_emocional, figurino, "
-                "contexto_visual, personagem_principal e expressao. "
-                f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
-                f"A subemoção opcional pode ser uma destas: {subemocoes_validas}. "
-                f"Use até aproximadamente {perfil['max_words_sentence']} palavras por frase e "
-                f"{perfil['max_words_scene']} palavras por cena como TETOS heurísticos de revisão, nunca como meta. "
-                "Não escolha cores no texto da história: o Emotional & Color Director aplicará a tabela canônica "
-                "do Prompt-Mestre depois."
-            )
+    if modo == "amostra":
+        instrucao_saida = (
+            "Crie uma AMOSTRA REPRESENTATIVA da história nesse estilo: 4 a 6 pequenos blocos/cenas, "
+            "suficientes para a autora sentir ritmo, linguagem, mecanismo narrativo e atmosfera. "
+            "Não precisa escrever o livro inteiro. Retorne JSON com titulo, sinopse_poetica, amostra e licao_final."
+        )
+    else:
+        instrucao_saida = (
+            f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
+            "Retorne JSON com titulo, sinopse_poetica, cenas_texto e licao_final. "
+            "Cada cena deve conter numero, texto, emocao, emocao_secundaria, intensidade_emocional (1-5), "
+            "transicao_emocional, figurino, contexto_visual, personagem_principal e expressao. "
+            f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
+            f"A subemoção opcional pode ser uma destas: {subemocoes_validas}. "
+            f"Use até aproximadamente {perfil['max_words_sentence']} palavras por frase e "
+            f"{perfil['max_words_scene']} palavras por cena como tetos heurísticos, nunca como meta. "
+            "Não escolha cores no texto: o Emotional & Color Director fará isso depois."
+        )
 
-        sistema = f"""
+    sistema = f"""
 Você é o Comparative Story Director do FaithBloom Book Studio.
 Você HERDA integralmente a skill formal `storyteller` do Roteirista e, sobre essa
 base profissional comum, aplica a especialização narrativa indicada abaixo.
-Assim, todos os estilos precisam ter a mesma qualidade de storytelling; o que
-muda é a forma de contar.
+Todos os estilos precisam ter a mesma qualidade de storytelling; o que muda é a forma de contar.
 
 Gere UMA versão da MESMA história, sem mudar fatos centrais, personagens, lição cristã,
 referência bíblica OU faixa etária. Varie somente o ESTILO NARRATIVO.
@@ -202,8 +219,6 @@ ESPECIALIZAÇÃO NARRATIVA OBRIGATÓRIA:
 Regras invariáveis:
 - linguagem, densidade, humor, tensão, musicalidade e onomatopeias seguem a faixa etária;
 - frases claras e agradáveis de ler/ouvir;
-- musicalidade natural em todos os estilos; no Estilo 2 ela pode ser mais intensa;
-- repetição e onomatopeias somente na intensidade apropriada para a idade;
 - emoções compreensíveis e coerentes com a maturidade do público;
 - ação visual e movimento;
 - humor quando couber, sem infantilizar leitores maiores;
@@ -214,15 +229,29 @@ Regras invariáveis:
 - não invente o texto completo do versículo: preserve somente a referência fornecida;
 - não altere Character DNA;
 - não troque nomes, relações ou papéis informados pela autora;
+- não copie frases, refrões, estruturas textuais distintivas ou personagens de livros existentes;
 - quando gerar história completa, registre emoção principal, subemoção opcional,
   intensidade 1–5 e transição emocional coerentes com cada cena;
-- a psicologia das cores será aplicada depois pelo Emotional & Color Director com a
-  tabela canônica FaithBloom, portanto não transforme a narrativa em instruções cromáticas.
-""".strip() + "\n\n" + storyteller_core
-        resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
-        resultados[estilo] = _normalizar_resultado(resposta, estilo, modo)
+- a psicologia das cores será aplicada depois pelo Emotional & Color Director.
+""".strip() + "\n\n" + skill_contract("storyteller")
 
-    return resultados
+    resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
+    return _normalizar_resultado(resposta, chave, modo)
+
+
+def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
+    """Gera o núcleo de quatro estilos do Prompt-Mestre, todos com skill-base do Roteirista."""
+    return {
+        estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo)
+        for estilo in ORDEM_ESTILOS
+    }
+
+
+def gerar_estilo_adicional(state: dict, chamar_llm, estilo: str, modo: str = "amostra") -> dict:
+    """Gera sob demanda um estilo da biblioteca opcional, sem aumentar o comparador principal."""
+    if estilo not in ORDEM_ESTILOS_ADICIONAIS:
+        raise ValueError(f"Estilo adicional não registrado: {estilo}")
+    return _gerar_um_estilo(state, chamar_llm, estilo, modo)
 
 
 def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None) -> dict:
@@ -233,7 +262,6 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     novo["faixa_etaria"] = normalizar_faixa_etaria(novo.get("faixa_etaria"))
     novo["age_profile_id"] = novo["faixa_etaria"]
 
-    # Amostra serve apenas para escolher o estilo; não altera título, moral nem cenas.
     if not versao or versao.get("modo") != "completa":
         novo["historia_escolhida_preservar"] = False
         return novo
@@ -251,5 +279,4 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     return novo
 
 
-# Todos os estilos comparativos herdam o contrato formal do Roteirista.
 SKILL_PROFILE_IDS = ("storyteller",)
