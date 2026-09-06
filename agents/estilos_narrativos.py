@@ -13,6 +13,7 @@ from agent_skills import skill_contract
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
 from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
 
+# Núcleo histórico e oficial do Prompt-Mestre. Deve permanecer com quatro estilos.
 ESTILOS_NARRATIVOS = {
     "estilo_1": {
         "label": "Estilo 1 — Aventura",
@@ -53,6 +54,10 @@ ESTILOS_NARRATIVOS = {
             "compatível com a faixa etária escolhida."
         ),
     },
+}
+
+# Biblioteca opcional: não entra automaticamente nas quatro chamadas principais.
+ESTILOS_ADICIONAIS = {
     "cumulativo_lengalenga": {
         "label": "🔁 Cumulativo / Lengalenga",
         "skill_base": "storyteller",
@@ -74,19 +79,21 @@ ESTILOS_NARRATIVOS = {
     },
 }
 
-# Núcleo histórico do Prompt-Mestre: continua com exatamente quatro estilos.
-ORDEM_ESTILOS = ("estilo_1", "estilo_2", "estilo_3", "misto")
-# Biblioteca opcional: não aumenta automaticamente o número de chamadas do comparador principal.
-ORDEM_ESTILOS_ADICIONAIS = ("cumulativo_lengalenga",)
+ORDEM_ESTILOS = tuple(ESTILOS_NARRATIVOS.keys())
+ORDEM_ESTILOS_ADICIONAIS = tuple(ESTILOS_ADICIONAIS.keys())
+TODOS_ESTILOS = {**ESTILOS_NARRATIVOS, **ESTILOS_ADICIONAIS}
 
 
 def normalizar_estilo(estilo: str | None) -> str:
-    return estilo if estilo in ESTILOS_NARRATIVOS else "estilo_1"
+    return estilo if estilo in TODOS_ESTILOS else "estilo_1"
+
+
+def _spec_estilo(estilo: str | None) -> dict:
+    return TODOS_ESTILOS[normalizar_estilo(estilo)]
 
 
 def instrucao_estilo(estilo: str | None) -> str:
-    chave = normalizar_estilo(estilo)
-    dados = ESTILOS_NARRATIVOS[chave]
+    dados = _spec_estilo(estilo)
     return f"{dados['label']}: {dados['instrucao']}"
 
 
@@ -112,7 +119,6 @@ def normalizar_licao_final(valor: Any) -> str:
 
 
 def _personagens_resumo(state: dict) -> str:
-    """Combina Character DNA já formalizado com o briefing livre da autora."""
     personagens = state.get("personagens") or {}
     partes = []
     for nome, dados in personagens.items():
@@ -145,7 +151,7 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
         amostra = "\n\n".join(str(c.get("texto", "")) for c in cenas[:4] if isinstance(c, dict))
     return {
         "estilo": estilo,
-        "label": ESTILOS_NARRATIVOS[estilo]["label"],
+        "label": TODOS_ESTILOS[estilo]["label"],
         "modo": modo,
         "titulo": resposta.get("titulo") or "",
         "sinopse_poetica": resposta.get("sinopse_poetica") or resposta.get("sinopse") or "",
@@ -157,7 +163,7 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
 
 def _gerar_um_estilo(state: dict, chamar_llm, estilo: str, modo: str) -> dict:
     chave = normalizar_estilo(estilo)
-    spec = ESTILOS_NARRATIVOS[chave]
+    spec = TODOS_ESTILOS[chave]
     modo = "completa" if modo == "completa" else "amostra"
     min_cenas = max(12, int(state.get("paginas_minimas") or 24) // 2)
     emocoes_validas = ", ".join(EMOCOES.keys())
@@ -241,15 +247,12 @@ Regras invariáveis:
 
 def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
     """Gera o núcleo de quatro estilos do Prompt-Mestre, todos com skill-base do Roteirista."""
-    return {
-        estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo)
-        for estilo in ORDEM_ESTILOS
-    }
+    return {estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo) for estilo in ORDEM_ESTILOS}
 
 
 def gerar_estilo_adicional(state: dict, chamar_llm, estilo: str, modo: str = "amostra") -> dict:
     """Gera sob demanda um estilo da biblioteca opcional, sem aumentar o comparador principal."""
-    if estilo not in ORDEM_ESTILOS_ADICIONAIS:
+    if estilo not in ESTILOS_ADICIONAIS:
         raise ValueError(f"Estilo adicional não registrado: {estilo}")
     return _gerar_um_estilo(state, chamar_llm, estilo, modo)
 
@@ -258,7 +261,7 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     novo = deepcopy(state)
     chave = normalizar_estilo(estilo)
     novo["estilo_narrativo"] = chave
-    novo["estilo_narrativo_label"] = ESTILOS_NARRATIVOS[chave]["label"]
+    novo["estilo_narrativo_label"] = TODOS_ESTILOS[chave]["label"]
     novo["faixa_etaria"] = normalizar_faixa_etaria(novo.get("faixa_etaria"))
     novo["age_profile_id"] = novo["faixa_etaria"]
 
