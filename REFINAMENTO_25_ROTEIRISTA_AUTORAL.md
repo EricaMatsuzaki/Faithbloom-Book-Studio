@@ -65,4 +65,7 @@ O sistema usa os princípios gerais de conto cumulativo/lengalenga, mas proíbe 
 `licao_final` estruturada em JSON/dict é normalizada para texto editorial limpo antes de aparecer na interface ou seguir para o livro, evitando exibição de objetos como `{'texto': ...}`.
 
 ## Validação
-A suíte automatizada cobre herança da skill `storyteller`, preservação do núcleo de quatro estilos, geração opcional do Cumulativo/Lengalenga, originalidade e exposição da biblioteca adicional na interface.
+- GitHub Actions: **336 passed, 1 skipped, 0 failures**.
+- Testes confirmam que `ESTILOS_NARRATIVOS` continua contendo exatamente os quatro estilos oficiais.
+- Testes confirmam que `Cumulativo/Lengalenga` fica em registro separado de estilos adicionais.
+- Testes confirmam herança da skill `storyteller`, originalidade e exposição da biblioteca opcional na interface.
