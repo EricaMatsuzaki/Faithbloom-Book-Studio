@@ -1,4 +1,4 @@
-from emotion_colors import EMOCOES, REGRA_NAO_MONOCROMATICA
+from emotion_colors import EMOCOES, REGRA_NAO_MONOCROMATICA, paleta_para_prompt
 from emotional_color_director import analisar_plutchik, direcao_emocional, construir_mapa_emocional
 from agents.ilustrador import prompt_cena
 from agents.estilos_narrativos import gerar_comparativo_estilos
@@ -15,6 +15,12 @@ def test_tabela_prompt_mestre_permanece_canonica():
     assert EMOCOES["esperanca"]["cor"] == "dourado + azul-celeste"
     assert EMOCOES["alegria"]["uso_espiritual"] == "Amor de Deus e gratidão"
     assert EMOCOES["esperanca"]["uso_espiritual"] == "Clímax espiritual/final"
+
+
+def test_paleta_aceita_emocoes_legadas_com_acento():
+    assert "dourado + azul-celeste" in paleta_para_prompt("esperança")
+    assert "azul-claro" in paleta_para_prompt("frustração")
+    assert "amarelo-dourado" in paleta_para_prompt("gratidão")
 
 
 def test_plutchik_organiza_emocao_sem_substituir_cor_canonica():
