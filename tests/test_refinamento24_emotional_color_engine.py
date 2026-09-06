@@ -1,6 +1,8 @@
 from emotion_colors import EMOCOES, REGRA_NAO_MONOCROMATICA
 from emotional_color_director import analisar_plutchik, direcao_emocional, construir_mapa_emocional
 from agents.ilustrador import prompt_cena
+from agents.estilos_narrativos import gerar_comparativo_estilos
+from prompt_master_compliance import avaliar_prompt_mestre
 
 
 def test_tabela_prompt_mestre_permanece_canonica():
@@ -82,3 +84,44 @@ def test_ilustrador_recebe_motor_emocional_completo():
     assert "tristeza → esperança" in prompt
     assert "não a torne monocromática" in prompt
     assert "gatinha creme, olhos verdes" in prompt
+
+
+def test_compliance_nao_quebra_com_intensidade_legada_invalida():
+    relatorio = avaliar_prompt_mestre({
+        "licao_final": "Aprendemos a confiar em Deus.",
+        "cenas_texto": [
+            {"numero": 1, "texto": "Cena", "emocao": "alegria", "intensidade_emocional": ""},
+            {"numero": 2, "texto": "Cena", "emocao": "tristeza", "intensidade_emocional": "antigo"},
+        ],
+    })
+    assert any(x["codigo"] == "EMOCAO_POR_CENA_INCOMPLETA" for x in relatorio["recomendacoes"])
+
+
+def test_quatro_estilos_completos_pedem_metadados_emocionais():
+    chamadas = []
+
+    def fake_llm(*, sistema, instrucao):
+        chamadas.append((sistema, instrucao))
+        return {
+            "titulo": "História",
+            "sinopse_poetica": "Sinopse",
+            "cenas_texto": [],
+            "licao_final": "Moral",
+        }
+
+    gerar_comparativo_estilos(
+        {
+            "titulo": "História",
+            "emocao_central": "alegria",
+            "aprendizado_cristao": "gratidão",
+            "versiculo_referencia": "Salmo 118:24",
+            "personagens": {},
+            "paginas_minimas": 24,
+        },
+        fake_llm,
+        modo="completa",
+    )
+    assert len(chamadas) == 4
+    assert all("intensidade_emocional" in instrucao for _, instrucao in chamadas)
+    assert all("transicao_emocional" in instrucao for _, instrucao in chamadas)
+    assert all("onomatopeias" in sistema for sistema, _ in chamadas)
