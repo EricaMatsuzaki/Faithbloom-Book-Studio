@@ -10,6 +10,10 @@ class LivroStatePromptMestre(LivroState, total=False):
     personagens_historia_brief: str  # briefing livre antes do Character DNA formal
     historia_escolhida_preservar: bool
 
+    # Faixa etária oficial por livro
+    faixa_etaria: str                 # 3-5 | 6-8 | 9-12 | 3-8 (compatibilidade)
+    age_profile_id: str               # id normalizado usado pelo Age Profile Engine
+
     # Estilo narrativo formal
     estilo_narrativo: str
     estilo_narrativo_label: str
