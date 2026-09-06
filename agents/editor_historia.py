@@ -27,9 +27,31 @@ def _idade(state: dict) -> tuple[str, dict]:
     return faixa, perfil_etario(faixa)
 
 
+def _ajustar_instrucao_legada(instrucao: str, perfil: dict) -> str:
+    """Evita que atalhos antigos 3–8 infantilizem livros 9–12.
+
+    O fluxo clássico ainda possui o atalho textual "para uma criança pequena".
+    Quando ele chega aqui, trocamos somente essa formulação genérica pela faixa
+    oficial do livro. Pedidos livres escritos pela autora permanecem intactos.
+    """
+    texto = str(instrucao or "")
+    legado = "para uma criança pequena"
+    if legado in texto.lower():
+        # Substituição case-insensitive simples preservando o restante do pedido.
+        import re
+        texto = re.sub(
+            r"para uma criança pequena",
+            f"para a faixa etária {perfil['short_label']}",
+            texto,
+            flags=re.IGNORECASE,
+        )
+    return texto
+
+
 def editar_cena(cena: dict, instrucao: str, state: dict, chamar_llm) -> dict:
     """Reescreve SOMENTE uma cena e preserva o restante do livro."""
     faixa, perfil = _idade(state)
+    pedido = _ajustar_instrucao_legada(instrucao, perfil)
     sistema = f"""\
 Você é o Editor Editorial do FaithBloom Book Studio.
 Edite SOMENTE a cena informada. NÃO reescreva outras cenas e NÃO altere
@@ -60,7 +82,7 @@ Cena atual:
 {cena}
 
 Pedido da autora:
-{instrucao}
+{pedido}
 """
     sistema += skill_contract("story_editor")
     resposta = chamar_llm(
