@@ -66,16 +66,26 @@ def verificar_requirements() -> list[dict]:
 
 
 def verificar_page_links() -> list[dict]:
+    """Valida rotas Streamlit e informa também quem referencia cada rota ausente."""
     fontes = [ROOT / "app.py"] + list((ROOT / "pages").glob("*.py"))
-    padrao = re.compile(r"(?:st\.page_link\(|card\([^\)]*?)(?:\n|.){0,500}?[\"'](pages/[^\"']+\.py)[\"']", re.MULTILINE)
-    # captura direta de qualquer string pages/*.py; é mais robusto para cards multiline
     alvo_re = re.compile(r"[\"'](pages/[^\"']+\.py)[\"']")
-    referencias = set()
+    referencias_por_fonte: dict[str, set[str]] = {}
     for f in fontes:
-        if f.exists():
-            referencias.update(alvo_re.findall(f.read_text(encoding="utf-8")))
-    ausentes = sorted(x for x in referencias if not (ROOT / x).exists())
-    return [_item("Navegação / page links", not ausentes, f"{len(referencias)} rotas verificadas" if not ausentes else f"Ausentes: {ausentes}")]
+        if not f.exists():
+            continue
+        origem = str(f.relative_to(ROOT))
+        for alvo in alvo_re.findall(f.read_text(encoding="utf-8")):
+            referencias_por_fonte.setdefault(alvo, set()).add(origem)
+
+    ausentes = sorted(x for x in referencias_por_fonte if not (ROOT / x).exists())
+    if ausentes:
+        detalhe = "; ".join(
+            f"{alvo} <- {', '.join(sorted(referencias_por_fonte[alvo]))}"
+            for alvo in ausentes
+        )
+    else:
+        detalhe = f"{len(referencias_por_fonte)} rotas verificadas"
+    return [_item("Navegação / page links", not ausentes, detalhe)]
 
 
 def verificar_segredos() -> list[dict]:
