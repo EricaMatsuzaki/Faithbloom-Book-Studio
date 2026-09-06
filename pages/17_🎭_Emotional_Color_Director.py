@@ -4,9 +4,9 @@ from estilo import aplicar_estilo, hero, section_title
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
 from emotional_color_director import (
     PALETAS_PRESET,
-    analisar_plutchik,
     construir_mapa_emocional,
     direcao_emocional,
+    normalizar_emocao,
     sugerir_arco,
 )
 
@@ -68,16 +68,23 @@ edicoes = []
 canonicas = list(EMOCOES.keys())
 subemocoes = [''] + list(EMOCOES_COMPLEMENTARES.keys())
 
+
+def _intensidade_segura(valor) -> int:
+    try:
+        n = int(valor)
+    except (TypeError, ValueError):
+        n = 3
+    return max(1, min(5, n))
+
+
 for i, emocao_sugerida in enumerate(arco, 1):
     cena_existente = cenas_ativas[i - 1] if i - 1 < len(cenas_ativas) else {}
-    principal_default = cena_existente.get('emocao', emocao_sugerida)
+    principal_bruta = cena_existente.get('emocao', emocao_sugerida)
+    principal_default = normalizar_emocao(principal_bruta)
     if principal_default not in canonicas:
-        # Emoção narrativa complementar recebe a base canônica apenas para o seletor principal.
-        principal_default = EMOCOES_COMPLEMENTARES.get(principal_default, {}).get('base', 'esperanca')
-        if principal_default not in canonicas:
-            principal_default = 'esperanca'
+        principal_default = 'esperanca'
 
-    sub_default = cena_existente.get('emocao_secundaria', cena_existente.get('subemocao', ''))
+    sub_default = str(cena_existente.get('emocao_secundaria', cena_existente.get('subemocao', '')) or '')
     if sub_default not in subemocoes:
         sub_default = ''
 
@@ -98,19 +105,19 @@ for i, emocao_sugerida in enumerate(arco, 1):
             key=f'ed_sub_{i}',
         )
         intensidade = c3.slider(
-            'Intensidade', 1, 5, int(cena_existente.get('intensidade_emocional', 3) or 3), key=f'ed_int_{i}'
+            'Intensidade', 1, 5, _intensidade_segura(cena_existente.get('intensidade_emocional', 3)), key=f'ed_int_{i}'
         )
         travar = c4.checkbox('🔒 Travar', value=bool(cena_existente.get('emocao_travada', False)), key=f'ed_lock_{i}')
 
         transicao = st.text_input(
             'Transição emocional (opcional)',
-            value=cena_existente.get('transicao_emocional', ''),
+            value=str(cena_existente.get('transicao_emocional', '') or ''),
             key=f'ed_trans_{i}',
             placeholder='Ex.: tristeza → começando a surgir esperança',
         )
         extra = st.text_input(
             'Instrução editorial opcional',
-            value=cena_existente.get('instrucao_emocional', ''),
+            value=str(cena_existente.get('instrucao_emocional', '') or ''),
             key=f'ed_extra_{i}',
             placeholder='Ex.: impaciente, mas ainda fofa e levemente engraçada.',
         )
