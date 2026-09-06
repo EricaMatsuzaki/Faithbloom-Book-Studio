@@ -8,8 +8,10 @@ Fluxo editorial:
 5. Confirma título, emoção, lição e referência bíblica editáveis.
 6. Pode ver a visão autoral do Roteirista, comparar os quatro estilos formais
    e gerar uma quinta versão completa usando a skill real de storyteller.
-7. Todas as versões podem ser preservadas na Biblioteca de Versões Narrativas.
-8. A versão ativa segue para personagens/revisão antes de qualquer ilustração.
+7. Pode explorar estilos adicionais sob demanda, sem aumentar automaticamente
+   as quatro chamadas principais.
+8. Todas as versões podem ser preservadas na Biblioteca de Versões Narrativas.
+9. A versão ativa segue para personagens/revisão antes de qualquer ilustração.
 """
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from agents.curador_tema import curador_tema_node
 from agents.gerador_ideias import gerador_ideias_node
 from agents.estilos_narrativos import (
     ESTILOS_NARRATIVOS,
+    ESTILOS_ADICIONAIS,
     ORDEM_ESTILOS,
     aplicar_estilo_ao_state,
     gerar_comparativo_estilos,
@@ -154,7 +157,11 @@ def _ativar_versao(chave: str, versao: dict) -> None:
         novo["estilo_narrativo_label"] = LABEL_ROTEIRISTA
     else:
         novo = aplicar_estilo_ao_state(dict(s), chave, versao)
-        novo["versao_narrativa_origem"] = "comparative_story_director"
+        novo["versao_narrativa_origem"] = (
+            "comparative_story_director_additional"
+            if chave in ESTILOS_ADICIONAIS
+            else "comparative_story_director"
+        )
 
     for campo in DERIVADOS_NARRATIVOS:
         novo.pop(campo, None)
@@ -247,274 +254,248 @@ if profiles:
         s.update(set_project_authors(dict(s), autores))
 else:
     s["autora"] = st.text_input(
-        "Autor(a) / nome de publicação",
-        value=s.get("autora", ""),
-        help="Você pode criar perfis reutilizáveis depois em Autores & Colaboradores.",
-    )
+        "Nome de autoria/publicação",
+        value=author_display_from_state(s) or str(s.get("autora") or ""),
+        help="Nome que deve aparecer como autora/autoria do livro; não use automaticamente o nome de quem está logado.",
+    ).strip()
 
-credito = author_display_from_state(s)
-if credito:
-    st.caption(f"Crédito atual: **{credito}**")
-else:
-    st.warning("A autoria ainda não foi definida. Você pode explorar ideias, mas confirme o crédito antes de salvar/publicar o projeto.")
-
-# --------------------------------------------------------------- FAIXA ETÁRIA
-st.divider()
-st.subheader("2. Para qual faixa etária é este livro?")
-opcoes = opcoes_faixa_etaria()
-faixa_atual = normalizar_faixa_etaria(s.get("faixa_etaria"))
-idx_atual = opcoes.index(faixa_atual) if faixa_atual in opcoes else opcoes.index("3-8")
-faixa_escolhida = st.selectbox(
-    "Faixa etária oficial",
-    options=opcoes,
-    index=idx_atual,
-    format_func=lambda x: perfil_etario(x)["label"],
-    help=(
-        "Para novos livros, 3–5, 6–8 e 9–12 dão resultados mais precisos. "
-        "A opção 3–8 é mantida para compatibilidade com a coleção ampla já existente."
-    ),
-)
-faixa_escolhida = normalizar_faixa_etaria(faixa_escolhida)
-
-if faixa_escolhida != faixa_atual:
-    s["faixa_etaria"] = faixa_escolhida
-    s["age_profile_id"] = faixa_escolhida
-    _invalidar_comparativo_por_mudanca_editorial()
-    if s.get("cenas_texto"):
-        s["idade_historia_precisa_regenerar"] = True
-        s["revisao_aprovada"] = False
-    st.rerun()
-
-perfil = perfil_etario(s["faixa_etaria"])
-st.caption(
-    f"**{perfil['short_label']}** · {perfil['publico']}. "
-    f"{perfil['ritmo'].capitalize()}. {perfil['paginas_recomendadas']}."
-)
-
-if s.get("idade_historia_precisa_regenerar"):
-    st.warning(
-        "A faixa etária foi alterada depois de já existir uma história. A versão anterior foi preservada, "
-        "mas precisa ser regenerada ou escolhida novamente antes de seguir para aprovação."
-    )
-
-# ----------------------------------------------------------------- ORIGEM
-st.divider()
-st.subheader("3. Como você quer começar a história?")
-modo = st.radio(
-    "Escolha uma opção",
-    [
-        "📝 Tenho uma ideia, resumo ou breve relato",
-        "✨ Estou sem ideia — quero sugestões da IA",
-        "📖 Usar a ideia que já está no projeto",
-    ],
-    horizontal=False,
-)
-
-if modo.startswith("📝"):
-    s["origem_ideia"] = "ideia_da_autora"
-    ideia = st.text_area(
-        "Conte sua ideia do seu jeito",
-        value=s.get("_entrada_tema_livre", ""),
-        height=180,
-        placeholder=(
-            "Ex.: Mel quer muito ver a sementinha nascer. Ela olha o vaso várias vezes, fica impaciente, "
-            "tenta apressar a planta e depois aprende que existe um tempo certo para cada coisa..."
-        ),
-        help="Pode ser apenas algumas linhas. Você não precisa saber escrever a história completa.",
-    )
-    if ideia.strip():
-        s["_entrada_tema_livre"] = ideia.strip()
-
-    if st.button("🌱 Preparar minha ideia", disabled=not bool(ideia.strip())):
-        with st.spinner("Organizando título, emoção, lição e referência bíblica..."):
-            s.update(curador_tema_node(dict(s), chamar_llm))
-        st.success("Ideia preparada. Você pode editar tudo antes de gerar as versões.")
-
-elif modo.startswith("✨"):
-    s["origem_ideia"] = "ideia_da_ia"
-    st.write(
-        f"A IA vai sugerir ideias pensadas para **{perfil['short_label']}**, mas nenhuma vira história sem a sua decisão."
-    )
-    quantidade = st.select_slider("Quantas ideias você quer ver?", options=[3, 4, 5, 6], value=4)
-    temas_usados = [l.get("titulo", "") for l in listar_livros(s.get("colecao") or None) if l.get("titulo")]
-
-    if st.button("✨ Sugerir ideias novas"):
-        with st.spinner("Criando ideias diferentes para sua coleção e faixa etária..."):
-            st.session_state.ideias_4_estilos = gerador_ideias_node(
-                quantidade,
-                temas_usados,
-                chamar_llm,
-                s.get("colecao", ""),
-                author_display_from_state(s),
-                faixa_etaria=s.get("faixa_etaria", "3-8"),
-            )
-
-    ideias = st.session_state.get("ideias_4_estilos", [])
-    for i, ideia in enumerate(ideias):
-        with st.container(border=True):
-            st.markdown(f"### {ideia.get('titulo_sugerido', f'Ideia {i + 1}')}")
-            st.write(ideia.get("situacao", ""))
-            st.caption(
-                f"Emoção: {ideia.get('emocao_central', '')}  •  "
-                f"Possível lição: {ideia.get('pista_licao', '')}"
-            )
-            if st.button("Usar esta ideia", key=f"usar_ideia_4_estilos_{i}"):
-                s["titulo"] = ideia.get("titulo_sugerido", "")
-                s["emocao_central"] = ideia.get("emocao_central", "")
-                s["aprendizado_cristao"] = ideia.get("pista_licao", "")
-                s["_entrada_tema_livre"] = ideia.get("situacao", "")
-                with st.spinner("Preparando a ideia escolhida..."):
-                    s.update(curador_tema_node(dict(s), chamar_llm))
-                st.session_state.ideia_4_estilos_escolhida = i
-                st.rerun()
-
-    if st.session_state.get("ideia_4_estilos_escolhida") is not None:
-        st.success("Ideia da IA escolhida. Agora personalize os personagens e os detalhes abaixo.")
-
-else:
-    s["origem_ideia"] = "projeto_existente"
-    if not (s.get("_entrada_tema_livre") or s.get("titulo")):
-        st.warning("Este projeto ainda não possui uma ideia. Use uma das duas opções acima.")
-    else:
-        st.write(s.get("_entrada_tema_livre") or s.get("titulo"))
-
-# ------------------------------------------------------------- PERSONAGENS
-st.divider()
-st.subheader("4. Quais personagens você quer nessa história?")
-
-if s.get("personagens"):
-    st.markdown("**Personagens já formalizados no projeto:**")
-    for nome, dados in s.get("personagens", {}).items():
-        papel = dados.get("papel", "") if isinstance(dados, dict) else ""
-        st.write(f"✅ {nome}" + (f" — {papel}" if papel else ""))
-
-s["personagens_historia_brief"] = st.text_area(
-    "Personagens que quero na narrativa",
-    value=s.get("personagens_historia_brief", ""),
-    height=150,
-    placeholder=(
-        "Ex.:\n"
-        "Mel — gatinha curiosa e impaciente; protagonista.\n"
-        "Manu — amiga carinhosa que ajuda Mel.\n"
-        "Téo — passarinho azul divertido que aparece no jardim."
-    ),
-    help=(
-        "Aqui você pode informar apenas nome, papel e personalidade. A aparência visual/Character DNA "
-        "pode ser definida depois sem perder a história escolhida."
-    ),
-)
-
-st.caption(
-    "Todas as versões usarão os MESMOS personagens. A IA não deve trocar nomes, relações, papéis ou características pedidas."
-)
-
-# -------------------------------------------------------------- CURADORIA
-st.divider()
-st.subheader("5. Confirme a direção da história")
-
-s["titulo"] = st.text_input("Título ou título provisório", value=s.get("titulo", ""))
-s["emocao_central"] = st.text_input("Emoção central", value=s.get("emocao_central", ""))
-s["aprendizado_cristao"] = st.text_area(
-    "Lição / aprendizado cristão",
-    value=s.get("aprendizado_cristao", ""),
-    height=85,
-)
-s["versiculo_referencia"] = st.text_input(
-    "Versículo — somente a referência nesta etapa",
-    value=s.get("versiculo_referencia", ""),
-    placeholder="Ex.: Eclesiastes 3:1",
-)
-
-premissa_ok = bool(str(s.get("_entrada_tema_livre") or s.get("titulo") or "").strip())
 colecao_ok = bool(str(s.get("colecao") or "").strip())
 if not colecao_ok:
-    st.warning("Escolha ou crie uma coleção antes de gerar as versões.")
-if not premissa_ok:
-    st.warning("Defina ou escolha uma ideia antes de gerar as versões.")
+    st.warning("Defina a coleção antes de avançar.")
 
+# -------------------------------------------------------- FAIXA ETÁRIA
+st.subheader("2. Faixa etária oficial")
+faixa_anterior = normalizar_faixa_etaria(s.get("faixa_etaria"))
+opcoes_idade = opcoes_faixa_etaria()
+ids_idade = [x[0] for x in opcoes_idade]
+rotulos_idade = {x[0]: x[1] for x in opcoes_idade}
+idx_idade = ids_idade.index(faixa_anterior) if faixa_anterior in ids_idade else 0
+faixa = st.selectbox(
+    "Faixa etária",
+    options=ids_idade,
+    index=idx_idade,
+    format_func=lambda x: rotulos_idade[x],
+    help="Esta escolha altera linguagem, densidade, musicalidade, humor, tensão e profundidade da história.",
+)
+if faixa != faixa_anterior:
+    s["faixa_etaria"] = faixa
+    s["age_profile_id"] = faixa
+    _invalidar_comparativo_por_mudanca_editorial()
+    s["idade_historia_precisa_regenerar"] = True
+    st.rerun()
+else:
+    s["faixa_etaria"] = faixa
+    s["age_profile_id"] = faixa
+
+# ------------------------------------------------------ ORIGEM DA IDEIA
+st.subheader("3. Como você quer começar a história?")
+origens = {
+    "ideia_propria": "📝 Tenho uma ideia, resumo ou breve relato",
+    "sem_ideia": "✨ Estou sem ideia — quero sugestões da IA",
+    "projeto": "📖 Usar a ideia que já está no projeto",
+}
+origem_atual = s.get("origem_ideia") or "ideia_propria"
+origem = st.radio(
+    "Escolha uma opção",
+    options=list(origens),
+    index=list(origens).index(origem_atual) if origem_atual in origens else 0,
+    format_func=lambda x: origens[x],
+)
+s["origem_ideia"] = origem
+
+if origem == "ideia_propria":
+    texto_ideia = st.text_area(
+        "Escreva sua ideia do seu jeito",
+        value=str(s.get("_entrada_tema_livre") or ""),
+        height=160,
+        placeholder="Ex.: Uma gatinha não quer emprestar seus lápis e descobre que compartilhar torna a brincadeira mais bonita.",
+    )
+    if texto_ideia.strip() != str(s.get("_entrada_tema_livre") or "").strip():
+        s["_entrada_tema_livre"] = texto_ideia.strip()
+        s.pop("comparativo_estilos", None)
+        s.pop("versao_roteirista_autoral", None)
+        s.pop("proposta_roteirista", None)
+        s.pop("estilo_escolhido_no_comparador", None)
+    if st.button("🌱 Preparar minha ideia", disabled=not bool(colecao_ok and texto_ideia.strip())):
+        s["_entrada_tema_livre"] = texto_ideia.strip()
+        s.update(curador_tema_node(dict(s), chamar_llm))
+        st.rerun()
+
+elif origem == "sem_ideia":
+    if st.button("✨ Sugerir ideias para este livro", disabled=not colecao_ok):
+        resposta = gerador_ideias_node(dict(s), chamar_llm)
+        ideias = resposta.get("ideias_geradas") or resposta.get("ideias") or []
+        if isinstance(ideias, dict):
+            ideias = list(ideias.values())
+        st.session_state.ideias_4_estilos = ideias
+        st.session_state.pop("ideia_4_estilos_escolhida", None)
+
+    ideias = st.session_state.get("ideias_4_estilos") or []
+    if ideias:
+        st.caption("Escolha uma ideia. Depois você ainda poderá editar título, emoção, lição e referência bíblica.")
+        for i, ideia in enumerate(ideias):
+            if isinstance(ideia, dict):
+                titulo_ideia = ideia.get("titulo") or ideia.get("nome") or f"Ideia {i + 1}"
+                resumo_ideia = ideia.get("resumo") or ideia.get("ideia") or ideia.get("descricao") or ""
+            else:
+                titulo_ideia = f"Ideia {i + 1}"
+                resumo_ideia = str(ideia)
+            with st.container(border=True):
+                st.markdown(f"**{titulo_ideia}**")
+                st.write(resumo_ideia)
+                if st.button("Usar esta ideia", key=f"usar_ideia_{i}"):
+                    texto_base = f"{titulo_ideia}. {resumo_ideia}".strip()
+                    st.session_state.ideia_4_estilos_escolhida = deepcopy(ideia)
+                    s["_entrada_tema_livre"] = texto_base
+                    s.update(curador_tema_node(dict(s), chamar_llm))
+                    st.rerun()
+
+else:
+    st.text_area(
+        "Ideia do projeto",
+        value=str(s.get("_entrada_tema_livre") or s.get("titulo") or ""),
+        disabled=True,
+        height=120,
+    )
+
+# ------------------------------------------------ PERSONAGENS NARRATIVOS
+st.subheader("4. Quais personagens você quer nessa história?")
+brief_personagens = st.text_area(
+    "Personagens narrativos",
+    value=str(s.get("personagens_historia_brief") or ""),
+    height=150,
+    placeholder=(
+        "Ex.: Mel — protagonista curiosa, alegre e carinhosa.\n"
+        "Manu — amiga gentil e criativa.\n"
+        "Aqui descreva PAPEL e comportamento na história; a aparência visual será definida no Character DNA."
+    ),
+    help="Os mesmos personagens serão usados em todas as versões. Características visuais canônicas pertencem ao Character Universe/Character DNA.",
+)
+if brief_personagens != str(s.get("personagens_historia_brief") or ""):
+    s["personagens_historia_brief"] = brief_personagens
+    s.pop("comparativo_estilos", None)
+    s.pop("versao_roteirista_autoral", None)
+    s.pop("proposta_roteirista", None)
+    s.pop("estilo_escolhido_no_comparador", None)
+
+# ------------------------------------------------ DIREÇÃO EDITORIAL
+st.subheader("5. Confirme a direção da história")
+s["titulo"] = st.text_input("Título / título provisório", value=str(s.get("titulo") or ""))
+s["emocao_central"] = st.text_input("Emoção central", value=str(s.get("emocao_central") or ""))
+s["aprendizado_cristao"] = st.text_area(
+    "Lição cristã",
+    value=str(s.get("aprendizado_cristao") or ""),
+    height=90,
+)
+s["versiculo_referencia"] = st.text_input(
+    "Referência bíblica (somente referência nesta etapa)",
+    value=str(s.get("versiculo_referencia") or ""),
+    help="O texto bíblico completo só deve ser usado depois da validação/seleção de tradução apropriada.",
+)
+
+pronto_editorial = all(
+    str(s.get(k) or "").strip()
+    for k in ("titulo", "emocao_central", "aprendizado_cristao")
+) and colecao_ok
+
+if st.button("💾 Salvar direção como rascunho", disabled=not bool(pronto_editorial)):
+    try:
+        _persistir_estado()
+        st.success("Direção editorial salva como rascunho.")
+    except Exception as exc:
+        st.error(f"Não foi possível salvar o rascunho: {exc}")
+
+# ------------------------------------------------------ VISÃO DO ROTEIRISTA
+st.subheader("6. ✍️ Visão do Roteirista")
+st.caption(
+    "Além da comparação formal, você pode perguntar ao Roteirista como ele desenvolveria esta ideia usando sua skill completa de storytelling."
+)
 if st.button(
     "✍️ Ver a proposta do Roteirista para esta ideia",
-    disabled=not bool(premissa_ok and colecao_ok),
-    help="Usa a skill formal do Roteirista para mostrar como ele desenvolveria a ideia, sem gerar o livro inteiro.",
+    disabled=not bool(pronto_editorial),
+    use_container_width=True,
 ):
-    with st.spinner("O Roteirista está estudando a melhor direção narrativa..."):
+    with st.spinner("O Roteirista está estudando a premissa, a idade e os personagens..."):
         s["proposta_roteirista"] = gerar_proposta_roteirista(dict(s), chamar_llm)
     st.rerun()
 
 proposta = s.get("proposta_roteirista") or {}
 if proposta:
-    with st.container(border=True):
-        st.markdown("### ✍️ Visão do Roteirista")
-        if proposta.get("titulo_alternativo"):
-            st.write(f"**Título alternativo:** {proposta['titulo_alternativo']}")
-        if proposta.get("gancho"):
-            st.write(f"**Gancho:** {proposta['gancho']}")
-        if proposta.get("direcao_narrativa"):
-            st.write(f"**Direção narrativa:** {proposta['direcao_narrativa']}")
-        if proposta.get("arco_emocional"):
-            st.write(f"**Arco emocional:** {proposta['arco_emocional']}")
-        if proposta.get("momento_de_virada"):
-            st.write(f"**Momento de virada:** {proposta['momento_de_virada']}")
-        if proposta.get("final_sugerido"):
-            st.write(f"**Final sugerido:** {proposta['final_sugerido']}")
+    with st.expander("✍️ Proposta do Roteirista", expanded=True):
+        campos = [
+            ("Título alternativo", "titulo_alternativo"),
+            ("Gancho", "gancho"),
+            ("Direção narrativa", "direcao_narrativa"),
+            ("Arco emocional", "arco_emocional"),
+            ("Momento de virada", "momento_de_virada"),
+            ("Final sugerido", "final_sugerido"),
+            ("Justificativa criativa", "justificativa_criativa"),
+        ]
+        for rotulo, campo in campos:
+            if proposta.get(campo):
+                st.markdown(f"**{rotulo}:** {proposta[campo]}")
         estilo_rec = proposta.get("estilo_recomendado")
         if estilo_rec in ESTILOS_NARRATIVOS:
-            st.write(f"**Estilo formal mais próximo:** {ESTILOS_NARRATIVOS[estilo_rec]['label']}")
-        if proposta.get("justificativa_criativa"):
-            st.caption(proposta["justificativa_criativa"])
-        st.caption("Esta é apenas a visão criativa do Roteirista. Nada é aplicado à história sem sua escolha.")
+            st.markdown(f"**Estilo formal recomendado:** {ESTILOS_NARRATIVOS[estilo_rec]['label']}")
 
-if st.button(
-    "💾 Salvar rascunho",
-    disabled=not bool(colecao_ok and str(s.get("titulo") or "").strip()),
-    help="Salva o estado atual do projeto, inclusive propostas e versões já geradas.",
-):
-    try:
-        _persistir_estado()
-        st.success("Rascunho salvo com sucesso.")
-    except Exception as exc:
-        st.error(f"Não foi possível salvar o rascunho: {exc}")
-
-# ------------------------------------------------------------ COMPARAÇÃO
-st.divider()
-st.subheader("6. Compare os 4 estilos + a versão autoral do Roteirista")
-
-st.markdown(
-    "**Estilo 1 — Aventura**  •  **Estilo 2 — Poético/Rimado**  •  "
-    "**Estilo 3 — Fábula cristã**  •  **Estilo misto**  •  **⭐ Roteirista (opcional)**"
-)
+# -------------------------------------------------------- COMPARAÇÃO FORMAL
+st.subheader("7. Veja a MESMA história nos 4 estilos")
 st.caption(
-    f"A premissa, os personagens, a lição cristã, a referência bíblica e a faixa **{perfil['short_label']}** permanecem iguais. "
-    "Nos quatro estilos formais muda a maneira de contar; na versão autoral, o Roteirista usa livremente sua skill para buscar a melhor solução narrativa."
+    "Premissa, personagens, lição cristã, referência bíblica e faixa etária permanecem iguais. "
+    "Todos os quatro estilos usam a skill-base do Roteirista; muda apenas a especialização narrativa."
 )
-
-pode_comparar = bool(premissa_ok and colecao_ok)
-c1, c2, c3 = st.columns(3)
-if c1.button("✨ Ver amostras dos 4 estilos", use_container_width=True, disabled=not pode_comparar):
-    with st.spinner("Criando quatro amostras da mesma história..."):
+col_a, col_b = st.columns(2)
+if col_a.button("✨ Ver amostras dos 4 estilos", disabled=not bool(pronto_editorial), use_container_width=True):
+    with st.spinner("Criando quatro amostras com a mesma premissa e personagens..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="amostra")
+        s.pop("estilo_escolhido_no_comparador", None)
         _sincronizar_biblioteca_versoes()
     st.rerun()
 
-if c2.button("📚 Gerar COMPLETAS nos 4 estilos", use_container_width=True, disabled=not pode_comparar):
+if col_b.button(
+    "📚 Gerar a história COMPLETA nos 4 estilos",
+    disabled=not bool(pronto_editorial),
+    use_container_width=True,
+):
     with st.spinner("Criando as quatro histórias completas com a mesma ideia, personagens e faixa etária..."):
         s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="completa")
+        s.pop("estilo_escolhido_no_comparador", None)
         _sincronizar_biblioteca_versoes()
     st.rerun()
 
-if c3.button("⭐ Gerar versão do Roteirista", use_container_width=True, disabled=not pode_comparar):
-    with st.spinner("O Roteirista está escrevendo sua melhor versão autoral..."):
+st.markdown("#### ⭐ Quinta opção — versão autoral do Roteirista")
+st.caption(
+    "Aqui o Roteirista usa a mesma skill profissional, mas sem ser obrigado a seguir isoladamente Aventura, Poético, Fábula ou Misto."
+)
+if st.button(
+    "⭐ Gerar versão do Roteirista",
+    disabled=not bool(pronto_editorial),
+    use_container_width=True,
+):
+    with st.spinner("O Roteirista está escrevendo sua melhor versão autoral completa..."):
         s["versao_roteirista_autoral"] = gerar_versao_autoral_roteirista(dict(s), chamar_llm)
         _sincronizar_biblioteca_versoes()
     st.rerun()
 
+st.markdown("#### ➕ Quer experimentar outra forma de contar?")
+st.caption(
+    "Os estilos adicionais são opcionais e só usam créditos quando você pedir. O primeiro disponível é 🔁 Cumulativo/Lengalenga, com repetição progressiva, refrão original, musicalidade e humor crescente."
+)
+st.page_link(
+    "pages/40_➕_Explorar_outros_estilos.py",
+    label="➕ Explorar outros estilos narrativos",
+    icon="➕",
+)
+
+# -------------------------------------------------------- EXIBIR VERSÕES
 comparativo = s.get("comparativo_estilos") or {}
 autoral = s.get("versao_roteirista_autoral") or {}
 entradas = []
-for estilo in ORDEM_ESTILOS:
-    if comparativo.get(estilo):
-        entradas.append((estilo, ESTILOS_NARRATIVOS[estilo]["label"], comparativo[estilo]))
-if autoral:
+for chave in ORDEM_ESTILOS:
+    versao = comparativo.get(chave)
+    if isinstance(versao, dict) and versao:
+        entradas.append((chave, ESTILOS_NARRATIVOS[chave]["label"], versao))
+if isinstance(autoral, dict) and autoral:
     entradas.append(("roteirista_autoral", LABEL_ROTEIRISTA, autoral))
 
 if entradas:
@@ -561,7 +542,7 @@ if entradas:
 biblioteca = s.get("versoes_narrativas_salvas") or {}
 if biblioteca:
     st.divider()
-    st.subheader("7. 📚 Biblioteca de Versões Narrativas")
+    st.subheader("8. 📚 Biblioteca de Versões Narrativas")
     st.caption(
         "As versões geradas permanecem guardadas no projeto. Escolher uma não apaga as outras. "
         "Se você mudar de ideia depois, pode voltar e tornar outra versão ativa sem regenerar."
@@ -572,6 +553,8 @@ if biblioteca:
             continue
         if chave == "roteirista_autoral":
             label = LABEL_ROTEIRISTA
+        elif chave in ESTILOS_ADICIONAIS:
+            label = ESTILOS_ADICIONAIS[chave]["label"]
         else:
             label = ESTILOS_NARRATIVOS.get(chave, {}).get("label") or versao.get("label") or chave
         status = versao.get("status", "atual")
@@ -607,7 +590,12 @@ if s.get("estilo_escolhido_no_comparador"):
     ativa = s.get("versao_narrativa_ativa")
     estilo = s.get("estilo_narrativo", "estilo_1")
     modo_escolhido = s.get("modo_comparacao_escolhido", "amostra")
-    label_ativa = LABEL_ROTEIRISTA if ativa == "roteirista_autoral" else ESTILOS_NARRATIVOS.get(estilo, {}).get("label", estilo)
+    if ativa == "roteirista_autoral":
+        label_ativa = LABEL_ROTEIRISTA
+    elif estilo in ESTILOS_ADICIONAIS:
+        label_ativa = ESTILOS_ADICIONAIS[estilo]["label"]
+    else:
+        label_ativa = ESTILOS_NARRATIVOS.get(estilo, {}).get("label", estilo)
     st.success(
         f"Versão ativa: {label_ativa} · Faixa: {perfil_etario(s.get('faixa_etaria'))['short_label']}."
     )
