@@ -160,14 +160,18 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     chave = normalizar_estilo(estilo)
     novo["estilo_narrativo"] = chave
     novo["estilo_narrativo_label"] = ESTILOS_NARRATIVOS[chave]["label"]
-    if versao:
-        if versao.get("titulo"):
-            novo["titulo"] = versao["titulo"]
-        if versao.get("sinopse_poetica"):
-            novo["sinopse_poetica"] = versao["sinopse_poetica"]
-        if versao.get("licao_final"):
-            novo["licao_final"] = versao["licao_final"]
-        if versao.get("modo") == "completa" and versao.get("cenas_texto"):
-            novo["cenas_texto"] = versao["cenas_texto"]
-            novo["revisao_aprovada"] = False
+
+    # Amostra serve apenas para escolher o estilo; não altera título, moral nem cenas.
+    if not versao or versao.get("modo") != "completa":
+        return novo
+
+    if versao.get("titulo"):
+        novo["titulo"] = versao["titulo"]
+    if versao.get("sinopse_poetica"):
+        novo["sinopse_poetica"] = versao["sinopse_poetica"]
+    if versao.get("licao_final"):
+        novo["licao_final"] = versao["licao_final"]
+    if versao.get("cenas_texto"):
+        novo["cenas_texto"] = versao["cenas_texto"]
+        novo["revisao_aprovada"] = False
     return novo
