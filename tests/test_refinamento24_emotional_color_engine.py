@@ -3,6 +3,7 @@ from emotional_color_director import analisar_plutchik, direcao_emocional, const
 from agents.ilustrador import prompt_cena
 from agents.estilos_narrativos import gerar_comparativo_estilos
 from prompt_master_compliance import avaliar_prompt_mestre
+from state import CenaTexto
 
 
 def test_tabela_prompt_mestre_permanece_canonica():
@@ -56,6 +57,14 @@ def test_mapa_emocional_guarda_subemocao_intensidade_e_transicao():
     assert d["subemocao"] == "frustracao"
     assert d["intensidade"] == 2
     assert d["transicao_emocional"] == "frustração → esperança"
+
+
+def test_schema_cena_texto_documenta_campos_emocionais():
+    anotacoes = CenaTexto.__annotations__
+    assert "emocao" in anotacoes
+    assert "emocao_secundaria" in anotacoes
+    assert "intensidade_emocional" in anotacoes
+    assert "transicao_emocional" in anotacoes
 
 
 def test_ilustrador_recebe_motor_emocional_completo():
