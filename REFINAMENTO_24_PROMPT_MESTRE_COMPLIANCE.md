@@ -14,6 +14,10 @@ Transformar os itens ainda não formalizados do Prompt-Mestre em regras e ferram
   3. Estilo 3 — Fábula cristã
   4. Estilo misto
 - A autora pode comparar a mesma premissa nos quatro estilos antes de escolher o definitivo.
+- Psicologia das cores e emoções é **obrigatória cena por cena** como direção visual.
+- A tabela do Prompt-Mestre Erica Matsuzaki é a **fonte cromática canônica**.
+- A roda de Plutchik é usada como **taxonomia emocional** para família, intensidade e combinações; suas cores não substituem a tabela canônica do FaithBloom.
+- A paleta emocional nunca pode recolorir Character DNA e nunca deve transformar a cena inteira em monocromática.
 
 ## Entregas
 
@@ -25,6 +29,95 @@ Transformar os itens ainda não formalizados do Prompt-Mestre em regras e ferram
   - **Amostra rápida dos 4 estilos**: não altera título, moral, cenas nem aprovação da história.
   - **História completa nos 4 estilos**: permite aplicar uma versão completa; ao aplicar, `revisao_aprovada=False` para obrigar nova revisão editorial.
 - Personagens, premissa, lição cristã e referência bíblica devem permanecer equivalentes entre as versões.
+- A narrativa recebe musicalidade infantil leve, repetição natural, onomatopeias equilibradas quando ligadas à ação e uma jornada com movimento, humor leve, tensão segura, transformação emocional, descoberta espiritual e recompensa/celebração.
+
+### Emotional & Color Engine
+
+O sistema existente `emotion_colors.py` + `emotional_color_director.py` foi ampliado sem criar um segundo motor concorrente.
+
+#### Camada 1 — Tabela canônica do Prompt-Mestre
+
+A tabela oficial permanece:
+
+| Emoção | Cor-base | Atmosfera | Uso espiritual/editorial |
+| --- | --- | --- | --- |
+| Alegria | amarelo-dourado | brilho leve | Amor de Deus e gratidão |
+| Tristeza | azul-claro | suave e reflexiva | Deus consola corações |
+| Medo | roxo-escuro | fria e contrastada | Confiar em Deus |
+| Raiva | vermelho/laranja | forte | Perdão e domínio próprio |
+| Nojo | verde-claro | difusa e sutil | Escolher o que é puro |
+| Ansiedade | rosa/lilás | névoa suave | Entregar preocupações |
+| Vergonha | pêssego | doce e vulnerável | Somos amados |
+| Inveja | verde-musgo | luz fria | Contentamento |
+| Tédio | cinza-azulado | lenta | Redescobrir propósito |
+| Esperança/Fé | dourado + azul-celeste | luminosa | Clímax espiritual/final |
+
+Cada emoção canônica também possui **cores de apoio** para evitar monocromia.
+
+#### Camada 2 — Emoções complementares
+
+Curiosidade, frustração, decepção, insegurança, acolhimento, gratidão, descoberta espiritual, paz e encantamento funcionam como nuances que apontam para uma base canônica e refinam atmosfera, luz e cores de apoio.
+
+#### Camada 3 — Plutchik
+
+`emotional_color_director.py` formaliza as 8 famílias de Plutchik:
+
+- alegria;
+- confiança;
+- medo;
+- surpresa;
+- tristeza;
+- nojo;
+- raiva;
+- antecipação.
+
+A intensidade 1–5 é convertida em nível emocional baixo/médio/alto (por exemplo, serenidade → alegria → êxtase; apreensão → medo → terror). Combinações reconhecidas, como antecipação + alegria → otimismo, são registradas como metadados emocionais. Para livros de 3–8 anos, isso orienta a direção interna do sistema; não obriga o texto infantil a usar termos intensos como “terror” ou “fúria”.
+
+#### Metadados por cena
+
+O Roteirista passa a pedir, por cena:
+
+- `emocao` principal canônica;
+- `emocao_secundaria` opcional;
+- `intensidade_emocional` 1–5;
+- `transicao_emocional` opcional;
+- expressão/personagem principal;
+- figurino e contexto visual.
+
+Exemplo de transição: `tristeza → começando a surgir esperança`.
+
+#### Aplicação visual
+
+O Ilustrador recebe de forma determinística:
+
+- emoção e subemoção;
+- intensidade;
+- leitura Plutchik;
+- cor-base canônica;
+- cores de apoio;
+- atmosfera e luz;
+- intenção espiritual/editorial;
+- transição emocional;
+- regra de não monocromia;
+- Identity Lock / Character DNA.
+
+A transição deve aparecer como evolução gradual de luz, atmosfera e cores do cenário, nunca como troca brusca de toda a imagem.
+
+### Emotional & Color Director UI
+
+A página `pages/17_🎭_Emotional_Color_Director.py` agora pode trabalhar com o livro ativo e permite revisar, cena por cena:
+
+- emoção principal;
+- subemoção;
+- intensidade 1–5;
+- transição emocional;
+- trava de emoção;
+- instrução editorial da autora;
+- cor-base e cores de apoio;
+- família/nível Plutchik;
+- uso espiritual/editorial.
+
+O mapa pode ser salvo em `mapa_emocional` **antes da geração das ilustrações**. A tela não gera imagens.
 
 ### Complementos editoriais
 
@@ -64,6 +157,7 @@ Permite:
 - `graph.py` usa `LivroStatePromptMestre`, preservando os novos campos no LangGraph.
 - Após o Revisor aprovar a história, o pipeline automatizado gera os complementos editoriais antes de seguir ao Ilustrador.
 - `agents/diagramador.py` inclui o compliance no checklist e impede `pacote_pronto=True` quando a Moral está ausente.
+- O Ilustrador consome o Emotional & Color Director em cada cena.
 
 ## Segurança editorial
 
@@ -72,6 +166,20 @@ Permite:
 3. A IA não valida automaticamente a obra como pronta.
 4. Texto bíblico completo continua protegido pelo Bible Guard; este refinamento usa somente referência bíblica nos complementos.
 5. O padrão de 3 páginas para colorir não é alterado.
+6. Plutchik organiza emoção; não substitui a tabela de cores do Prompt-Mestre.
+7. Psicologia das cores altera ambiente/luz/atmosfera, nunca identidade canônica dos personagens.
+8. Cenas não devem ficar monocromáticas apenas para representar emoção.
+
+## Testes dedicados
+
+Além dos testes anteriores do Refinamento 24, `tests/test_refinamento24_emotional_color_engine.py` cobre:
+
+- preservação da tabela canônica;
+- mapeamento Plutchik independente das cores;
+- subemoção e transição;
+- regra não monocromática;
+- Character DNA protegido;
+- passagem da direção emocional completa ao prompt do Ilustrador.
 
 ## Limite deste refinamento
 
