@@ -35,9 +35,16 @@ Estilo de escrita OBRIGATÓRIO (best-seller infantil cristão, 3-8 anos):
 - Repetição suave e proposital: repita uma frase-chave, um som ou uma
   estrutura ao longo da história (crianças de 3-8 anos gostam, e isso
   ajuda a fixar e acalmar).
+- Musicalidade infantil leve e natural em todos os estilos: ritmo gostoso,
+  pequenas repetições, pausas e sons. No Estilo 2 isso pode ser mais forte.
+- Onomatopeias são bem-vindas quando ligadas a uma ação real, humor,
+  movimento ou surpresa (ex.: Toc-toc!, Plof!, Plim!, Ufa!), sem excesso.
 - Ação visual rápida: cada cena tem algo ACONTECENDO (um gesto, um
   movimento, uma reação), nunca só descrição parada - crianças pequenas
   entendem a história pelas imagens e ações, não por explicação.
+- A jornada deve ter movimento, humor leve quando couber, tensão infantil
+  segura, descoberta, transformação emocional, descoberta espiritual e
+  recompensa/celebração ao final. Nunca criar medo excessivo ou sofrimento pesado.
 - Sem simbolismo complexo, sem duplo sentido: o tema e a lição devem
   ficar transparentes e claros para uma criança pequena entender sem
   ajuda de um adulto.
@@ -45,9 +52,22 @@ Estilo de escrita OBRIGATÓRIO (best-seller infantil cristão, 3-8 anos):
   musical, fáceis de ler por pais, professores ou contadores de
   histórias, sem trava-línguas nem orações longas.
 
-Cadência narrativa fixa: curiosidade -> desafio -> emoção ->
-aprendizado -> fé -> gratidão.
-- Cada cena tem UMA emoção central, escolhida entre: {emocoes_validas}.
+Cadência narrativa: curiosidade -> desejo -> desafio -> tentativas ->
+humor/movimento -> tensão leve -> emoção -> descoberta -> fé ->
+transformação -> recompensa emocional -> gratidão/celebração.
+
+MAPA EMOCIONAL OBRIGATÓRIO POR CENA:
+- Cada cena tem UMA emoção principal CANÔNICA, escolhida entre: {emocoes_validas}.
+- Pode ter UMA subemoção complementar, escolhida quando fizer sentido entre:
+  {subemocoes_validas}.
+- Registre intensidade_emocional de 1 a 5.
+- Registre transicao_emocional em linguagem curta quando a cena estiver mudando
+  de estado emocional, por exemplo: "tristeza → começando a surgir esperança".
+- Não escolha a cor diretamente. O Emotional & Color Director aplicará a tabela
+  canônica de psicologia das cores do Prompt-Mestre e a taxonomia de Plutchik.
+- Emoção, subemoção e intensidade devem ser coerentes com o que realmente
+  acontece na cena; não use emoções aleatórias só para variar paleta.
+
 - Cada cena registra o figurino do personagem principal nessa cena
   (roupa/acessório). Se a cena é continuação direta da anterior (mesmo
   dia, mesma situação), repita o mesmo figurino. Se a narrativa muda de
@@ -71,7 +91,7 @@ Versículo: {versiculo_referencia}
 
 
 def montar_prompt(state: LivroState) -> str:
-    from emotion_colors import EMOCOES
+    from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
 
     personagens = state.get("personagens") or {}
     personagens_str = ", ".join(
@@ -83,6 +103,7 @@ def montar_prompt(state: LivroState) -> str:
     estilo = normalizar_estilo(state.get("estilo_narrativo"))
     return PROMPT_BASE.format(
         emocoes_validas=", ".join(EMOCOES.keys()),
+        subemocoes_validas=", ".join(EMOCOES_COMPLEMENTARES.keys()),
         personagens=personagens_str,
         personagens_brief=state.get("personagens_historia_brief", "") or "nenhum briefing adicional",
         min_cenas=min_cenas,
@@ -114,8 +135,6 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
         and state.get("cenas_texto")
         and str(state.get("licao_final") or "").strip()
     ):
-        # Não gasta nova chamada de IA nem sobrescreve a história que a autora
-        # escolheu no comparador. O Revisor é a próxima etapa.
         state["historia_escolhida_preservar"] = False
         state["revisao_aprovada"] = False
         return state
@@ -124,8 +143,10 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     resposta = chamar_llm(
         sistema=prompt,
         instrucao=(
-            "Gere a sinopse poética, a lista de cenas (numero, texto, "
-            "emocao, figurino, contexto_visual) e a licao_final em JSON."
+            "Gere a sinopse poética, a lista de cenas e a licao_final em JSON. "
+            "Cada cena deve conter: numero, texto, emocao, emocao_secundaria, "
+            "intensidade_emocional (1-5), transicao_emocional, figurino, "
+            "contexto_visual, personagem_principal e expressao."
         ),
     )
     state["sinopse_poetica"] = resposta.get("sinopse_poetica", "")
