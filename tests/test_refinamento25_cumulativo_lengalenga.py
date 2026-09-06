@@ -86,3 +86,4 @@ def test_fluxo_principal_aponta_para_biblioteca_de_estilos_adicionais():
     assert '"pages/40_➕_Explorar_outros_estilos.py"' in source
     assert "➕ Explorar outros estilos narrativos" in source
     assert "Cumulativo/Lengalenga" in source
+    assert '"💾 Salvar rascunho"' in source
