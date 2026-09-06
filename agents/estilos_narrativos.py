@@ -63,6 +63,27 @@ def instrucao_estilo(estilo: str | None) -> str:
     return f"{dados['label']}: {dados['instrucao']}"
 
 
+def normalizar_licao_final(valor: Any) -> str:
+    """Converte moral textual ou estruturada em texto editorial limpo para UI/PDF."""
+    if isinstance(valor, dict):
+        texto = str(
+            valor.get("texto")
+            or valor.get("licao")
+            or valor.get("moral")
+            or valor.get("mensagem")
+            or ""
+        ).strip()
+        versiculo = str(valor.get("versiculo") or valor.get("referencia") or "").strip()
+        reflexao = str(valor.get("reflexao_extra") or valor.get("reflexao") or "").strip()
+        partes = [x for x in (texto, reflexao) if x]
+        if versiculo and versiculo.lower() not in " ".join(partes).lower():
+            partes.append(f"Referência bíblica: {versiculo}.")
+        return " ".join(partes).strip()
+    if isinstance(valor, (list, tuple)):
+        return " ".join(str(x).strip() for x in valor if str(x).strip()).strip()
+    return str(valor or "").strip()
+
+
 def _personagens_resumo(state: dict) -> str:
     """Combina Character DNA já formalizado com o briefing livre da autora."""
     personagens = state.get("personagens") or {}
@@ -103,7 +124,7 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
         "sinopse_poetica": resposta.get("sinopse_poetica") or resposta.get("sinopse") or "",
         "amostra": str(amostra or ""),
         "cenas_texto": cenas,
-        "licao_final": resposta.get("licao_final") or "",
+        "licao_final": normalizar_licao_final(resposta.get("licao_final")),
     }
 
 
@@ -211,7 +232,7 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     if versao.get("sinopse_poetica"):
         novo["sinopse_poetica"] = versao["sinopse_poetica"]
     if versao.get("licao_final"):
-        novo["licao_final"] = versao["licao_final"]
+        novo["licao_final"] = normalizar_licao_final(versao["licao_final"])
     if versao.get("cenas_texto"):
         novo["cenas_texto"] = versao["cenas_texto"]
         novo["revisao_aprovada"] = False
