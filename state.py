@@ -12,7 +12,9 @@ from typing import TypedDict, Literal
 class CenaTexto(TypedDict):
     numero: int
     texto: str                 # texto narrativo da cena (10-25 palavras, curto)
-    emocao: str                # uma das chaves de emotion_colors.EMOCOES
+    emocao: str                # emoção principal canônica de emotion_colors.EMOCOES
+    emocao_secundaria: str     # subemoção complementar opcional para nuance emocional/visual
+    transicao_emocional: str   # ex.: "tristeza → começando a surgir esperança"
     figurino: str              # o que o personagem principal está vestindo/carregando NESSA cena
     contexto_visual: str       # cenário, hora do dia, clima - herda da cena anterior salvo mudança explícita
     personagem_principal: str  # nome do personagem em foco na cena (chave em state.personagens); default = protagonista
