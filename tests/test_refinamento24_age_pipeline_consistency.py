@@ -52,7 +52,8 @@ def test_curador_registra_candidata_quando_referencia_foi_adotada():
         fake_llm,
     )
     assert out["versiculo_referencia"] == "Provérbios 3:5"
-    assert out["bible_reference_candidate"]["referencia"] == "Provérbios 3:5"
+    assert out["bible_reference_candidate"]["reference"] == "Provérbios 3:5"
+    assert out["bible_reference_candidate"]["status"] == "candidate_unverified"
 
 
 def test_revisor_usa_mesmo_age_profile_do_roteirista():
@@ -202,7 +203,7 @@ def test_marketing_respeita_faixa_e_claims_seguros():
         fake_llm,
     )
     assert "9–12 anos" in capturado["sistema"]
-    assert "não infantilizar leitores maiores" in capturado["sistema"]
+    assert "evitando chamar leitores 9–12" in capturado["sistema"]
     assert "não afirmar nem insinuar que o livro é best-seller" in capturado["sistema"]
     assert out["material_lancamento"]["legenda_instagram"] == "Post"
 
@@ -240,6 +241,7 @@ def test_quality_guardian_nao_deriva_dos_limites_oficiais():
 def test_state_tem_faixa_etaria_como_campo_oficial_e_sem_duplicata_colorir():
     assert "faixa_etaria" in LivroState.__annotations__
     assert "age_profile_id" in LivroState.__annotations__
+    assert "storage_path" in LivroState.__annotations__
     source = Path("state.py").read_text(encoding="utf-8")
     assert source.count("paginas_colorir:") == 1
 
