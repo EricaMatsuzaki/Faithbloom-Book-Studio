@@ -16,6 +16,7 @@ from controle_geracao import (
     extrair_custo_reportado,
     finalizar_requisicao,
     liberar_requisicao,
+    atualizar_etapa,
     iniciar_requisicao,
     sanitizar_texto,
 )
@@ -154,7 +155,9 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
             payload["resolution"] = resolution
         if imagens_entrada:
             payload["input_references"] = [{"type": "image_url", "image_url": {"url": url}} for url in imagens_entrada]
+        atualizar_etapa(assinatura, "aguardando OpenRouter")
         resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/images",payload,180)
+        atualizar_etapa(assinatura, "salvando resultado")
         dados=_json_resposta(resp)
         imagens=dados.get("data") or []
         b64_imagem=imagens[0].get("b64_json","") if imagens and isinstance(imagens[0],dict) else ""

@@ -157,13 +157,14 @@ for item in itens:
                     result_key = f"results_{p['id']}"
                     st.session_state[result_key] = []
                     try:
-                        for label in ['A', 'B', 'C'][:quantity]:
-                            path = gerar_imagem(
-                                prompt, imagem_base=source.get('caminho_arquivo'), imagens_referencia=references,
-                                resolution=None if resolution_label == 'Padrão do modelo' else resolution_label,
-                            )
-                            candidate = create_candidate(source['id'], path, transformation=action, prompt=prompt, label=label, dna_version=str(dna.get('version','')))
-                            st.session_state[result_key].append(candidate['id'])
+                        with st.spinner('Preparando referências e aguardando a OpenRouter. A geração pode levar alguns minutos; aguarde sem clicar novamente.'):
+                            for label in ['A', 'B', 'C'][:quantity]:
+                                path = gerar_imagem(
+                                    prompt, imagem_base=source.get('caminho_arquivo'), imagens_referencia=references,
+                                    resolution=None if resolution_label == 'Padrão do modelo' else resolution_label,
+                                )
+                                candidate = create_candidate(source['id'], path, transformation=action, prompt=prompt, label=label, dna_version=str(dna.get('version','')))
+                                st.session_state[result_key].append(candidate['id'])
                         st.rerun()
                     except (OpenRouterFaithBloomError, RuntimeError, ValueError) as exc:
                         st.error(str(exc))
