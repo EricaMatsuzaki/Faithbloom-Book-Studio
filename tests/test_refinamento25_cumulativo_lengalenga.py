@@ -79,3 +79,10 @@ def test_ui_expoe_biblioteca_opcional_sem_geracao_automatica():
     assert "Gerar história COMPLETA Cumulativo/Lengalenga" in source
     assert "Tornar Cumulativo/Lengalenga a versão ativa" in source
     assert "prazer de antecipação e releitura" in source
+
+
+def test_fluxo_principal_aponta_para_biblioteca_de_estilos_adicionais():
+    source = Path("pages/39_✍️_Historia_4_Estilos.py").read_text(encoding="utf-8")
+    assert '"pages/40_➕_Explorar_outros_estilos.py"' in source
+    assert "➕ Explorar outros estilos narrativos" in source
+    assert "Cumulativo/Lengalenga" in source
