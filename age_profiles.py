@@ -107,8 +107,15 @@ AGE_PROFILES: dict[str, dict] = {
 
 
 def _slug(value: str | None) -> str:
-    texto = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
-    return texto.strip().lower().replace("–", "-").replace("—", "-").replace(" ", "")
+    # Troca travessões ANTES de remover caracteres não ASCII, senão "3–5"
+    # poderia virar "35". Depois retiramos rótulos humanos comuns.
+    texto = str(value or "").replace("–", "-").replace("—", "-")
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = texto.strip().lower().replace(" ", "")
+    for sufixo in ("anos", "ano"):
+        if texto.endswith(sufixo):
+            texto = texto[: -len(sufixo)]
+    return texto
 
 
 def normalizar_faixa_etaria(value: str | None) -> str:
@@ -132,7 +139,6 @@ def perfil_etario(value: str | None) -> dict:
 
 
 def opcoes_faixa_etaria() -> list[str]:
-    # As três faixas específicas aparecem primeiro; 3–8 fica como compatibilidade.
     return ["3-5", "6-8", "9-12", "3-8"]
 
 
