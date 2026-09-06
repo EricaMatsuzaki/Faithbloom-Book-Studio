@@ -5,6 +5,11 @@ from state import LivroState
 
 
 class LivroStatePromptMestre(LivroState, total=False):
+    # Origem criativa / briefing narrativo
+    origem_ideia: str                 # ideia_da_autora | ideia_da_ia | projeto_existente
+    personagens_historia_brief: str  # briefing livre antes do Character DNA formal
+    historia_escolhida_preservar: bool
+
     # Estilo narrativo formal
     estilo_narrativo: str
     estilo_narrativo_label: str
