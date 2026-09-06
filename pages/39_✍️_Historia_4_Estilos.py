@@ -398,7 +398,7 @@ pronto_editorial = all(
     for k in ("titulo", "emocao_central", "aprendizado_cristao")
 ) and colecao_ok
 
-if st.button("💾 Salvar direção como rascunho", disabled=not bool(pronto_editorial)):
+if st.button("💾 Salvar rascunho", disabled=not bool(pronto_editorial)):
     try:
         _persistir_estado()
         st.success("Direção editorial salva como rascunho.")
