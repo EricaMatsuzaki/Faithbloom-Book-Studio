@@ -10,12 +10,19 @@ Cadência narrativa fixa: curiosidade -> desafio -> emoção -> aprendizado
 
 from state import LivroState, CenaTexto
 from agent_skills import skill_contract
+from agents.estilos_narrativos import normalizar_estilo, instrucao_estilo
 
 PROMPT_BASE = """\
 Você é o Roteirista de um projeto de livro infantil cristão, fiel ao
 Prompt-Mestre editorial do projeto. Preserve a voz da coleção e não presuma
 que o usuário logado é a pessoa creditada como autora.
 Autoria/crédito deste projeto: {author_credit}.
+
+ESTILO NARRATIVO FORMAL ESCOLHIDO:
+{estilo_narrativo}
+
+Siga esse estilo sem alterar os fatos centrais, personagens, lição cristã
+ou referência bíblica do projeto.
 
 Estilo de escrita OBRIGATÓRIO (best-seller infantil cristão, 3-8 anos):
 - Frases muito curtas e diretas (idealmente 5-15 palavras). Uma ideia
@@ -52,6 +59,7 @@ aprendizado -> fé -> gratidão.
 - Feche a história em 3 camadas: (1) diálogo de resolução, (2) cena de
   celebração, (3) página final só com Lição + Versículo bíblico
   ({versiculo_referencia}), marcada como FIM.
+- A Lição de Moral é obrigatória. Nunca devolva licao_final vazia.
 
 Dados da história:
 Título: {titulo}
@@ -68,6 +76,7 @@ def montar_prompt(state: LivroState) -> str:
         f"{p['nome']} ({p['papel']})" for p in state["personagens"].values()
     )
     min_cenas = max(12, state.get("paginas_minimas", 24) // 2)
+    estilo = normalizar_estilo(state.get("estilo_narrativo"))
     return PROMPT_BASE.format(
         emocoes_validas=", ".join(EMOCOES.keys()),
         personagens=personagens_str,
@@ -78,6 +87,7 @@ def montar_prompt(state: LivroState) -> str:
         aprendizado_cristao=state["aprendizado_cristao"],
         versiculo_referencia=state["versiculo_referencia"],
         author_credit=__import__("author_profiles").author_display_from_state(state) or "não definida",
+        estilo_narrativo=instrucao_estilo(estilo),
     ) + skill_contract("storyteller")
 
 
@@ -88,6 +98,12 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     Espera-se que o LLM devolva um JSON estruturado; aqui simplificamos
     a validação para manter o esqueleto legível.
     """
+    estilo = normalizar_estilo(state.get("estilo_narrativo"))
+    state["estilo_narrativo"] = estilo
+    state["estilo_narrativo_label"] = __import__(
+        "agents.estilos_narrativos", fromlist=["ESTILOS_NARRATIVOS"]
+    ).ESTILOS_NARRATIVOS[estilo]["label"]
+
     prompt = montar_prompt(state)
     resposta = chamar_llm(
         sistema=prompt,
@@ -96,8 +112,6 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
             "emocao, figurino, contexto_visual) e a licao_final em JSON."
         ),
     )
-    # Em produção: json.loads(resposta) + validação com pydantic.
-    # Aqui deixamos o retorno bruto para o próximo agente revisar.
     state["sinopse_poetica"] = resposta.get("sinopse_poetica", "")
     state["cenas_texto"] = resposta.get("cenas_texto", [])
     state["licao_final"] = resposta.get("licao_final", "")
