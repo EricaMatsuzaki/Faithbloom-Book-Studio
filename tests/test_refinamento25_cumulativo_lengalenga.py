@@ -75,10 +75,12 @@ def test_cumulativo_completo_pode_ser_aplicado_sem_virar_aventura():
 def test_ui_expoe_biblioteca_opcional_sem_geracao_automatica():
     source = Path("pages/40_➕_Explorar_outros_estilos.py").read_text(encoding="utf-8")
     assert "Explorar outros estilos" in source
-    assert "Gerar amostra Cumulativo/Lengalenga" in source
-    assert "Gerar história COMPLETA Cumulativo/Lengalenga" in source
-    assert "Tornar Cumulativo/Lengalenga a versão ativa" in source
-    assert "prazer de antecipação e releitura" in source
+    assert "ORDEM_ESTILOS_ADICIONAIS" in source
+    assert 'f"✨ Gerar amostra {nome_curto}"' in source
+    assert 'f"📚 Gerar história COMPLETA {nome_curto}"' in source
+    assert 'f"✅ Tornar {nome_curto} a versão ativa"' in source
+    assert "spec.get(\"meta_editorial\")" in source
+    assert "não é gerado automaticamente" in source or "não são gerados automaticamente" in source
 
 
 def test_fluxo_principal_aponta_para_biblioteca_de_estilos_adicionais():
