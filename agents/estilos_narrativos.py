@@ -243,7 +243,7 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     if versao.get("sinopse_poetica"):
         novo["sinopse_poetica"] = versao["sinopse_poetica"]
     if versao.get("licao_final"):
-        novo["licao_final"] = normalizar_licao_final(versao["liciao_final"] if "liciao_final" in versao else versao["licao_final"])
+        novo["licao_final"] = normalizar_licao_final(versao["licao_final"])
     if versao.get("cenas_texto"):
         novo["cenas_texto"] = versao["cenas_texto"]
         novo["revisao_aprovada"] = False
