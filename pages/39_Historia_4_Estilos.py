@@ -443,7 +443,7 @@ if s.get("estilo_escolhido_no_comparador"):
         colecao = str(s.get("colecao") or "").strip()
         st.session_state.biblioteca_colecao = carregar_biblioteca_personagens(colecao) if colecao else {}
         st.session_state.etapa = "gerando" if tem_personagens_formais else "personagens"
-        st.switch_page("pages/1_#L01f4d6_Criar_do_Zero.py")
+        st.switch_page("pages/1_📖_Criar_do_Zero.py")
 
 st.caption(
     "Nenhuma das quatro versões é aprovada automaticamente. A escolha da autora continua obrigatória antes das ilustrações."
