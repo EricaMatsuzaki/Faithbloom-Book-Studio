@@ -286,6 +286,16 @@ CSS = f"""
     section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
         background: rgba(34,168,153,.07);
     }}
+    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[href$="Prompt_Mestre_Studio"]::before {{
+        content: "🪄";
+        margin-right: .38rem;
+        line-height: 1;
+    }}
+    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[href$="Historia_4_Estilos"]::before {{
+        content: "✍️";
+        margin-right: .38rem;
+        line-height: 1;
+    }}
     section[data-testid="stSidebar"] .stMarkdown h3 {{ color: {TEAL_ESCURO}; }}
 
     /* ALERTS */
