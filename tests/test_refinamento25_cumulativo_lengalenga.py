@@ -5,6 +5,7 @@ from agents.estilos_narrativos import (
     ESTILOS_ADICIONAIS,
     ORDEM_ESTILOS,
     ORDEM_ESTILOS_ADICIONAIS,
+    aplicar_estilo_ao_state,
     gerar_estilo_adicional,
 )
 
@@ -53,6 +54,22 @@ def test_cumulativo_herda_skill_storyteller_e_exige_originalidade():
     assert "storytelling infantil" in capturado["sistema"]
     assert "estrutura cumulativa original" in capturado["sistema"]
     assert "não copie" in capturado["sistema"].lower()
+
+
+def test_cumulativo_completo_pode_ser_aplicado_sem_virar_aventura():
+    state = _state_base()
+    versao = {
+        "modo": "completa",
+        "titulo": "A Festa que Crescia",
+        "sinopse_poetica": "Uma festa de gratidão cresce amigo por amigo.",
+        "cenas_texto": [{"numero": 1, "texto": "Lia bateu palmas uma vez."}],
+        "licao_final": "A gratidão cresce quando compartilhamos alegria.",
+    }
+    novo = aplicar_estilo_ao_state(state, "cumulativo_lengalenga", versao)
+    assert novo["estilo_narrativo"] == "cumulativo_lengalenga"
+    assert novo["estilo_narrativo_label"] == "🔁 Cumulativo / Lengalenga"
+    assert novo["historia_escolhida_preservar"] is True
+    assert novo["cenas_texto"][0]["numero"] == 1
 
 
 def test_ui_expoe_biblioteca_opcional_sem_geracao_automatica():
