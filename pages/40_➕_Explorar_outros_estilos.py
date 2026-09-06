@@ -14,7 +14,7 @@ from estilo import aplicar_estilo, hero
 from openrouter_client import chamar_llm
 from armazenamento import salvar_livro, atualizar_livro_salvo
 from agents.estilos_narrativos import (
-    ESTILOS_NARRATIVOS,
+    ESTILOS_ADICIONAIS,
     ORDEM_ESTILOS_ADICIONAIS,
     aplicar_estilo_ao_state,
     gerar_estilo_adicional,
@@ -121,10 +121,9 @@ if not colecao or not premissa:
     st.warning("Primeiro defina a coleção e a ideia na página ✍️ História em 4 Estilos.")
 
 pode_gerar = bool(colecao and premissa)
-biblioteca = s.get("versoes_narrativas_salvas") or {}
 
 for chave in ORDEM_ESTILOS_ADICIONAIS:
-    spec = ESTILOS_NARRATIVOS[chave]
+    spec = ESTILOS_ADICIONAIS[chave]
     with st.container(border=True):
         st.markdown(f"## {spec['label']}")
         st.write(spec["descricao"])
