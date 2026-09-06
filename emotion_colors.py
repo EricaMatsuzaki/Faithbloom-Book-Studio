@@ -18,6 +18,8 @@ esta tabela canônica do FaithBloom.
 """
 from __future__ import annotations
 
+import unicodedata
+
 
 # ---------------------------------------------------------------------------
 # TABELA CANÔNICA — PROMPT-MESTRE ERICA MATSUZAKI
@@ -187,9 +189,18 @@ REGRA_CHARACTER_DNA = (
 )
 
 
+def _normalizar_chave(emocao: str) -> str:
+    texto = unicodedata.normalize("NFKD", str(emocao or "esperanca")).encode("ascii", "ignore").decode("ascii")
+    return texto.strip().lower().replace(" ", "_").replace("-", "_")
+
+
 def paleta_para_prompt(emocao: str) -> str:
-    """Traduz uma emoção canônica em instrução de paleta para geração visual."""
-    chave = (emocao or "esperanca").strip().lower()
+    """Traduz emoção canônica/complementar em direção visual segura.
+
+    Aceita também grafias legadas com acentos, como ``esperança``,
+    ``frustração`` e ``gratidão``.
+    """
+    chave = _normalizar_chave(emocao)
     dados = EMOCOES.get(chave)
     if not dados:
         complemento = EMOCOES_COMPLEMENTARES.get(chave)
