@@ -14,7 +14,7 @@ Transformar os itens ainda não formalizados do Prompt-Mestre em regras e ferram
   3. Estilo 3 — Fábula cristã
   4. Estilo misto
 - A autora pode comparar a mesma premissa nos quatro estilos antes de escolher o definitivo.
-- Psicologia das cores e emoções é **obrigatória cena por cena** como direção visual.
+- Psicologia das cores e emoções é **obrigatória cena por cena/página por página** como direção visual.
 - A tabela do Prompt-Mestre Erica Matsuzaki é a **fonte cromática canônica**.
 - A roda de Plutchik é usada como **taxonomia emocional** para família, intensidade e combinações; suas cores não substituem a tabela canônica do FaithBloom.
 - A paleta emocional nunca pode recolorir Character DNA e nunca deve transformar a cena inteira em monocromática.
@@ -188,6 +188,8 @@ Além dos testes anteriores do Refinamento 24, `tests/test_refinamento24_emotion
 - passagem da direção emocional completa ao prompt do Ilustrador;
 - compatibilidade com intensidade legada inválida;
 - exigência dos metadados emocionais também nas quatro histórias completas.
+
+`tests/test_refinamento24_prompt_mestre.py` também valida a regra de psicologia das cores página por página no compliance.
 
 ## Limite deste refinamento
 
