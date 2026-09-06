@@ -13,7 +13,7 @@ from openrouter_client import gerar_imagem, OpenRouterFaithBloomError
 from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
 from visual_master_manager import (
     IDENTITY_REVIEW_NOTICE, REFERENCE_CATEGORIES, approve_candidate, archive_asset, create_candidate,
-    promote_master, register_upload,
+    promote_master, promote_reference_color_master, register_upload,
 )
 
 st.set_page_config(page_title='Character Universe', page_icon='👥', layout='wide')
@@ -118,6 +118,29 @@ for item in itens:
             aid = (ref.get('metadata') or {}).get('asset_library_id')
             asset = get_asset(aid) if aid else None
             if asset: refs_with_assets.append((ref, asset))
+        if refs_with_assets:
+            with st.expander('⭐ Aprovar referência como Color Master', expanded=True):
+                master_options = assets_by_id([asset for _, asset in refs_with_assets
+                    if asset.get('visual_status') in {'REFERENCE', 'AUDITED', 'APPROVED_VARIATION', 'COLOR_MASTER'}
+                    and asset.get('status') != 'archived'])
+                if master_options:
+                    master_id = st.selectbox('Referência para Color Master', list(master_options),
+                        format_func=lambda aid: asset_option_label(master_options[aid]), key=f"master_reference_{p['id']}")
+                    preview = get_thumbnail(master_id)
+                    if preview: st.image(preview, width=320)
+                    st.caption('Usa a imagem salva, sem gerar outra. O Master anterior permanece no histórico.')
+                    reviewed = st.checkbox('Revisei a imagem e confirmo que ela será o Color Master deste personagem',
+                        key=f"review_master_reference_{p['id']}_{master_id}")
+                    if st.button('⭐ Definir como Color Master', disabled=not reviewed,
+                            key=f"promote_reference_{p['id']}_{master_id}"):
+                        try:
+                            promote_reference_color_master(p['id'], master_id, confirmed=reviewed)
+                        except (ValueError, PermissionError, RuntimeError) as exc:
+                            st.error(str(exc))
+                        else:
+                            st.rerun()
+                else:
+                    st.info('Adicione uma referência disponível para aprovação.')
         if refs_with_assets:
             with st.expander('🛠️ Restaurar / Melhorar', expanded=False):
                 source_options = assets_by_id([asset for _, asset in refs_with_assets])

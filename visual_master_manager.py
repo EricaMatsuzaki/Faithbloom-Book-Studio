@@ -98,6 +98,25 @@ def promote_master(pid: str, asset_id: str, role: str, *, confirmed: bool = Fals
     return update_asset(asset_id, visual_status="COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", metadata={"visual_status": "COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", "master_approved_at": int(time.time())})
 
 
+def promote_reference_color_master(pid: str, asset_id: str, *, confirmed: bool = False) -> dict:
+    """Approve an existing character reference without regenerating its image."""
+    if not confirmed:
+        raise PermissionError("Confirme a revisão visual antes de definir o Color Master.")
+    character = carregar_personagem_oficial(pid)
+    reference_ids = {(ref.get("metadata") or {}).get("asset_library_id")
+                     for ref in character.get("reference_pack", [])}
+    if asset_id not in reference_ids:
+        raise ValueError("Escolha uma referência vinculada a este personagem.")
+    asset = get_asset(asset_id, materialize_file=False)
+    if not asset or asset.get("visual_status") not in {"REFERENCE", "AUDITED", "APPROVED_VARIATION", "COLOR_MASTER"} or asset.get("status") == "archived":
+        raise ValueError("Esta referência não está disponível para aprovação como Color Master.")
+    if (character.get("metadata") or {}).get("current_master_asset_ids", {}).get("color_master") == asset_id:
+        return asset
+    if not asset.get("approved"):
+        update_asset(asset_id, approved=True, metadata={"approved_at": int(time.time()), "approval": "human"})
+    return promote_master(pid, asset_id, "color_master", confirmed=True)
+
+
 def archive_asset(asset_id: str) -> dict | None:
     _set_visual(asset_id, "ARCHIVED")
     return set_archived(asset_id, True)
