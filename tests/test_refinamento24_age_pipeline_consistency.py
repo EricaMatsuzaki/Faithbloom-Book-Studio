@@ -5,6 +5,8 @@ from agents.curador_tema import curador_tema_node
 from agents.revisor import revisor_node
 from agents.editor_historia import editar_cena, sugerir_licoes
 from agents.audiobook import audiobook_node
+from agents.sinopse import sinopse_node
+from agents.marketing import marketing_lancamento_node
 import agents.tradutor as tradutor
 from prompt_master_compliance import avaliar_prompt_mestre
 from quality_guardian import _age_profile
@@ -157,6 +159,54 @@ def test_tradutor_preserva_faixa_do_master(monkeypatch):
     assert out["traducoes"]["en-US"]["faixa_etaria"] == "9-12"
 
 
+def test_sinopse_comercial_respeita_faixa_e_evitar_promessas():
+    capturado = {}
+
+    def fake_llm(*, sistema, instrucao):
+        capturado["sistema"] = sistema
+        return {"sinopse_vendas_curta": "Curta", "sinopse_contracapa": "Longa"}
+
+    out = sinopse_node(
+        {
+            "faixa_etaria": "9-12",
+            "titulo": "Teste",
+            "sinopse_poetica": "Uma jornada.",
+            "aprendizado_cristao": "gratidão",
+            "versiculo_referencia": "Salmo 118:24",
+        },
+        fake_llm,
+    )
+    assert "9–12 anos" in capturado["sistema"]
+    assert "não infantilize" in capturado["sistema"]
+    assert "não invente prêmios" in capturado["sistema"]
+    assert out["sinopse_vendas_curta"] == "Curta"
+
+
+def test_marketing_respeita_faixa_e_claims_seguros():
+    capturado = {}
+
+    def fake_llm(*, sistema, instrucao):
+        capturado["sistema"] = sistema
+        return {"legenda_instagram": "Post"}
+
+    out = marketing_lancamento_node(
+        {
+            "faixa_etaria": "9-12",
+            "colecao": "Coleção",
+            "titulo": "Teste",
+            "sinopse_vendas_curta": "Sinopse",
+            "aprendizado_cristao": "gratidão",
+            "versiculo_referencia": "Salmo 118:24",
+            "autora": "Autora",
+        },
+        fake_llm,
+    )
+    assert "9–12 anos" in capturado["sistema"]
+    assert "não infantilizar leitores maiores" in capturado["sistema"]
+    assert "não afirmar nem insinuar que o livro é best-seller" in capturado["sistema"]
+    assert out["material_lancamento"]["legenda_instagram"] == "Post"
+
+
 def test_compliance_avisa_ficha_com_idade_divergente():
     result = avaliar_prompt_mestre(
         {
@@ -201,9 +251,18 @@ def test_dashboard_envia_criacao_para_novo_fluxo():
     assert 'Criar do Zero — fluxo clássico 3–8' in source
 
 
-def test_novo_fluxo_pede_colecao_autoria_e_oferece_salvar_rascunho():
+def test_novo_fluxo_pede_colecao_autoria_salva_rascunho_e_carrega_biblioteca():
     source = Path("pages/39_Historia_4_Estilos.py").read_text(encoding="utf-8")
     assert 'st.subheader("1. Coleção e autoria")' in source
     assert "list_author_profiles" in source
     assert "listar_colecoes" in source
+    assert "carregar_biblioteca_personagens" in source
+    assert "st.session_state.biblioteca_colecao" in source
     assert '"💾 Salvar rascunho"' in source
+    assert "_invalidar_comparativo_por_mudanca_editorial" in source
+
+
+def test_novo_fluxo_permita_limpar_autoria_selecao():
+    source = Path("pages/39_Historia_4_Estilos.py").read_text(encoding="utf-8")
+    assert "if autores != atuais:" in source
+    assert "set_project_authors(dict(s), autores)" in source
