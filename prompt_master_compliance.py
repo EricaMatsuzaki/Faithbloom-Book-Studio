@@ -2,6 +2,15 @@
 from __future__ import annotations
 
 
+def _intensidade_valida(valor) -> bool:
+    """Aceita projetos novos/antigos sem lançar exceção por valor legado."""
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return False
+    return 1 <= numero <= 5
+
+
 def avaliar_prompt_mestre(state: dict) -> dict:
     bloqueios: list[dict] = []
     recomendacoes: list[dict] = []
@@ -62,7 +71,7 @@ def avaliar_prompt_mestre(state: dict) -> dict:
             int(c.get("numero", i + 1))
             for i, c in enumerate(cenas)
             if not str(c.get("emocao") or "").strip()
-            or not (1 <= int(c.get("intensidade_emocional") or 0) <= 5)
+            or not _intensidade_valida(c.get("intensidade_emocional"))
         ]
         if faltando_meta:
             recomendacoes.append({
