@@ -62,6 +62,7 @@ class LivroState(TypedDict, total=False):
     trim_altura_in: float              # altura do livro físico, em polegadas (padrão 8.5)
     faixa_etaria: str                  # 3-5 | 6-8 | 9-12 | 3-8 (compatibilidade)
     age_profile_id: str                # id normalizado pelo Age Profile Engine
+    storage_path: str                  # caminho fb:// do rascunho/projeto salvo, quando já persistido
 
     # --- Curador de Tema (opcional) ---
     _entrada_tema_livre: str           # tema/resumo livre, se a autora não quiser preencher tudo manualmente
