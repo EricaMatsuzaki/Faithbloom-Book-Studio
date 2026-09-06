@@ -9,6 +9,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
+
 ESTILOS_NARRATIVOS = {
     "estilo_1": {
         "label": "Estilo 1 — Aventura",
@@ -116,6 +118,8 @@ def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") ->
     """
     modo = "completa" if modo == "completa" else "amostra"
     min_cenas = max(12, int(state.get("paginas_minimas") or 24) // 2)
+    emocoes_validas = ", ".join(EMOCOES.keys())
+    subemocoes_validas = ", ".join(EMOCOES_COMPLEMENTARES.keys())
     base = f"""
 PREMISSA/TEMA:
 {state.get('_entrada_tema_livre') or state.get('titulo') or ''}
@@ -143,7 +147,13 @@ PERSONAGENS — identidade, nomes, papéis e características pedidas devem perm
             instrucao_saida = (
                 f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
                 "Retorne JSON com titulo, sinopse_poetica, cenas_texto e licao_final. "
-                "Cada cena deve conter numero, texto, emocao, figurino e contexto_visual."
+                "Cada cena deve conter numero, texto, emocao, emocao_secundaria, "
+                "intensidade_emocional (1-5), transicao_emocional, figurino, "
+                "contexto_visual, personagem_principal e expressao. "
+                f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
+                f"A subemoção opcional pode ser uma destas: {subemocoes_validas}. "
+                "Não escolha cores no texto da história: o Emotional & Color Director aplicará a "
+                "tabela canônica do Prompt-Mestre depois."
             )
 
         sistema = f"""
@@ -158,13 +168,22 @@ ESTILO OBRIGATÓRIO:
 Regras invariáveis:
 - público 3–8 anos;
 - frases claras e adequadas à leitura em voz alta;
+- musicalidade infantil leve em todos os estilos; no Estilo 2 ela pode ser mais intensa;
+- repetição suave e onomatopeias naturais quando ligadas a ação, humor ou surpresa, sem excesso;
 - emoções concretas;
-- ação visual;
+- ação visual e movimento;
+- humor leve quando couber;
+- tensão infantil segura, nunca medo excessivo ou sofrimento pesado;
+- transformação emocional, descoberta espiritual e recompensa/celebração;
 - mensagem cristã amorosa, sem sermão longo;
 - a personagem vive a lição;
 - não invente o texto completo do versículo: preserve somente a referência fornecida;
 - não altere Character DNA;
-- não troque nomes, relações ou papéis informados pela autora.
+- não troque nomes, relações ou papéis informados pela autora;
+- quando gerar história completa, registre emoção principal, subemoção opcional,
+  intensidade 1–5 e transição emocional coerentes com cada cena;
+- a psicologia das cores será aplicada depois pelo Emotional & Color Director com a
+  tabela canônica FaithBloom, portanto não transforme a narrativa em instruções cromáticas.
 """.strip()
         resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
         resultados[estilo] = _normalizar_resultado(resposta, estilo, modo)
