@@ -66,4 +66,4 @@ O sistema usa os princípios gerais de conto cumulativo/lengalenga, mas proíbe 
 `licao_final` estruturada em JSON/dict é normalizada para texto editorial limpo antes de aparecer na interface ou seguir para o livro, evitando exibição de objetos como `{'texto': ...}`.
 
 ## Validação
-A suíte automatizada cobre: manutenção dos quatro estilos oficiais, herança da skill `storyteller`, geração opcional do Cumulativo/Lengalenga, originalidade, aplicação como versão ativa, biblioteca de versões e atalho da tela principal para a biblioteca de estilos adicionais.
+A suíte automatizada cobre: manutenção dos quatro estilos oficiais, herança da skill `storyteller`, geração opcional do Cumulativo/Lengalenga, originalidade, aplicação como versão ativa, biblioteca de versões, preservação do botão de rascunho e atalho da tela principal para a biblioteca de estilos adicionais.
