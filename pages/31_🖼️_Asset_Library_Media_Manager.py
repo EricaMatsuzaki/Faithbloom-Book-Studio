@@ -294,7 +294,7 @@ with tab_detail:
             if r2.button("🖍️ Abrir Coloring Studio", use_container_width=True):
                 st.session_state["faithbloom_selected_asset_id"] = asset_id
                 st.session_state["faithbloom_selected_asset_path"] = item.get("caminho_arquivo","")
-                st.switch_page("pages/3_#L01f58d#Ufe0f_Livros_de_Colorir.py")
+                st.switch_page("pages/3_🖍️_Livros_de_Colorir.py")
             if r3.button("✨ Abrir Restoration Studio", use_container_width=True):
                 st.session_state["faithbloom_selected_asset_id"] = asset_id
                 st.session_state["faithbloom_selected_asset_path"] = item.get("caminho_arquivo","")

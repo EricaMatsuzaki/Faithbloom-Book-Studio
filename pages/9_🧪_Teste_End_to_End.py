@@ -61,7 +61,7 @@ if diag:
         x3.metric("Idiomas alvo", len(natal.get("idiomas_alvo",[])))
         x4.metric("Revisão", "Aprovada" if natal.get("revisao_aprovada") else "Pendente")
         st.caption(f"Versículo: {natal.get('versiculo_referencia','')} · Trim: {natal.get('trim_largura_in',8.5)} × {natal.get('trim_altura_in',8.5)} in")
-        st.page_link("pages/2_#L01f4da_Retomar_Livro.py", label="🎄 Abrir Retomar Livro agora", use_container_width=True)
+        st.page_link("pages/2_📚_Retomar_Livro.py", label="🎄 Abrir Retomar Livro agora", use_container_width=True)
 
 section_title("Teste real da OpenRouter", "Opcional. Faz uma única chamada curta de texto; não gera imagem nem áudio.", "API")
 st.warning("Este botão pode consumir uma quantidade pequena de créditos da sua conta OpenRouter.")

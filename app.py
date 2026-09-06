@@ -78,7 +78,7 @@ else:
 if not visible:
     st.info("Este perfil ainda não possui projetos atribuídos. Crie um projeto novo ou use Perfis & Dashboard para atribuir um projeto existente.")
     a, b = st.columns(2)
-    a.page_link("pages/1_#L01f4d6_Criar_do_Zero.py", label="📖 Criar Story Book", use_container_width=True)
+    a.page_link("pages/39_Historia_4_Estilos.py", label="📖 Criar Story Book", use_container_width=True)
     b.page_link("pages/34_🏠_Perfis_e_Dashboard.py", label="📚 Organizar projetos", use_container_width=True)
 else:
     link_rank = {(x.get("kind"), x.get("storage_path")): i for i, x in enumerate(links)}
@@ -127,13 +127,13 @@ else:
 section_title("O que você quer fazer?", "Entre pelo objetivo; o FaithBloom leva você ao Studio correto.", "Ações rápidas")
 q1, q2, q3 = st.columns(3, gap="medium")
 with q1:
-    card("Criar um livro", "Comece uma história nova com personagens, emoção e direção editorial.", "pages/1_#L01f4d6_Criar_do_Zero.py", "Criar →", "📖")
+    card("Criar um livro", "Escolha a faixa etária, parta de uma ideia sua ou da IA e compare quatro estilos antes de ilustrar.", "pages/39_Historia_4_Estilos.py", "Criar →", "📖")
     card("Revisar / remasterizar", "Importe um livro existente ou continue uma restauração preservando o original.", "pages/16_🩺_Book_Doctor.py", "Revisar →", "🩺")
-    card("Criar Coloring Book", "Crie ou aperfeiçoe páginas de colorir e line art.", "pages/3_#L01f58d#Ufe0f_Livros_de_Colorir.py", "Colorir →", "🖍️")
+    card("Criar Coloring Book", "Crie ou aperfeiçoe páginas de colorir e line art.", "pages/3_🖍️_Livros_de_Colorir.py", "Colorir →", "🖍️")
 with q2:
     card("Criar atividades", "Kids, teens, adultos e 60+, com dificuldade, QA e gabarito.", "pages/23_🧩_Activity_Book_Studio.py", "Atividades →", "🧩")
-    card("Traduzir e localizar", "Tradução por mercado, onomatopeias e Bible Guard.", "pages/21_Translation_Localization_Studio.py", "Traduzir →", "🌍")
-    card("Produzir audiobook", "Vozes, previews, pronúncia, versões e QA de áudio.", "pages/24_🎧_Audiobook_Studio.py", "Audiobook →", "🎧")
+    card("Traduzir e localizar", "Tradução por mercado, faixa etária, onomatopeias e Bible Guard.", "pages/21_Translation_Localization_Studio.py", "Traduzir →", "🌍")
+    card("Produzir audiobook", "Vozes, ritmo por faixa etária, previews, pronúncia, versões e QA de áudio.", "pages/24_🎧_Audiobook_Studio.py", "Audiobook →", "🎧")
 with q3:
     card("Gerenciar imagens", "Encontre Masters, referências, capas, line arts, versões e favoritos.", "pages/31_🖼️_Asset_Library_Media_Manager.py", "Biblioteca →", "🖼️")
     card("Revisão final", "Execute o Quality Guardian antes de liberar uma edição.", "pages/25_🛡️_Quality_Guardian.py", "Revisar qualidade →", "🛡️")
@@ -154,6 +154,9 @@ for row_start in range(0, min(len(visible), 6), 3):
 
 # ------------------------- catálogo avançado
 advanced_routes = [
+    ("✨ História em 4 Estilos", "pages/39_Historia_4_Estilos.py"),
+    ("🪄 Prompt-Mestre Studio", "pages/38_Prompt_Mestre_Studio.py"),
+    ("📖 Criar do Zero — fluxo clássico 3–8", "pages/1_📖_Criar_do_Zero.py"),
     ("🚀 Project Hub", "pages/27_🚀_Project_Hub.py"),
     ("✍️ Autores & Colaboradores", "pages/32_✍️_Autores_e_Colaboradores.py"),
     ("👤 Perfis & Dashboard", "pages/34_🏠_Perfis_e_Dashboard.py"),
@@ -189,4 +192,4 @@ if storage.get("persistente_cloud"):
 else:
     st.warning("💻 Armazenamento local ativo. Para produção no Streamlit Cloud, configure storage persistente antes da versão Stable.")
 
-st.caption("FaithBloom 2.0 · Refinamento 21 · Agent Skills & Bestseller Readiness · perfis de workspace não substituem autenticação real nem autoria editorial.")
+st.caption("FaithBloom 2.0 · Refinamento 24 · Prompt-Mestre, faixas etárias e jornada editorial · perfis de workspace não substituem autenticação real nem autoria editorial.")

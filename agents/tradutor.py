@@ -2,13 +2,15 @@
 
 Compatível com o pipeline legado, mas agora delega ao Translation & Localization
 Studio. A Bíblia é protegida: o LLM nunca recebe instrução para traduzir o texto
-do versículo por conta própria.
+do versículo por conta própria. A faixa etária oficial também é preservada na
+localização para evitar infantilizar ou sofisticar demais uma edição traduzida.
 """
 from __future__ import annotations
 
 from state import LivroState
 from agent_skills import skill_contract
 from kdp_rules import idioma_elegivel_paperback
+from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
 from translation_localization import (
     normalize_locale,
     localizar_livro,
@@ -18,47 +20,74 @@ from translation_localization import (
 
 
 def _perfil_para_locale(state: dict, locale: str) -> dict:
-    perfis=state.get("translation_profiles",{}) or {}
-    p=dict(perfis.get(locale,{}) or {})
-    p.setdefault("modo",state.get("translation_mode","natural_infantil"))
-    p.setdefault("faixa_etaria",state.get("faixa_etaria","3–8"))
-    p.setdefault("intensidade_sons",state.get("onomatopoeia_intensity","equilibrada"))
+    perfis = state.get("translation_profiles", {}) or {}
+    p = dict(perfis.get(locale, {}) or {})
+    p.setdefault("modo", state.get("translation_mode", "natural_infantil"))
+    faixa = normalizar_faixa_etaria(p.get("faixa_etaria") or state.get("faixa_etaria"))
+    p["faixa_etaria"] = faixa
+    p["faixa_etaria_label"] = perfil_etario(faixa)["short_label"]
+    p.setdefault("intensidade_sons", state.get("onomatopoeia_intensity", "equilibrada"))
     return p
 
 
 def _bible_record(state: dict, locale: str) -> dict:
-    registros=state.get("bible_records",{}) or {}
+    registros = state.get("bible_records", {}) or {}
     if locale in registros:
         return registros[locale]
     # Sem texto aprovado: somente referência. Nunca inventar tradução bíblica.
-    return criar_registro_biblico(state.get("versiculo_referencia",""),locale)
+    return criar_registro_biblico(state.get("versiculo_referencia", ""), locale)
 
 
 def tradutor_node(state: LivroState, chamar_llm) -> LivroState:
-    traducoes=dict(state.get("traducoes",{}) or {})
-    reviews=dict(state.get("linguistic_reviews",{}) or {})
-    glossario=state.get("glossario_colecao",{}) or {}
+    faixa_master = normalizar_faixa_etaria(state.get("faixa_etaria"))
+    state["faixa_etaria"] = faixa_master
+    state["age_profile_id"] = faixa_master
 
-    for idioma in state.get("idiomas_alvo",[]) or []:
-        locale=normalize_locale(idioma)
-        lang_code=locale.split("-")[0]
+    traducoes = dict(state.get("traducoes", {}) or {})
+    reviews = dict(state.get("linguistic_reviews", {}) or {})
+    glossario = state.get("glossario_colecao", {}) or {}
+
+    for idioma in state.get("idiomas_alvo", []) or []:
+        locale = normalize_locale(idioma)
+        lang_code = locale.split("-")[0]
         if not idioma_elegivel_paperback(lang_code):
-            traducoes[locale]={"status":"eBook apenas - paperback não suportado pela KDP para este idioma no momento","locale":locale,"bible_ai_translation_allowed":False}
+            traducoes[locale] = {
+                "status": "eBook apenas - paperback não suportado pela KDP para este idioma no momento",
+                "locale": locale,
+                "bible_ai_translation_allowed": False,
+            }
             continue
-        perfil=_perfil_para_locale(state,locale)
-        bible=_bible_record(state,locale)
-        resultado=localizar_livro(
-            dict(state),chamar_llm,locale,
-            modo=perfil["modo"],faixa_etaria=perfil["faixa_etaria"],
-            intensidade_sons=perfil["intensidade_sons"],
-            glossario=glossario,bible_record=bible,
-            instrucoes=(perfil.get("instrucoes","") + skill_contract("translator_localizer"))
-        )
-        traducoes[locale]=resultado
-        reviews[locale]=revisar_localizacao_estrutural(dict(state),resultado,bible_record=bible,glossario=glossario)
 
-    state["traducoes"]=traducoes
-    state["linguistic_reviews"]=reviews
+        perfil = _perfil_para_locale(state, locale)
+        bible = _bible_record(state, locale)
+        instrucoes_perfil = (
+            instrucao_faixa_etaria(perfil["faixa_etaria"])
+            + "\nPreserve na localização o mesmo nível de maturidade, densidade, humor, tensão, musicalidade e uso de onomatopeias do perfil etário do Master."
+        )
+        instrucoes_livres = str(perfil.get("instrucoes", "") or "").strip()
+        instrucoes = instrucoes_perfil + ("\n" + instrucoes_livres if instrucoes_livres else "")
+        instrucoes += skill_contract("translator_localizer")
+
+        resultado = localizar_livro(
+            dict(state),
+            chamar_llm,
+            locale,
+            modo=perfil["modo"],
+            faixa_etaria=perfil["faixa_etaria_label"],
+            intensidade_sons=perfil["intensidade_sons"],
+            glossario=glossario,
+            bible_record=bible,
+            instrucoes=instrucoes,
+        )
+        resultado["faixa_etaria"] = perfil["faixa_etaria"]
+        resultado["faixa_etaria_label"] = perfil["faixa_etaria_label"]
+        traducoes[locale] = resultado
+        reviews[locale] = revisar_localizacao_estrutural(
+            dict(state), resultado, bible_record=bible, glossario=glossario
+        )
+
+    state["traducoes"] = traducoes
+    state["linguistic_reviews"] = reviews
     return state
 
 
