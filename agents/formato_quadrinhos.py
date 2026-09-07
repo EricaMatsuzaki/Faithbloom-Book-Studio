@@ -7,10 +7,12 @@ sequencial de páginas e painéis, sem gerar ilustrações nesta etapa.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from agent_skills import skill_contract
 from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
+from generation_autosave import persist_generation_snapshot
 
 FORMATO_QUADRINHOS_ID = "quadrinhos_hq_infantil"
 FORMATO_QUADRINHOS_LABEL = "🗯️ Quadrinhos / HQ infantil"
@@ -207,7 +209,19 @@ Adapte para um roteiro completo de HQ infantil. Não gere imagens.
 """.strip()
 
     resposta = chamar_llm(sistema=sistema, instrucao=instrucao)
-    return _normalizar_resultado(resposta, state)
+    roteiro = _normalizar_resultado(resposta, state)
+    try:
+        formatos = deepcopy(state.get("formatos_narrativos_salvos") or {})
+        formatos[FORMATO_QUADRINHOS_ID] = deepcopy(roteiro)
+        persist_generation_snapshot(
+            state,
+            reason="formato_quadrinhos_hq",
+            updates={"formatos_narrativos_salvos": formatos},
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
+    return roteiro
 
 
 SKILL_PROFILE_IDS = ("storyteller",)
