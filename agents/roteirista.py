@@ -12,6 +12,7 @@ from state import LivroState, CenaTexto
 from agent_skills import skill_contract
 from agents.estilos_narrativos import normalizar_estilo, instrucao_estilo, normalizar_licao_final
 from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria, perfil_etario
+from originality_guard import creation_originality_contract
 
 PROMPT_BASE = """\
 Você é o Roteirista de um projeto de livro infantil cristão, fiel ao
@@ -123,7 +124,7 @@ def montar_prompt(state: LivroState) -> str:
         versiculo_referencia=state.get("versiculo_referencia", ""),
         author_credit=__import__("author_profiles").author_display_from_state(state) or "não definida",
         estilo_narrativo=instrucao_estilo(estilo),
-    ) + skill_contract("storyteller")
+    ) + skill_contract("storyteller") + creation_originality_contract(dict(state))
 
 
 def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
