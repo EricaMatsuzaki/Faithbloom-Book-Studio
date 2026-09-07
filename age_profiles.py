@@ -106,6 +106,38 @@ AGE_PROFILES: dict[str, dict] = {
 }
 
 
+class AgeOption(tuple):
+    """Opção compatível com UIs antigas e novas.
+
+    Funciona como `(id, label)` para telas que precisam separar valor e rótulo,
+    mas também se comporta como o id textual em fluxos legados que fazem
+    `"6-8" in opcoes`, `opcoes.index("6-8")` ou passam a opção diretamente
+    para `perfil_etario()`.
+    """
+
+    def __new__(cls, profile_id: str, label: str):
+        return super().__new__(cls, (profile_id, label))
+
+    @property
+    def profile_id(self) -> str:
+        return tuple.__getitem__(self, 0)
+
+    @property
+    def label(self) -> str:
+        return tuple.__getitem__(self, 1)
+
+    def __str__(self) -> str:
+        return self.profile_id
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return self.profile_id == other
+        return tuple.__eq__(self, other)
+
+    def __hash__(self) -> int:
+        return hash(self.profile_id)
+
+
 def _slug(value: str | None) -> str:
     # Troca travessões ANTES de remover caracteres não ASCII, senão "3–5"
     # poderia virar "35". Depois retiramos rótulos humanos comuns.
@@ -138,8 +170,10 @@ def perfil_etario(value: str | None) -> dict:
     return deepcopy({"id": key, **AGE_PROFILES[key]})
 
 
-def opcoes_faixa_etaria() -> list[str]:
-    return ["3-5", "6-8", "9-12", "3-8"]
+def opcoes_faixa_etaria() -> list[AgeOption]:
+    """Retorna opções com id + rótulo sem quebrar consumidores legados."""
+    ids = ("3-5", "6-8", "9-12", "3-8")
+    return [AgeOption(profile_id, AGE_PROFILES[profile_id]["label"]) for profile_id in ids]
 
 
 def instrucao_faixa_etaria(value: str | None) -> str:
