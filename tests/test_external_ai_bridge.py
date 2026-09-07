@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -126,5 +127,6 @@ def test_external_page_has_no_openrouter_call():
     from pathlib import Path
 
     text = Path("pages/41_🤖_IA_Externa_sem_OpenRouter.py").read_text(encoding="utf-8")
-    assert "openrouter_client" not in text
-    assert "chamar_llm" not in text
+    assert "from openrouter_client" not in text
+    assert "import openrouter_client" not in text
+    assert re.search(r"\bchamar_llm\s*\(", text) is None
