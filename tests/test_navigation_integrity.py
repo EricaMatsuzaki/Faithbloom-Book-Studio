@@ -5,11 +5,11 @@ import ast
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-PAGE_REF_RE = re.compile(r"pages/[A-Za-z0-9_\- .À-ÿ\U00010000-\U0010ffff➕✅✨✍️🪄📖📚🖍️🧩🎧🖼️🛡️🌐🚀🏠👥🎭🎨📐🧭🏭🧪🧱☁️🏆🩺🎄]+\.py")
+PAGE_REF_RE = re.compile(r"pages/[^\"'\n]+\.py")
 
 
 def _python_files() -> list[Path]:
-    files = [ROOT / "app.py", ROOT / "integration_ux.py"]
+    files = sorted(ROOT.glob("*.py"))
     files.extend(sorted((ROOT / "pages").glob("*.py")))
     return [p for p in files if p.exists()]
 
