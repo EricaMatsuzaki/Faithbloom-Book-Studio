@@ -12,6 +12,7 @@ from typing import Any
 from agent_skills import skill_contract
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
 from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
+from generation_autosave import persist_generation_snapshot
 
 # Núcleo histórico e oficial do Prompt-Mestre. Deve permanecer com quatro estilos.
 ESTILOS_NARRATIVOS = {
@@ -288,16 +289,59 @@ Regras invariáveis:
     return _normalizar_resultado(resposta, chave, modo)
 
 
+def _biblioteca_com_versoes(state: dict, versoes: dict[str, dict]) -> dict:
+    biblioteca = deepcopy(state.get("versoes_narrativas_salvas") or {})
+    for chave, versao in versoes.items():
+        if not isinstance(versao, dict):
+            continue
+        item = deepcopy(versao)
+        item["origem"] = (
+            "comparative_story_director_additional"
+            if chave in ESTILOS_ADICIONAIS
+            else "comparative_story_director"
+        )
+        item["faixa_etaria"] = state.get("faixa_etaria")
+        item["colecao"] = state.get("colecao")
+        item["status"] = "atual"
+        biblioteca[chave] = item
+    return biblioteca
+
+
 def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
-    """Gera o núcleo de quatro estilos do Prompt-Mestre, todos com skill-base do Roteirista."""
-    return {estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo) for estilo in ORDEM_ESTILOS}
+    """Gera os quatro estilos e AutoSalva o resultado no Book Master."""
+    resultados = {estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo) for estilo in ORDEM_ESTILOS}
+    try:
+        persist_generation_snapshot(
+            state,
+            reason=f"comparativo_4_estilos_{'completa' if modo == 'completa' else 'amostra'}",
+            updates={
+                "comparativo_estilos": resultados,
+                "versoes_narrativas_salvas": _biblioteca_com_versoes(state, resultados),
+            },
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
+    return resultados
 
 
 def gerar_estilo_adicional(state: dict, chamar_llm, estilo: str, modo: str = "amostra") -> dict:
-    """Gera sob demanda um estilo da biblioteca opcional, sem aumentar o comparador principal."""
+    """Gera um estilo adicional e AutoSalva a versão sem depender do botão manual."""
     if estilo not in ESTILOS_ADICIONAIS:
         raise ValueError(f"Estilo adicional não registrado: {estilo}")
-    return _gerar_um_estilo(state, chamar_llm, estilo, modo)
+    versao = _gerar_um_estilo(state, chamar_llm, estilo, modo)
+    try:
+        persist_generation_snapshot(
+            state,
+            reason=f"estilo_adicional_{estilo}_{versao.get('modo','amostra')}",
+            updates={
+                "versoes_narrativas_salvas": _biblioteca_com_versoes(state, {estilo: versao}),
+            },
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
+    return versao
 
 
 def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None) -> dict:
