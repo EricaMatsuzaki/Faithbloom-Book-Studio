@@ -6,12 +6,14 @@ para a premissa, sem ficar preso a um dos quatro estilos formais.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from agent_skills import skill_contract
 from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
 from agents.estilos_narrativos import ESTILOS_NARRATIVOS, normalizar_licao_final
+from generation_autosave import persist_generation_snapshot
 
 LABEL_ROTEIRISTA = "⭐ Versão do Roteirista"
 
@@ -121,11 +123,20 @@ def gerar_proposta_roteirista(state: dict, chamar_llm) -> dict:
     resposta["estilo_recomendado"] = _normalizar_estilo_recomendado(resposta.get("estilo_recomendado"))
     resposta["label"] = "✍️ Proposta do Roteirista"
     resposta["origem"] = "storyteller_skill"
+    try:
+        persist_generation_snapshot(
+            state,
+            reason="proposta_roteirista",
+            updates={"proposta_roteirista": resposta},
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
     return resposta
 
 
 def gerar_versao_autoral_roteirista(state: dict, chamar_llm) -> dict:
-    """Gera uma quinta versão completa usando a skill real do Roteirista."""
+    """Gera uma quinta versão completa usando a skill real do Roteirista e AutoSalva."""
     resposta = chamar_llm(
         sistema=_base_sistema(state),
         instrucao=(
@@ -142,7 +153,7 @@ def gerar_versao_autoral_roteirista(state: dict, chamar_llm) -> dict:
     cenas = resposta.get("cenas_texto") or resposta.get("cenas") or []
     if not isinstance(cenas, list):
         cenas = []
-    return {
+    versao = {
         "estilo": "roteirista_autoral",
         "label": LABEL_ROTEIRISTA,
         "modo": "completa",
@@ -154,6 +165,25 @@ def gerar_versao_autoral_roteirista(state: dict, chamar_llm) -> dict:
         "estilo_recomendado": _normalizar_estilo_recomendado(resposta.get("estilo_recomendado")),
         "justificativa_criativa": str(resposta.get("justificativa_criativa") or "").strip(),
     }
+    try:
+        biblioteca = deepcopy(state.get("versoes_narrativas_salvas") or {})
+        item = deepcopy(versao)
+        item["faixa_etaria"] = state.get("faixa_etaria")
+        item["colecao"] = state.get("colecao")
+        item["status"] = "atual"
+        biblioteca["roteirista_autoral"] = item
+        persist_generation_snapshot(
+            state,
+            reason="versao_roteirista_autoral",
+            updates={
+                "versao_roteirista_autoral": versao,
+                "versoes_narrativas_salvas": biblioteca,
+            },
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
+    return versao
 
 
 SKILL_PROFILE_IDS = ("storyteller",)
