@@ -50,3 +50,23 @@ def test_get_backend_accepts_legacy_key(monkeypatch):
     assert isinstance(backend, sb.SupabaseStorageBackend)
     assert backend.key == "eyJlegacy"
     assert backend.key_kind == "legacy_service_role"
+
+
+def test_long_prompt_text_is_not_treated_as_local_file_path():
+    long_prompt = "MEL VISUAL DNA — " + ("detalhe canônico dos olhos e blush " * 300)
+    payload = {
+        "dna": {
+            "visual_prompt_master": long_prompt,
+            "descricao_master": long_prompt,
+        }
+    }
+
+    persisted = sb.persistir_assets_em_objeto(payload, "assets/test")
+
+    assert persisted == payload
+
+
+def test_long_text_ending_with_asset_extension_does_not_raise_oserror():
+    fake_prompt = ("texto editorial muito longo " * 400) + ".png"
+
+    assert sb.persistir_assets_em_objeto(fake_prompt, "assets/test") == fake_prompt
