@@ -233,11 +233,33 @@ def uri_to_path(uri: str) -> str:
     return uri[len(URI_PREFIX):].strip("/")
 
 
+_ASSET_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp3", ".wav", ".pdf", ".svg"}
+
+
+def _local_asset_path(value: str) -> Path | None:
+    """Retorna Path apenas quando a string pode representar um asset local real.
+
+    DNA, prompts e descrições longas também são strings. Nunca devemos enviá-los a
+    Path.exists(), pois textos longos podem disparar OSError (file name too long).
+    """
+    if not isinstance(value, str) or not value or is_storage_uri(value):
+        return None
+    try:
+        p = Path(value)
+        if p.suffix.lower() not in _ASSET_EXTS:
+            return None
+        if not p.exists() or not p.is_file():
+            return None
+        return p
+    except (OSError, ValueError):
+        return None
+
+
 def persistir_arquivo(caminho_local: str, prefixo: str = "assets") -> str:
     if is_storage_uri(caminho_local):
         return caminho_local
-    p = Path(caminho_local)
-    if not p.exists() or not p.is_file():
+    p = _local_asset_path(caminho_local)
+    if p is None:
         return caminho_local
     digest = hashlib.sha256(p.read_bytes()).hexdigest()[:20]
     ext = p.suffix.lower() or ".bin"
@@ -259,9 +281,6 @@ def materializar(uri_ou_caminho: str) -> str:
     return str(local)
 
 
-_ASSET_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp3", ".wav", ".pdf", ".svg"}
-
-
 def persistir_assets_em_objeto(value: Any, prefixo: str) -> Any:
     """Copia arquivos locais referenciados por um state para o backend e grava fb:// URIs."""
     if isinstance(value, dict):
@@ -273,8 +292,7 @@ def persistir_assets_em_objeto(value: Any, prefixo: str) -> Any:
     if isinstance(value, str):
         if is_storage_uri(value):
             return value
-        p = Path(value)
-        if p.exists() and p.is_file() and p.suffix.lower() in _ASSET_EXTS:
+        if _local_asset_path(value) is not None:
             return persistir_arquivo(value, prefixo)
     return value
 
