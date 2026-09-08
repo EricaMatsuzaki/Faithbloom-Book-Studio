@@ -2,7 +2,8 @@
 
 A faixa etária é uma decisão editorial por LIVRO. Ela orienta linguagem,
 ritmo, densidade de texto, musicalidade, onomatopeias, tensão, perguntas
-pedagógicas, profundidade da explicação cristã e tipografia do miolo.
+pedagógicas, profundidade da explicação cristã, experiência emocional e
+tipografia do miolo.
 
 O perfil 3–8 é mantido por compatibilidade com a coleção clássica atual.
 Para novos projetos, perfis mais específicos (3–5, 6–8, 9–12) dão
@@ -15,6 +16,8 @@ from __future__ import annotations
 
 import unicodedata
 from copy import deepcopy
+
+from emotional_experience_engine import instrucao_experiencia_emocional
 
 DEFAULT_AGE_PROFILE = "3-8"
 
@@ -178,7 +181,7 @@ def opcoes_faixa_etaria() -> list[AgeOption]:
 
 def instrucao_faixa_etaria(value: str | None) -> str:
     p = perfil_etario(value)
-    return (
+    base = (
         f"FAIXA ETÁRIA OFICIAL: {p['short_label']} ({p['publico']}). "
         f"Ritmo: {p['ritmo']}. Frases: {p['frases']}. "
         f"Texto por cena: {p['texto_por_cena']}. Musicalidade: {p['musicalidade']}. "
@@ -186,3 +189,4 @@ def instrucao_faixa_etaria(value: str | None) -> str:
         f"Tensão: {p['tensao']}. Espiritualidade: {p['espiritualidade']}. "
         f"Moral: {p['moral']}. Densidade visual: {p['densidade_visual']}."
     )
+    return base + "\n\n" + instrucao_experiencia_emocional(p["id"])
