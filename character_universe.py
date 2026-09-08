@@ -11,7 +11,10 @@ from storage_backend import materializar_assets_em_objeto, persistir_assets_em_o
 
 INDEX = "character_universe/index.json"
 USOS_PADRAO = ["story", "coloring", "activity", "cover"]
-VARIAVEIS_PADRAO = ["pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios", "cenario", "estacao", "festividade"]
+VARIAVEIS_PADRAO = [
+    "pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios",
+    "cor_acessorio_identitario", "cenario", "estacao", "festividade",
+]
 
 
 def _identidade_referencia(ref: dict) -> tuple[str, str] | None:
@@ -57,11 +60,17 @@ def normalizar_dna(dna: dict | str | None) -> dict:
             "descricao_master": dna,
             "campos_bloqueados": {},
             "caracteristicas_bloqueadas": dna,
+            "visual_prompt_master": "",
+            "assinaturas_visuais": {},
+            "regras_variaveis": {},
             "variaveis_permitidas": list(VARIAVEIS_PADRAO),
         }
     d = deepcopy(dna or {})
     d.setdefault("descricao_master", d.get("caracteristicas_bloqueadas", ""))
     d.setdefault("campos_bloqueados", {})
+    d.setdefault("visual_prompt_master", "")
+    d.setdefault("assinaturas_visuais", {})
+    d.setdefault("regras_variaveis", {})
     d.setdefault("variaveis_permitidas", list(VARIAVEIS_PADRAO))
     return d
 
@@ -193,12 +202,21 @@ def personagem_para_prompt(p: dict, modo: str = "color", variaveis: dict | None 
     solicitadas = variaveis or {}
     filtradas = {k: v for k, v in solicitadas.items() if k in permitidas and v not in (None, "")}
     proibidas = [k for k in solicitadas if k not in permitidas]
+    visual_prompt = str(dna.get("visual_prompt_master") or "").strip()
+    regras_variaveis = dna.get("regras_variaveis") or {}
+    regras_ativas = {k: regras_variaveis[k] for k in filtradas if k in regras_variaveis}
     texto = (
         f"PERSONAGEM OFICIAL {p.get('nome')}. CHARACTER DNA BLOQUEADO: {campos}. "
         f"Preserve rigorosamente rosto, espécie, proporções fundamentais, olhos, marcas, paleta-base e identidade visual. "
         f"Modo visual: {modo}; uso: {contexto}. Variáveis autorizadas nesta cena: {filtradas}. "
-        "Roupas, pose, ação, cenário, estação, festividade e expressão podem mudar SOMENTE quando autorizados; a identidade não muda."
+        "Roupas, pose, ação, cenário, estação, festividade, expressão e acessórios temporários podem mudar SOMENTE quando autorizados; "
+        "a identidade não muda. A cor de um acessório identitário só pode mudar quando `cor_acessorio_identitario` estiver autorizada; "
+        "sua presença, forma e posição canônicas permanecem bloqueadas."
     )
+    if visual_prompt:
+        texto += f" PROMPT MESTRE VISUAL OFICIAL: {visual_prompt}"
+    if regras_ativas:
+        texto += f" Regras específicas das variáveis ativas: {regras_ativas}."
     if proibidas:
         texto += f" Ignorar alterações não autorizadas nos campos: {proibidas}."
     return texto
