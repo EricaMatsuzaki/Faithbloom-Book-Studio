@@ -13,7 +13,13 @@ LIGHTING = ("Manter original", "Natural suave", "Golden hour", "Editorial", "Cla
 def identity_lock(character_dna: dict | None = None) -> dict:
     dna = character_dna or {}
     fields = dict(dna.get("campos_bloqueados") or {})
-    return {"enabled": True, "protected": list(PROTECTED_TRAITS), "canonical_values": fields}
+    return {
+        "enabled": True,
+        "protected": list(PROTECTED_TRAITS),
+        "canonical_values": fields,
+        "visual_prompt_master": str(dna.get("visual_prompt_master") or "").strip(),
+        "variable_rules": dict(dna.get("regras_variaveis") or {}),
+    }
 
 
 def build_restoration_prompt(action: str, *, dna: dict | None = None, request: str = "", scene: str = "", color: str = "Manter original", lighting: str = "Manter original") -> str:
@@ -22,7 +28,7 @@ def build_restoration_prompt(action: str, *, dna: dict | None = None, request: s
     allowed = {
         "neutral_master": (
             "Prepare uma candidata a Color Master de alta qualidade usando a PRIMEIRA imagem como base. "
-            "Preserve a mesma personagem, rosto, olhos, expressão, pose, proporções e laço permanente. "
+            "Preserve a mesma personagem, rosto, olhos, expressão, pose, proporções e acessórios identitários permanentes. "
             "Use fundo neutro branco ou creme claro uniforme, sem cenário ou objetos. "
             "Remova acessórios sazonais, incluindo cachecol; preserve acessórios permanentes do DNA. "
             "Melhore nitidez e acabamento sem mudar a identidade. Não oficialize a candidata."
@@ -38,13 +44,25 @@ def build_restoration_prompt(action: str, *, dna: dict | None = None, request: s
     if action not in allowed:
         raise ValueError("Acao visual invalida.")
     from character_guide import artwork_text_policy
+    visual_master = lock.get("visual_prompt_master") or ""
+    visual_master_block = (
+        f" PROMPT MESTRE VISUAL OFICIAL DO PERSONAGEM: {visual_master}"
+        if visual_master else ""
+    )
+    variable_rules = lock.get("variable_rules") or {}
+    variable_rules_block = (
+        f" REGRAS DE VARIÁVEIS CONTEXTUAIS: {variable_rules}."
+        if variable_rules else ""
+    )
     return (
         f"{allowed[action]} IDENTITY LOCK ATIVO. Preserve: {', '.join(lock['protected'])}. "
         f"Valores canonicos que jamais podem receber recoloracao: {canonical}. "
         f"Tratamento de cor: {color}; aplique apenas em luz, atmosfera, fundo e elementos secundarios. "
         f"Iluminacao: {lighting}. Pedido adicional: {request or 'nenhum'}. "
         "Nao altere traits canonicos mesmo que a direcao cromatica sugira outra cor. "
-        "Exceção à mudança somente de cenário: alterações adicionais explicitamente pedidas em acessórios temporários são permitidas. "
+        "Exceção à mudança somente de cenário: alterações adicionais explicitamente pedidas em acessórios temporários ou em variáveis contextuais autorizadas pelo DNA são permitidas. "
+        + visual_master_block
+        + variable_rules_block
+        + " "
         + artwork_text_policy()
-
     )
