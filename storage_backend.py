@@ -8,7 +8,9 @@ No Streamlit Cloud, use Supabase para não perder livros/imagens ao reiniciar.
 Secrets esperados no modo Supabase:
     FAITHBLOOM_STORAGE_MODE = "supabase"
     SUPABASE_URL = "https://SEU-PROJETO.supabase.co"
-    SUPABASE_SERVICE_ROLE_KEY = "..."  # guardar SOMENTE em Secrets
+    SUPABASE_SECRET_KEY = "sb_secret_..."  # recomendado; guardar SOMENTE em Secrets
+    # Compatibilidade temporária com projetos antigos:
+    # SUPABASE_SERVICE_ROLE_KEY = "..."
     FAITHBLOOM_SUPABASE_BUCKET = "faithbloom"  # opcional
 """
 from __future__ import annotations
@@ -84,8 +86,10 @@ class LocalStorageBackend(StorageBackend):
             os.replace(tmp, p)
         finally:
             if tmp.exists():
-                try: tmp.unlink()
-                except OSError: pass
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
         return path
 
     def get_bytes(self, path: str) -> bytes:
@@ -112,7 +116,12 @@ class SupabaseStorageBackend(StorageBackend):
         self.url = url.rstrip("/")
         self.key = service_key
         self.bucket = bucket
-        self.headers = {"apikey": self.key, "Authorization": f"Bearer {self.key}"}
+        self.key_kind = "secret" if service_key.startswith("sb_secret_") else "legacy_service_role"
+        # Novas sb_secret_* devem ser enviadas no header apikey, não como Bearer JWT.
+        # O Authorization Bearer é mantido somente para a chave service_role legada.
+        self.headers = {"apikey": self.key}
+        if self.key_kind == "legacy_service_role":
+            self.headers["Authorization"] = f"Bearer {self.key}"
 
     def _object_url(self, path: str) -> str:
         return f"{self.url}/storage/v1/object/{quote(self.bucket, safe='')}/{quote(path.strip('/'), safe='/')}"
@@ -137,8 +146,18 @@ class SupabaseStorageBackend(StorageBackend):
         while queue:
             current = queue.pop(0)
             endpoint = f"{self.url}/storage/v1/object/list/{quote(self.bucket, safe='')}"
-            payload = {"prefix": current, "limit": 1000, "offset": 0, "sortBy": {"column": "name", "order": "asc"}}
-            r = requests.post(endpoint, headers={**self.headers, "Content-Type": "application/json"}, json=payload, timeout=60)
+            payload = {
+                "prefix": current,
+                "limit": 1000,
+                "offset": 0,
+                "sortBy": {"column": "name", "order": "asc"},
+            }
+            r = requests.post(
+                endpoint,
+                headers={**self.headers, "Content-Type": "application/json"},
+                json=payload,
+                timeout=60,
+            )
             if r.status_code != 200:
                 raise StorageError(f"Supabase list falhou ({r.status_code}): {r.text[:200]}")
             for item in r.json() or []:
@@ -155,7 +174,12 @@ class SupabaseStorageBackend(StorageBackend):
 
     def delete(self, path: str) -> None:
         endpoint = f"{self.url}/storage/v1/object/{quote(self.bucket, safe='')}"
-        r = requests.delete(endpoint, headers={**self.headers, "Content-Type": "application/json"}, json={"prefixes": [path.strip("/")]}, timeout=60)
+        r = requests.delete(
+            endpoint,
+            headers={**self.headers, "Content-Type": "application/json"},
+            json={"prefixes": [path.strip("/")]},
+            timeout=60,
+        )
         if r.status_code not in (200, 204):
             raise StorageError(f"Supabase delete falhou ({r.status_code})")
 
@@ -163,11 +187,22 @@ class SupabaseStorageBackend(StorageBackend):
 def get_backend() -> StorageBackend:
     mode = os.environ.get("FAITHBLOOM_STORAGE_MODE", "auto").strip().lower()
     url = os.environ.get("SUPABASE_URL", "").strip()
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    # Preferir a nova chave secreta do Supabase; manter service_role apenas para compatibilidade.
+    key = (
+        os.environ.get("SUPABASE_SECRET_KEY", "").strip()
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
     if mode == "supabase" or (mode == "auto" and url and key):
         if not (url and key):
-            raise StorageError("Modo Supabase escolhido, mas SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY não foram definidos.")
-        return SupabaseStorageBackend(url, key, os.environ.get("FAITHBLOOM_SUPABASE_BUCKET", "faithbloom"))
+            raise StorageError(
+                "Modo Supabase escolhido, mas SUPABASE_URL e SUPABASE_SECRET_KEY "
+                "(ou SUPABASE_SERVICE_ROLE_KEY legado) não foram definidos."
+            )
+        return SupabaseStorageBackend(
+            url,
+            key,
+            os.environ.get("FAITHBLOOM_SUPABASE_BUCKET", "faithbloom"),
+        )
     return LocalStorageBackend()
 
 
@@ -182,6 +217,7 @@ def backend_status() -> dict:
         "modo": BACKEND.name,
         "persistente_cloud": BACKEND.name == "supabase",
         "bucket": getattr(BACKEND, "bucket", "local"),
+        "auth": getattr(BACKEND, "key_kind", "local"),
     }
 
 
