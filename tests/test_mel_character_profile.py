@@ -7,6 +7,7 @@ from mel_character_profile import (
     mel_character_dna,
     mel_visual_prompt,
 )
+from scene_color_controls import build_restoration_prompt
 
 
 def test_mel_eye_signature_keeps_star_heart_and_green_gradient():
@@ -67,3 +68,14 @@ def test_character_universe_injects_mel_visual_prompt_master():
     assert MEL_VISUAL_PROMPT_MASTER in prompt
     assert "cor_acessorio_identitario" in prompt
     assert "presença, forma e posição canônicas permanecem bloqueadas" in prompt
+
+
+def test_restoration_prompt_also_inherits_mel_visual_master():
+    prompt = build_restoration_prompt(
+        "controlled_remaster",
+        dna=MEL_CHARACTER_DNA,
+        request="deixe o laço vermelho para o Natal",
+    )
+    assert "PROMPT MESTRE VISUAL OFICIAL DO PERSONAGEM" in prompt
+    assert MEL_VISUAL_PROMPT_MASTER in prompt
+    assert "cor_acessorio_identitario" in prompt
