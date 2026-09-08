@@ -143,7 +143,9 @@ with st.expander("👨‍👩‍👧 Pais e Educadores", expanded=True):
     pais["emocao_trabalhada"] = st.text_input("Emoção trabalhada", value=pais.get("emocao_trabalhada", ""))
     pais["principio_biblico"] = st.text_input("Princípio bíblico", value=pais.get("principio_biblico", ""))
     pais["habilidade_socioemocional"] = st.text_input(
-        "Habilidade socioemocional", value=pais.get("habilidade_socioemocional", "")
+        "Habilidade socioemocional",
+        value=pais.get("habilidade_socioemocional", ""),
+        key="pais_habilidade_socioemocional",
     )
     perguntas = st.text_area(
         "Perguntas para conversar com o leitor — uma por linha",
@@ -171,7 +173,9 @@ with st.expander("🎓 Ficha Pedagógica", expanded=True):
     ficha["tema_central"] = st.text_input("Tema central", value=ficha.get("tema_central", ""))
     ficha["emocao_principal"] = st.text_input("Emoção principal", value=ficha.get("emocao_principal", ""))
     ficha["habilidade_socioemocional"] = st.text_input(
-        "Habilidade socioemocional", value=ficha.get("habilidade_socioemocional", "")
+        "Habilidade socioemocional",
+        value=ficha.get("habilidade_socioemocional", ""),
+        key="ficha_habilidade_socioemocional",
     )
     ficha["valor_cristao"] = st.text_input("Valor cristão", value=ficha.get("valor_cristao", ""))
     ficha["versiculo_referencia"] = st.text_input(
