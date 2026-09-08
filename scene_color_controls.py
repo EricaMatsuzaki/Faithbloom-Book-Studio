@@ -28,7 +28,7 @@ def build_restoration_prompt(action: str, *, dna: dict | None = None, request: s
     allowed = {
         "neutral_master": (
             "Prepare uma candidata a Color Master de alta qualidade usando a PRIMEIRA imagem como base. "
-            "Preserve a mesma personagem, rosto, olhos, expressão, pose, proporções e acessórios identitários permanentes. "
+            "Preserve a mesma personagem, rosto, olhos, expressão, pose, proporções e acessórios identitários permanentes, incluindo qualquer laço permanente definido no DNA. "
             "Use fundo neutro branco ou creme claro uniforme, sem cenário ou objetos. "
             "Remova acessórios sazonais, incluindo cachecol; preserve acessórios permanentes do DNA. "
             "Melhore nitidez e acabamento sem mudar a identidade. Não oficialize a candidata."
