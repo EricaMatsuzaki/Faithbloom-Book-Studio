@@ -5,7 +5,8 @@ from armazenamento import listar_colecoes
 from character_universe import (
     criar_personagem_oficial, listar_personagens_oficiais, carregar_personagem_oficial,
     adicionar_variacao, salvar_preset, personagem_para_prompt, VARIAVEIS_PADRAO,
-    adicionar_referencia
+    adicionar_referencia, detectar_personagens_mesmo_nome, arquivar_personagem,
+    restaurar_personagem, mel_canonica_protegida,
 )
 from asset_library import get_asset, get_thumbnail, list_assets
 from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
@@ -26,9 +27,20 @@ selected_asset_id = st.session_state.get("faithbloom_selected_asset_id", "")
 if selected_asset_path and os.path.exists(selected_asset_path):
     st.success("🖼️ Asset selecionado na Asset Library: você pode adicioná-lo ao Reference Pack ou defini-lo como Master de um personagem abaixo.")
 
-
 colecoes = listar_colecoes()
 colecao = st.text_input('Coleção', value=colecoes[0] if colecoes else 'Pequenas Histórias, Grandes Lições')
+mostrar_arquivados = st.checkbox('Mostrar personagens arquivados', value=False)
+
+duplicados = detectar_personagens_mesmo_nome(incluir_arquivados=True)
+for grupo in duplicados.values():
+    relacionados = [x for x in grupo if x.get('colecao') == colecao]
+    if relacionados:
+        nome_dup = relacionados[0].get('nome', 'Personagem')
+        resumo = ' · '.join(
+            f"{x.get('colecao') or 'Sem coleção'} — {'🗄️ arquivado' if x.get('status') == 'arquivado' else '⭐ oficial/ativo'}"
+            for x in grupo
+        )
+        st.warning(f"⚠️ Nome duplicado detectado: {nome_dup}. {resumo}")
 
 with st.expander('➕ Criar Character Master oficial', expanded=False):
     nome = st.text_input('Nome do personagem')
@@ -50,15 +62,17 @@ with st.expander('➕ Criar Character Master oficial', expanded=False):
         criar_personagem_oficial(colecao, nome.strip(), dna, metadata={'usos_permitidos': usos})
         st.success('Character Master oficial salvo.'); st.rerun()
 
-itens = listar_personagens_oficiais(colecao)
+itens = listar_personagens_oficiais(colecao, incluir_arquivados=mostrar_arquivados)
 if not itens:
-    st.info('Ainda não há personagens oficiais nesta coleção.')
+    st.info('Ainda não há personagens oficiais nesta coleção.' if not mostrar_arquivados else 'Nenhum personagem encontrado nesta coleção.')
 
 for item in itens:
     p = carregar_personagem_oficial(item['id'])
     with st.container(border=True):
-        st.subheader('⭐ ' + p.get('nome',''))
-        st.caption('Personagem oficial · ' + p.get('colecao','') + ' · usos: ' + ', '.join(p.get('metadata',{}).get('usos_permitidos',[])))
+        status = p.get('status', 'oficial')
+        status_label = '🗄️ ARQUIVADO' if status == 'arquivado' else '⭐ OFICIAL · ATIVO'
+        st.subheader(('🗄️ ' if status == 'arquivado' else '⭐ ') + p.get('nome',''))
+        st.caption(f"{status_label} · Coleção: {p.get('colecao','')} · usos: " + ', '.join(p.get('metadata',{}).get('usos_permitidos',[])))
         dna = p.get('dna',{})
         st.write(dna.get('descricao_master') or dna.get('caracteristicas_bloqueadas') or 'DNA ainda não preenchido.')
         if dna.get('campos_bloqueados'):
@@ -68,6 +82,29 @@ for item in itens:
         c2.metric('Line Art Master','✅' if p.get('line_art_master') else '—')
         c3.metric('Reference Pack',len(p.get('reference_pack',[])))
         c4.metric('Variações preservadas',len(p.get('variacoes',[])))
+
+        if status == 'arquivado':
+            st.info('Arquivado sem excluir DNA, Masters, referências, assets, versões ou histórico.')
+            if st.button('♻️ Restaurar personagem', key=f"restore_character_{p['id']}"):
+                restaurar_personagem(p['id']); st.rerun()
+            continue
+
+        if mel_canonica_protegida(p):
+            st.success('🔒 Mel canônica protegida: coleção Pequenas Histórias, Grandes Lições · Color Master oficial · Reference Pack presente.')
+            st.caption('Esta Character Master permanece ativa. Use o arquivamento apenas na Mel antiga/duplicada.')
+        else:
+            confirmar_arquivo = st.checkbox(
+                'Confirmo que desejo arquivar este personagem sem apagar seu histórico',
+                key=f"confirm_archive_character_{p['id']}",
+            )
+            if st.button('🗄️ Arquivar personagem', key=f"archive_character_{p['id']}", disabled=not confirmar_arquivo):
+                try:
+                    arquivar_personagem(p['id'])
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success('Personagem arquivado. DNA, Masters, referências, assets, versões e histórico foram preservados.')
+                    st.rerun()
 
         master_details = current_color_master_details(p)
         current_master = master_details['asset'] if master_details['consistent'] else None
@@ -219,7 +256,6 @@ for item in itens:
                         st.error(str(exc))
                         if st.session_state[result_key]:
                             st.info('As candidatas já concluídas foram preservadas abaixo.')
-
 
         result_ids = st.session_state.get(f"results_{p['id']}", [])
         if result_ids:
