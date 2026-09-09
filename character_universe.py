@@ -2,6 +2,8 @@
 
 Refinamento 03: separa identidade bloqueada de variáveis narrativas e mantém
 histórico/variações sem destruir versões anteriores.
+Refinamento 26: Duplicate & Archive Safety — duplicidades entre coleções,
+arquivamento não destrutivo e proteção de Character Masters com histórico.
 """
 from __future__ import annotations
 import time, uuid
@@ -15,10 +17,10 @@ VARIAVEIS_PADRAO = [
     "pose", "acao", "expressao", "emocao", "figurino", "acessorios_temporarios",
     "cor_acessorio_identitario", "cenario", "estacao", "festividade",
 ]
+MEL_CANONICAL_COLLECTION = "Pequenas Histórias, Grandes Lições"
 
 
 def _identidade_referencia(ref: dict) -> tuple[str, str] | None:
-    """Retorna a identidade persistente de uma referência, sem tocar no asset."""
     if not isinstance(ref, dict):
         return None
     metadata = ref.get("metadata") if isinstance(ref.get("metadata"), dict) else {}
@@ -34,12 +36,10 @@ def _identidade_referencia(ref: dict) -> tuple[str, str] | None:
 
 
 def normalizar_reference_pack(reference_pack: list | None) -> list:
-    """Mantém a primeira ocorrência de cada asset e preserva a ordem do pack."""
     unicas = []
     identidades = set()
     for ref in reference_pack or []:
         identidade = _identidade_referencia(ref)
-        # Registros sem qualquer identidade não podem ser unidos com segurança.
         if identidade is not None and identidade in identidades:
             continue
         unicas.append(ref)
@@ -54,7 +54,6 @@ def _index():
 
 
 def normalizar_dna(dna: dict | str | None) -> dict:
-    """Aceita o DNA antigo em texto e o novo DNA estruturado."""
     if isinstance(dna, str):
         return {
             "descricao_master": dna,
@@ -81,19 +80,11 @@ def criar_personagem_oficial(colecao: str, nome: str, dna: dict, color_master: s
     meta.setdefault("usos_permitidos", list(USOS_PADRAO))
     meta.setdefault("presets", {"figurinos": [], "cenarios": [], "estacoes": [], "festividades": [], "emocoes": []})
     obj = {
-        "id": pid,
-        "colecao": colecao,
-        "nome": nome,
-        "status": "oficial",
-        "dna": normalizar_dna(dna),
-        "color_master": color_master,
-        "line_art_master": line_art_master,
-        "reference_pack": normalizar_reference_pack(reference_pack),
-        "metadata": meta,
-        "variacoes": [],
-        "versoes": [],
-        "criado_em": int(time.time()),
-        "atualizado_em": int(time.time()),
+        "id": pid, "colecao": colecao, "nome": nome, "status": "oficial",
+        "dna": normalizar_dna(dna), "color_master": color_master,
+        "line_art_master": line_art_master, "reference_pack": normalizar_reference_pack(reference_pack),
+        "metadata": meta, "variacoes": [], "versoes": [],
+        "criado_em": int(time.time()), "atualizado_em": int(time.time()),
     }
     obj = persistir_assets_em_objeto(obj, f"assets/character_universe/{_slug(colecao)}/{_slug(nome)}")
     _save_json(f"character_universe/{pid}.json", obj)
@@ -103,11 +94,29 @@ def criar_personagem_oficial(colecao: str, nome: str, dna: dict, color_master: s
     return materializar_assets_em_objeto(obj)
 
 
-def listar_personagens_oficiais(colecao: str | None = None) -> list[dict]:
+def listar_personagens_oficiais(colecao: str | None = None, incluir_arquivados: bool = False) -> list[dict]:
     itens = _index()
     if colecao:
         itens = [i for i in itens if i.get("colecao") == colecao]
-    return sorted(itens, key=lambda x: (x.get("colecao", ""), x.get("nome", "")))
+    if not incluir_arquivados:
+        itens = [i for i in itens if i.get("status", "oficial") != "arquivado"]
+    return sorted(itens, key=lambda x: (x.get("colecao", ""), x.get("nome", ""), x.get("status", "")))
+
+
+def detectar_personagens_mesmo_nome(nome: str | None = None, incluir_arquivados: bool = True) -> dict[str, list[dict]]:
+    """Agrupa nomes que aparecem em mais de uma coleção, sem misturar os registros."""
+    grupos: dict[str, list[dict]] = {}
+    for item in listar_personagens_oficiais(incluir_arquivados=incluir_arquivados):
+        item_nome = str(item.get("nome") or "").strip()
+        if not item_nome:
+            continue
+        if nome and item_nome.casefold() != nome.strip().casefold():
+            continue
+        grupos.setdefault(item_nome.casefold(), []).append(item)
+    return {
+        chave: valores for chave, valores in grupos.items()
+        if len({str(v.get("colecao") or "").strip().casefold() for v in valores}) > 1
+    }
 
 
 def carregar_personagem_oficial(pid: str) -> dict:
@@ -116,24 +125,87 @@ def carregar_personagem_oficial(pid: str) -> dict:
     if persistido:
         referencias = normalizar_reference_pack(persistido.get("reference_pack", []))
         if referencias != persistido.get("reference_pack", []):
-            # Migração não destrutiva: altera apenas o índice lógico de referências.
             persistido = deepcopy(persistido)
             persistido["reference_pack"] = referencias
             _save_json(path, persistido)
     obj = materializar_assets_em_objeto(persistido)
     if obj:
         obj["dna"] = normalizar_dna(obj.get("dna"))
+        obj.setdefault("status", "oficial")
         obj.setdefault("variacoes", [])
         obj.setdefault("metadata", {})
         obj["metadata"].setdefault("usos_permitidos", list(USOS_PADRAO))
         obj["metadata"].setdefault("presets", {"figurinos": [], "cenarios": [], "estacoes": [], "festividades": [], "emocoes": []})
-        # Refinamento 22: defaults aditivos mantêm documentos legados válidos.
         obj["metadata"].setdefault("master_history", [])
         obj["metadata"].setdefault("current_master_asset_ids", {})
         obj.setdefault("reference_pack", [])
         obj.setdefault("color_master", "")
         obj.setdefault("line_art_master", "")
     return obj
+
+
+def _tem_historico_character_master(p: dict) -> bool:
+    metadata = p.get("metadata") or {}
+    return bool(
+        p.get("color_master") or p.get("line_art_master") or p.get("reference_pack")
+        or p.get("variacoes") or p.get("versoes") or metadata.get("master_history")
+        or metadata.get("current_master_asset_ids")
+    )
+
+
+def mel_canonica_protegida(p: dict) -> bool:
+    return (
+        str(p.get("nome") or "").strip().casefold() == "mel"
+        and str(p.get("colecao") or "").strip() == MEL_CANONICAL_COLLECTION
+        and bool(p.get("color_master"))
+        and bool(p.get("reference_pack"))
+        and p.get("status", "oficial") != "arquivado"
+    )
+
+
+def validar_exclusao_permanente(pid: str, confirmacao_explicita: bool = False) -> bool:
+    """Safety gate para qualquer futura exclusão física de Character Master."""
+    p = carregar_personagem_oficial(pid)
+    if not p:
+        raise KeyError(pid)
+    if _tem_historico_character_master(p) and not confirmacao_explicita:
+        raise PermissionError("Character Master com histórico exige confirmação explícita para exclusão permanente.")
+    return True
+
+
+def arquivar_personagem(pid: str) -> dict:
+    """Arquiva sem apagar DNA, Masters, referências, assets, versões ou histórico."""
+    p = carregar_personagem_oficial(pid)
+    if not p:
+        raise KeyError(pid)
+    if mel_canonica_protegida(p):
+        raise PermissionError("A Mel canônica de Pequenas Histórias, Grandes Lições possui Color Master e Reference Pack oficiais e deve permanecer ativa.")
+    if p.get("status") == "arquivado":
+        return p
+    metadata = deepcopy(p.get("metadata") or {})
+    metadata["arquivado_em"] = int(time.time())
+    atualizado = atualizar_personagem_oficial(pid, {"status": "arquivado", "metadata": metadata})
+    idx = _index()
+    for item in idx:
+        if item.get("id") == pid:
+            item["status"] = "arquivado"
+    _save_json(INDEX, idx)
+    return atualizado
+
+
+def restaurar_personagem(pid: str) -> dict:
+    p = carregar_personagem_oficial(pid)
+    if not p:
+        raise KeyError(pid)
+    metadata = deepcopy(p.get("metadata") or {})
+    metadata.pop("arquivado_em", None)
+    atualizado = atualizar_personagem_oficial(pid, {"status": "oficial", "metadata": metadata})
+    idx = _index()
+    for item in idx:
+        if item.get("id") == pid:
+            item["status"] = "oficial"
+    _save_json(INDEX, idx)
+    return atualizado
 
 
 def atualizar_personagem_oficial(pid: str, novos: dict) -> dict:
@@ -156,17 +228,9 @@ def atualizar_personagem_oficial(pid: str, novos: dict) -> dict:
 
 def adicionar_variacao(pid: str, tipo: str, instrucao: str, asset: str = "", metadata: dict | None = None, aprovada: bool = False) -> dict:
     p = carregar_personagem_oficial(pid)
-    if not p:
-        raise KeyError(pid)
-    v = {
-        "id": uuid.uuid4().hex,
-        "tipo": tipo,
-        "instrucao": instrucao,
-        "asset": asset,
-        "metadata": metadata or {},
-        "aprovada": bool(aprovada),
-        "criada_em": int(time.time()),
-    }
+    if not p: raise KeyError(pid)
+    v = {"id": uuid.uuid4().hex, "tipo": tipo, "instrucao": instrucao, "asset": asset,
+         "metadata": metadata or {}, "aprovada": bool(aprovada), "criada_em": int(time.time())}
     p.setdefault("variacoes", []).append(v)
     atualizar_personagem_oficial(pid, {"variacoes": p["variacoes"]})
     return v
@@ -176,8 +240,7 @@ def aprovar_variacao(pid: str, variacao_id: str) -> dict:
     p = carregar_personagem_oficial(pid)
     vars_ = p.get("variacoes", [])
     for v in vars_:
-        if v.get("id") == variacao_id:
-            v["aprovada"] = True
+        if v.get("id") == variacao_id: v["aprovada"] = True
     return atualizar_personagem_oficial(pid, {"variacoes": vars_})
 
 
@@ -205,37 +268,24 @@ def personagem_para_prompt(p: dict, modo: str = "color", variaveis: dict | None 
     visual_prompt = str(dna.get("visual_prompt_master") or "").strip()
     regras_variaveis = dna.get("regras_variaveis") or {}
     regras_ativas = {k: regras_variaveis[k] for k in filtradas if k in regras_variaveis}
-    texto = (
-        f"PERSONAGEM OFICIAL {p.get('nome')}. CHARACTER DNA BLOQUEADO: {campos}. "
+    texto = (f"PERSONAGEM OFICIAL {p.get('nome')}. CHARACTER DNA BLOQUEADO: {campos}. "
         f"Preserve rigorosamente rosto, espécie, proporções fundamentais, olhos, marcas, paleta-base e identidade visual. "
         f"Modo visual: {modo}; uso: {contexto}. Variáveis autorizadas nesta cena: {filtradas}. "
         "Roupas, pose, ação, cenário, estação, festividade, expressão e acessórios temporários podem mudar SOMENTE quando autorizados; "
         "a identidade não muda. A cor de um acessório identitário só pode mudar quando `cor_acessorio_identitario` estiver autorizada; "
-        "sua presença, forma e posição canônicas permanecem bloqueadas."
-    )
-    if visual_prompt:
-        texto += f" PROMPT MESTRE VISUAL OFICIAL: {visual_prompt}"
-    if regras_ativas:
-        texto += f" Regras específicas das variáveis ativas: {regras_ativas}."
-    if proibidas:
-        texto += f" Ignorar alterações não autorizadas nos campos: {proibidas}."
+        "sua presença, forma e posição canônicas permanecem bloqueadas.")
+    if visual_prompt: texto += f" PROMPT MESTRE VISUAL OFICIAL: {visual_prompt}"
+    if regras_ativas: texto += f" Regras específicas das variáveis ativas: {regras_ativas}."
+    if proibidas: texto += f" Ignorar alterações não autorizadas nos campos: {proibidas}."
     return texto
 
 
 def adicionar_referencia(pid: str, asset: str, tipo: str = "cena", origem: str = "book_doctor", metadata: dict | None = None) -> dict:
-    """Adiciona referência ao pack sem substituir Color/Line Art Master."""
     p = carregar_personagem_oficial(pid)
-    if not p:
-        raise KeyError(pid)
+    if not p: raise KeyError(pid)
     refs = list(p.get("reference_pack", []) or [])
-    item = {
-        "id": uuid.uuid4().hex,
-        "asset": asset,
-        "tipo": tipo,
-        "origem": origem,
-        "metadata": metadata or {},
-        "criada_em": int(time.time()),
-    }
+    item = {"id": uuid.uuid4().hex, "asset": asset, "tipo": tipo, "origem": origem,
+            "metadata": metadata or {}, "criada_em": int(time.time())}
     if _identidade_referencia(item) in {_identidade_referencia(ref) for ref in refs}:
         return p
     refs.append(item)
@@ -243,8 +293,6 @@ def adicionar_referencia(pid: str, asset: str, tipo: str = "cena", origem: str =
 
 
 def definir_master_visual(pid: str, asset: str, modo: str = "color") -> dict:
-    """Define um asset já aprovado como Color Master ou Line Art Master com histórico."""
-    if modo not in {"color", "line_art"}:
-        raise ValueError("modo deve ser 'color' ou 'line_art'")
+    if modo not in {"color", "line_art"}: raise ValueError("modo deve ser 'color' ou 'line_art'")
     campo = "color_master" if modo == "color" else "line_art_master"
     return atualizar_personagem_oficial(pid, {campo: asset})
