@@ -117,6 +117,32 @@ def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypa
     assert "futurista" in called["instructions"]
 
 
+def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
+    route = {
+        "route_plan": {"project_label": "História infantil", "audience_label": "3–8 anos"},
+        "anti_duplication": {"ok": True},
+        "requires_author_approval": True,
+    }
+    called = {}
+
+    def fake_natural(text, **kwargs):
+        called["text"] = text
+        called.update(kwargs)
+        return "Entendi: você quer continuar o livro da Mel. Posso preparar o próximo checkpoint."
+
+    monkeypatch.setattr(voice, "build_natural_reply", fake_natural)
+    reply = voice.build_spoken_reply("Continue o livro da Mel", result=route)
+    assert "livro da Mel" in reply
+    assert called["route_result"] is route
+
+
+def test_default_jarvis_voice_is_deeper_original_profile():
+    assert voice.JARVIS_VOICE_ID == "onyx"
+    instructions = voice.JARVIS_VOICE_INSTRUCTIONS.casefold()
+    assert "britânica" in instructions
+    assert "não imite" in instructions
+
+
 def test_push_to_talk_decodes_browser_webm_payload():
     payload = {"id": "rec-1", "data": base64.b64encode(b"fake-webm-audio").decode("ascii"), "mime_type": "audio/webm;codecs=opus"}
     decoded = ptt.decode_recording(payload)
