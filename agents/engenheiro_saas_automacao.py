@@ -1,74 +1,113 @@
-"""Agente técnico do FaithBloom especializado em SaaS robusto e automação.
+"""Agente técnico do FaithBloom especializado em SaaS, Full-Stack e automação.
 
 Este agente não substitui os módulos editoriais. Ele atua como engenheiro/arquiteto
-transversal para evolução do produto, qualidade operacional, integrações,
-automação, segurança, testes, observabilidade e release readiness.
+transversal para evolução do produto, criação de apps e sites, qualidade operacional,
+integrações, automação, segurança, testes, observabilidade e release readiness.
 """
 from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
 
-SCHEMA = "faithbloom.saas-automation-engineer.v1"
+SCHEMA = "faithbloom.saas-fullstack-automation-engineer.v2"
 ROLE_ID = "saas_automation_engineer"
-NAME = "Arquiteto SaaS & Automação"
+NAME = "Arquiteto SaaS, Full-Stack & Automação"
 MISSION = (
-    "Projetar, auditar e evoluir o FaithBloom como SaaS robusto, seguro, testável, "
-    "observável, automatizado e operável em produção, reutilizando a arquitetura existente."
+    "Projetar, construir, auditar e evoluir SaaS, aplicações web, painéis, sites e landing pages "
+    "robustos, seguros, responsivos, testáveis, observáveis, automatizados e operáveis em produção, "
+    "reutilizando a arquitetura existente antes de criar componentes novos."
 )
 
 SKILL_DOMAINS: dict[str, tuple[str, ...]] = {
     "architecture": (
         "software architecture", "modular monolith", "service boundaries", "API design",
         "event-driven patterns", "state machines", "idempotency", "versioning", "anti-duplication",
+        "domain modeling", "clean architecture", "SOLID", "separation of concerns",
     ),
     "backend": (
-        "Python", "FastAPI/ASGI concepts", "background jobs", "queues", "webhooks",
-        "rate limiting", "retries", "timeouts", "circuit breakers", "structured errors",
+        "Python", "FastAPI/ASGI concepts", "REST APIs", "JSON APIs", "background jobs", "queues",
+        "webhooks", "rate limiting", "retries", "timeouts", "circuit breakers", "structured errors",
+        "file processing", "API pagination", "caching", "service integrations",
+    ),
+    "fullstack": (
+        "full-stack application development", "frontend-backend integration", "CRUD applications",
+        "dashboard development", "admin portals", "internal tools", "forms and validation",
+        "real-time UI concepts", "session management", "role-aware interfaces", "end-to-end feature delivery",
     ),
     "frontend": (
-        "Streamlit", "HTML/CSS/JavaScript", "responsive UI", "accessibility",
-        "component architecture", "state synchronization", "browser/mobile compatibility",
+        "Streamlit", "HTML", "CSS", "JavaScript", "TypeScript concepts", "React concepts", "Next.js concepts",
+        "responsive UI", "mobile-first design", "accessibility", "component architecture", "design systems",
+        "state synchronization", "browser/mobile compatibility", "microinteractions", "performance", "PWA concepts",
+    ),
+    "websites": (
+        "business websites", "marketing websites", "landing pages", "product pages", "pricing pages",
+        "contact pages", "FAQ pages", "blog structure", "navigation architecture", "conversion flows",
+        "lead capture", "newsletter forms", "cookie/consent UX", "responsive sections", "reusable page sections",
+    ),
+    "ux_ui": (
+        "information architecture", "user flows", "wireframes", "visual hierarchy", "interaction design",
+        "responsive layouts", "empty states", "loading states", "error states", "onboarding UX",
+        "form UX", "accessibility WCAG concepts", "usability", "design consistency",
+    ),
+    "seo_growth": (
+        "technical SEO", "semantic HTML", "metadata", "Open Graph", "structured data concepts",
+        "sitemap", "robots.txt", "Core Web Vitals concepts", "analytics integration", "conversion tracking",
+        "A/B testing concepts", "landing page CRO", "performance budgets",
     ),
     "data": (
         "PostgreSQL/Supabase", "schema design", "migrations", "transactions", "indexes",
-        "row-level security", "data retention", "backup/restore", "audit trails",
+        "row-level security", "data retention", "backup/restore", "audit trails", "query optimization",
+        "data validation", "storage buckets", "signed URLs concepts",
     ),
     "auth_security": (
         "authentication", "authorization", "RBAC", "tenant isolation", "secrets management",
         "OWASP", "input validation", "secure uploads", "least privilege", "privacy by design",
+        "CSRF/XSS/SQL injection awareness", "secure cookies", "session security", "CORS concepts",
     ),
     "saas_product": (
         "multi-tenancy", "plans/entitlements", "usage metering", "quotas", "feature flags",
-        "onboarding", "account lifecycle", "billing boundaries", "admin tooling",
+        "onboarding", "account lifecycle", "billing boundaries", "admin tooling", "trial flows",
+        "subscription UX", "workspace concepts", "invites", "audit history", "product analytics",
     ),
     "automation": (
         "workflow automation", "schedulers", "webhooks", "event triggers", "job orchestration",
         "human approval gates", "deduplication", "replay safety", "dead-letter handling",
+        "cron concepts", "automation state machines", "reconciliation jobs", "notifications",
+    ),
+    "integrations": (
+        "third-party APIs", "OAuth concepts", "webhook consumers", "webhook producers", "email integrations",
+        "calendar integrations", "storage integrations", "payment integration boundaries", "API adapters",
+        "provider abstraction", "fallback providers", "integration testing",
     ),
     "ai_agents": (
         "LLM orchestration", "tool routing", "structured outputs", "prompt/version management",
         "guardrails", "cost controls", "fallback models", "evaluation", "human-in-the-loop",
+        "agent workflows", "RAG concepts", "context management", "tool permission boundaries",
     ),
     "testing": (
         "unit tests", "integration tests", "contract tests", "end-to-end tests", "regression tests",
         "browser tests", "load tests", "failure injection", "test fixtures", "CI quality gates",
+        "UI smoke tests", "API tests", "migration tests", "accessibility tests concepts",
     ),
     "devops": (
         "Git/GitHub", "branching", "pull requests", "GitHub Actions", "CI/CD", "Streamlit Cloud",
         "containers", "environment parity", "release strategy", "rollback", "zero-downtime thinking",
+        "environment variables", "preview environments concepts", "deployment diagnostics",
     ),
     "observability": (
         "structured logging", "metrics", "tracing", "health checks", "SLO/SLI", "alerting",
         "error budgets", "incident diagnostics", "correlation IDs", "operational dashboards",
+        "frontend error monitoring concepts", "audit events",
     ),
     "reliability": (
         "graceful degradation", "fault tolerance", "backpressure", "concurrency safety",
         "recovery points", "disaster recovery", "capacity planning", "performance optimization",
+        "cache invalidation", "retry safety", "provider outage fallbacks",
     ),
     "quality": (
         "code review", "static analysis", "dependency hygiene", "documentation", "ADR",
         "release checklists", "technical debt control", "maintainability", "developer experience",
+        "naming conventions", "modularity", "refactoring safety",
     ),
 }
 
@@ -81,6 +120,8 @@ NON_NEGOTIABLES = (
     "não declarar produção pronta sem evidência de testes e checks necessários",
     "preservar original, histórico, versões e recovery path antes de migrações",
     "manter ações pagas ou de alto impacto atrás de guardrails e aprovação",
+    "interfaces devem ser responsivas, acessíveis e funcionais antes de serem consideradas concluídas",
+    "sites e landing pages devem separar conteúdo, apresentação e integrações para facilitar manutenção",
 )
 
 TASK_HINTS = {
@@ -88,11 +129,15 @@ TASK_HINTS = {
     "automation": ("automat", "workflow", "fila", "job", "webhook", "gatilho", "scheduler"),
     "security": ("segurança", "seguranca", "auth", "login", "permiss", "token", "secret"),
     "data": ("supabase", "banco", "database", "sql", "persist", "migra", "backup"),
-    "frontend": ("streamlit", "interface", "ui", "ux", "responsiv", "mobile", "css"),
+    "frontend": ("streamlit", "interface", "ui", "ux", "responsiv", "mobile", "css", "frontend"),
+    "fullstack": ("full stack", "fullstack", "app", "aplicativo", "aplicação", "aplicacao", "dashboard", "painel", "crud"),
+    "websites": ("site", "website", "landing page", "landing", "página de venda", "pagina de venda", "página institucional", "pagina institucional"),
+    "seo_growth": ("seo", "google", "conversão", "conversao", "analytics", "meta tag", "sitemap"),
     "devops": ("deploy", "github actions", "ci", "cd", "release", "rollback", "produção", "producao"),
     "testing": ("teste", "pytest", "e2e", "regress", "load test", "qa"),
     "observability": ("log", "métrica", "metrica", "monitor", "alert", "trace", "observab"),
     "ai_agents": ("agente", "llm", "openrouter", "gemini", "prompt", "tool", "jarvis"),
+    "integrations": ("api", "oauth", "integra", "email", "calendar", "pagamento"),
 }
 
 HIGH_IMPACT_HINTS = (
@@ -131,12 +176,13 @@ def build_execution_plan(text: str, *, existing_components: list[str] | None = N
     components = list(existing_components or [])
     high_impact = requires_explicit_approval(clean)
     steps = [
-        {"phase": "verify", "action": "Auditar arquitetura, branch, dependências, módulos e testes relacionados antes de editar."},
-        {"phase": "reuse", "action": "Mapear componentes existentes que já resolvem total ou parcialmente o pedido."},
+        {"phase": "verify", "action": "Auditar arquitetura, branch, dependências, módulos, UI e testes relacionados antes de editar."},
+        {"phase": "reuse", "action": "Mapear componentes, estilos, serviços e integrações existentes que já resolvem total ou parcialmente o pedido."},
+        {"phase": "design", "action": "Definir fluxo, estados, responsividade, acessibilidade, contratos de API e persistência antes da implementação."},
         {"phase": "extend", "action": "Preferir extensão compatível e pequena sobre componentes canônicos existentes."},
-        {"phase": "implement", "action": "Criar código novo somente para lacunas comprovadas, com interfaces explícitas e rollback."},
-        {"phase": "validate", "action": "Executar testes unitários, integração/regressão aplicáveis e validar falhas reais de runtime."},
-        {"phase": "release", "action": "Confirmar CI, observabilidade, segurança, migrações, rollback e aprovação humana antes de release."},
+        {"phase": "implement", "action": "Criar código novo somente para lacunas comprovadas, com interfaces explícitas, tratamento de erros e rollback."},
+        {"phase": "validate", "action": "Executar testes unitários, integração, UI/E2E/regressão aplicáveis e validar falhas reais de runtime."},
+        {"phase": "release", "action": "Confirmar CI, observabilidade, segurança, migrações, SEO/performance quando aplicável, rollback e aprovação humana antes de release."},
     ]
     return {
         "schema": SCHEMA,
