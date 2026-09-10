@@ -1,8 +1,8 @@
 """Camada de voz do Jarvis sobre os serviços já existentes do FaithBloom.
 
 Esta implementação NÃO duplica o Audiobook Studio nem o TTS do OpenRouter.
-Ela acrescenta somente transcrição de fala (STT) e coordenação de uma resposta
-curta do Jarvis, reutilizando ``openrouter_client.gerar_audio`` para a voz.
+Ela acrescenta transcrição de fala (STT), coordenação de resposta curta e integra
+clima atual via Open-Meteo, reutilizando ``openrouter_client.gerar_audio`` na saída.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from controle_geracao import (
     iniciar_requisicao,
 )
 from jarvis_assistant import interpret_request
+from jarvis_weather import build_weather_reply, extract_location, is_weather_request
 from openrouter_client import (
     OPENROUTER_BASE_URL,
     _json_resposta,
@@ -99,18 +100,8 @@ def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "p
 
 
 def _parece_pedido_tempo(text: str) -> bool:
-    value = (text or "").casefold()
-    termos_tempo = (
-        "previsão do tempo",
-        "previsao do tempo",
-        "tempo hoje",
-        "vai chover",
-        "chuva hoje",
-        "temperatura hoje",
-        "clima hoje",
-        "weather",
-    )
-    return any(x in value for x in termos_tempo)
+    """Compatibilidade interna: delega a detecção ao módulo de clima."""
+    return is_weather_request(text)
 
 
 def _parece_continuar_projeto(text: str) -> bool:
@@ -123,17 +114,18 @@ def build_spoken_reply(
     *,
     result: dict | None = None,
     project_progress: dict | None = None,
+    weather_location: str | None = None,
 ) -> str:
     """Cria uma resposta falada curta sem gastar uma segunda chamada de LLM."""
     texto = (transcript or "").strip()
     if not texto:
         return "Não consegui ouvir uma mensagem. Grave novamente e tente de novo."
 
-    if _parece_pedido_tempo(texto):
-        return (
-            "Eu já consigo conversar por voz, mas a previsão do tempo em tempo real ainda não está conectada ao FaithBloom. "
-            "Quando o módulo de clima for ativado, eu poderei responder isso com dados atuais."
-        )
+    if is_weather_request(texto):
+        location = extract_location(texto) or (weather_location or "").strip()
+        if not location:
+            return "Claro. Para consultar a previsão do tempo, me diga a cidade. Por exemplo: Jarvis, como está o tempo em Toyohashi?"
+        return build_weather_reply(location)
 
     if project_progress and _parece_continuar_projeto(texto):
         return str(project_progress.get("message") or "Encontrei seu projeto atual e posso continuar do próximo checkpoint.")
