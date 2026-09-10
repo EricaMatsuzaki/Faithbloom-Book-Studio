@@ -98,9 +98,9 @@ def build_spoken_reply(
 ) -> str:
     """Cria uma resposta falada curta.
 
-    Clima e progresso usam dados determinísticos. Para a experiência conversacional
-    da UI, ``natural=True`` usa o modelo de texto já existente para compreender o
-    pedido e evitar respostas repetitivas, preservando a rota e as aprovações.
+    Clima e progresso usam dados determinísticos. Na UI, quando a rota já foi
+    interpretada, a resposta passa automaticamente pela camada conversacional
+    para evitar a mesma frase genérica em pedidos diferentes.
     """
     texto = (transcript or "").strip()
     if not texto:
@@ -116,7 +116,8 @@ def build_spoken_reply(
         return str(project_progress.get("message") or "Encontrei seu projeto atual e posso continuar do próximo checkpoint.")
 
     interpreted = result or interpret_request(texto)
-    if natural:
+    use_natural_dialogue = natural or result is not None
+    if use_natural_dialogue:
         try:
             return build_natural_reply(
                 texto,
