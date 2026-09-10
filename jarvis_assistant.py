@@ -19,8 +19,6 @@ AUTONOMY_MODES = {
     "manager": "Gerente",
 }
 
-# More explicit formats come first. This prevents a certification keyword such as
-# "JLPT" from overriding an explicit request for an "apostila".
 PROJECT_HINTS = [
     ("coloring_book", ("colorir", "pintar", "line art")),
     ("activity_book", ("atividade", "atividades", "labirinto", "caça-palavras")),
@@ -37,6 +35,16 @@ PROJECT_HINTS = [
     ("real_life_story", ("história real", "vida real", "experiência real")),
     ("children_story", ("história infantil", "livro infantil", "história para criança", "história")),
 ]
+
+# Canonical existing pages. Jarvis only points to them; it does not clone their logic.
+PROJECT_START_PAGES = {
+    "children_story": "pages/39_✍️_Historia_4_Estilos.py",
+    "real_life_story": "pages/42_🌿_Historias_Inspiradas_na_Vida_Real.py",
+    "activity_book": "pages/23_🧩_Activity_Book_Studio.py",
+    "coloring_book": "pages/3_🖍️_Livros_de_Colorir.py",
+    "comic": "pages/40_➕_Explorar_outros_estilos.py",
+}
+DEFAULT_START_PAGE = "pages/0_🤖_Orquestrador_FaithBloom.py"
 
 
 def _norm(text: str) -> str:
@@ -104,6 +112,11 @@ def infer_derived_outputs(text: str) -> list[str]:
     return outputs
 
 
+def next_page_for_project(project_type: str) -> str:
+    """Return an existing FaithBloom page instead of creating parallel flows."""
+    return PROJECT_START_PAGES.get(project_type, DEFAULT_START_PAGE)
+
+
 def interpret_request(text: str) -> dict:
     """Turn one author sentence into an explicit, inspectable routing proposal."""
     if not (text or "").strip():
@@ -133,6 +146,7 @@ def interpret_request(text: str) -> dict:
         "anti_duplication": audit,
         "requires_author_approval": True,
         "next_action": "review_and_approve_route",
+        "next_page": next_page_for_project(project_type),
     }
 
 
@@ -157,4 +171,5 @@ def safe_summary(result: dict) -> dict:
         "editorial_line": result.get("editorial_line"),
         "derived_outputs": result.get("derived_outputs", []),
         "next_action": result.get("next_action"),
+        "next_page": result.get("next_page"),
     })
