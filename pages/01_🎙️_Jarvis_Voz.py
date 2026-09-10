@@ -14,6 +14,77 @@ from jarvis_weather import is_weather_request
 st.set_page_config(page_title="Jarvis por Voz · FaithBloom", page_icon="🎙️", layout="wide")
 aplicar_estilo()
 
+
+def _audio_format(uploaded) -> str:
+    """Descobre o formato real sem assumir WAV para todo tipo de entrada."""
+    mime = str(getattr(uploaded, "type", "") or "").lower()
+    name = str(getattr(uploaded, "name", "") or "").lower()
+    by_mime = {
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/flac": "flac",
+        "audio/x-flac": "flac",
+        "audio/mp4": "m4a",
+        "audio/m4a": "m4a",
+        "audio/x-m4a": "m4a",
+        "audio/ogg": "ogg",
+        "audio/webm": "webm",
+        "audio/aac": "aac",
+    }
+    if mime in by_mime:
+        return by_mime[mime]
+    for ext in ("wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"):
+        if name.endswith(f".{ext}"):
+            return ext
+    return "wav"
+
+
+def _process_request(
+    transcript: str,
+    *,
+    language: str,
+    weather_location: str,
+    project_progress: dict | None,
+) -> None:
+    """Mantém uma única rota de processamento para voz, upload e texto de contingência."""
+    transcript = (transcript or "").strip()
+    if not transcript:
+        raise ValueError("Não encontrei uma mensagem para enviar ao Jarvis.")
+
+    st.session_state["jarvis_voice_transcript"] = transcript
+    st.session_state["jarvis_request"] = transcript
+
+    lower = transcript.casefold()
+    is_weather = is_weather_request(transcript)
+    result = None
+    if not is_weather:
+        result = interpret_request(transcript)
+        st.session_state["jarvis_result"] = result
+
+    reply = build_spoken_reply(
+        transcript,
+        result=result,
+        project_progress=project_progress,
+        weather_location=weather_location,
+    )
+    st.session_state["jarvis_voice_reply"] = reply
+
+    name = f"jarvis_{uuid.uuid4().hex[:10]}"
+    audio_path = synthesize_reply(reply, name=name)
+    st.session_state["jarvis_voice_audio"] = audio_path
+
+    if is_weather:
+        st.session_state["jarvis_visual_expression"] = "normal"
+    elif any(x in lower for x in ("incrível", "incrivel", "sensacional", "uau")):
+        st.session_state["jarvis_visual_expression"] = "star"
+    elif any(x in lower for x in ("amor", "carinho", "amizade", "família", "familia", "fé", "fe")):
+        st.session_state["jarvis_visual_expression"] = "heart"
+    else:
+        st.session_state["jarvis_visual_expression"] = "normal"
+
+
 st.markdown(
     """
     <style>
@@ -38,8 +109,8 @@ st.markdown(
 )
 
 st.info(
-    "🎙️ Sua gravação só é enviada para transcrição quando você toca em **Enviar para o Jarvis**. "
-    "A resposta também fica escrita na tela. Algumas versões do navegador podem bloquear reprodução automática de áudio."
+    "🎙️ Toque no microfone, grave e finalize a gravação. Quando aparecer **✅ Gravação pronta**, "
+    "o botão **Enviar para o Jarvis** será liberado. Se o navegador bloquear o microfone, use o envio de áudio abaixo."
 )
 
 current_state = st.session_state.get("state")
@@ -48,7 +119,41 @@ project_progress = inspect_project_state(current_state) if current_state else No
 left, right = st.columns([1.7, 1])
 with left:
     st.markdown("### 🎤 Fale comigo")
-    recording = st.audio_input("Grave sua mensagem para o Jarvis")
+
+    recording = st.audio_input(
+        "Grave sua mensagem para o Jarvis",
+        key="jarvis_audio_input",
+        help="No celular, permita o acesso ao microfone quando o navegador solicitar.",
+    )
+
+    uploaded_audio = None
+    if recording is not None:
+        try:
+            recording_bytes = recording.getvalue()
+        except Exception:
+            recording_bytes = b""
+        if recording_bytes:
+            st.success(f"✅ Gravação pronta · {max(1, len(recording_bytes) // 1024)} KB")
+        else:
+            st.warning("A gravação apareceu, mas está vazia. Grave novamente.")
+    else:
+        with st.expander("📎 Se o microfone não abrir, enviar um áudio gravado no celular"):
+            uploaded_audio = st.file_uploader(
+                "Escolha um áudio",
+                type=["wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"],
+                key="jarvis_audio_upload",
+                help="Você pode usar um áudio gravado no app Gravador/Notas de Voz do celular.",
+            )
+
+    st.caption("⌨️ Plano B: se preferir, você também pode digitar a mesma pergunta sem sair desta tela.")
+    typed_message = st.text_area(
+        "Mensagem para o Jarvis (opcional)",
+        value="",
+        key="jarvis_voice_typed_message",
+        height=90,
+        placeholder="Ex.: Jarvis, como está o tempo em Toyohashi?",
+        label_visibility="collapsed",
+    )
 
     controls = st.columns([1, 1.4])
     with controls[0]:
@@ -69,51 +174,43 @@ with left:
 
     st.caption("🌦️ Exemplos: “Jarvis, como está o tempo em Toyohashi?” · “Vai chover hoje?”")
 
-    if st.button(
+    audio_source = recording or uploaded_audio
+    can_send = audio_source is not None or bool(typed_message.strip())
+    send = st.button(
         "✨ Enviar para o Jarvis",
         type="primary",
         use_container_width=True,
-        disabled=recording is None,
-    ):
+        disabled=not can_send,
+        key="jarvis_voice_send",
+    )
+
+    if send:
         try:
             st.session_state["jarvis_visual_expression"] = "thinking"
             with st.spinner("Jarvis está ouvindo e organizando sua mensagem..."):
-                transcricao = transcribe_audio(recording.getvalue(), fmt="wav", language=language)
-                transcript = transcricao["text"]
-                st.session_state["jarvis_voice_transcript"] = transcript
-                st.session_state["jarvis_request"] = transcript
-
-                # Pedidos editoriais continuam usando exatamente o mesmo interpretador/roteador.
-                lower = transcript.casefold()
-                is_weather = is_weather_request(transcript)
-                result = None
-                if not is_weather:
-                    result = interpret_request(transcript)
-                    st.session_state["jarvis_result"] = result
-
-                reply = build_spoken_reply(
-                    transcript,
-                    result=result,
-                    project_progress=project_progress,
-                    weather_location=weather_location,
-                )
-                st.session_state["jarvis_voice_reply"] = reply
-
-                name = f"jarvis_{uuid.uuid4().hex[:10]}"
-                audio_path = synthesize_reply(reply, name=name)
-                st.session_state["jarvis_voice_audio"] = audio_path
-
-                if is_weather:
-                    st.session_state["jarvis_visual_expression"] = "normal"
-                elif any(x in lower for x in ("incrível", "incrivel", "sensacional", "uau")):
-                    st.session_state["jarvis_visual_expression"] = "star"
-                elif any(x in lower for x in ("amor", "carinho", "amizade", "família", "familia", "fé", "fe")):
-                    st.session_state["jarvis_visual_expression"] = "heart"
+                if typed_message.strip():
+                    transcript = typed_message.strip()
                 else:
-                    st.session_state["jarvis_visual_expression"] = "normal"
+                    audio_bytes = audio_source.getvalue()
+                    if not audio_bytes:
+                        raise ValueError("A gravação está vazia. Grave novamente ou envie um arquivo de áudio.")
+                    fmt = _audio_format(audio_source)
+                    transcricao = transcribe_audio(audio_bytes, fmt=fmt, language=language)
+                    transcript = transcricao["text"]
+
+                _process_request(
+                    transcript,
+                    language=language,
+                    weather_location=weather_location,
+                    project_progress=project_progress,
+                )
+            st.success("✅ Mensagem enviada e processada pelo Jarvis.")
         except Exception as exc:
             st.session_state["jarvis_visual_expression"] = "attention"
-            st.error(f"Não consegui concluir a conversa por voz: {exc}")
+            message = str(exc)
+            st.error(f"Não consegui concluir a conversa por voz: {message}")
+            if "micro" in message.casefold() or "audio" in message.casefold() or "áudio" in message.casefold():
+                st.caption("💡 Tente o envio de arquivo de áudio ou digite a mensagem no campo Plano B acima.")
 
     transcript = st.session_state.get("jarvis_voice_transcript")
     reply = st.session_state.get("jarvis_voice_reply")
@@ -131,12 +228,19 @@ with left:
 with right:
     with st.container(border=True):
         st.markdown("#### Como funciona")
-        st.write("🎙️ Você grava")
+        st.write("🎙️ Você grava ou envia um áudio")
         st.write("📝 Jarvis transcreve")
         st.write("🌦️ Consulta clima quando solicitado")
         st.write("🧠 Usa o roteador editorial nos pedidos de projeto")
         st.write("🔊 Reutiliza o TTS do FaithBloom")
         st.write("👀 Você continua aprovando decisões importantes")
+
+    with st.container(border=True):
+        st.markdown("#### 📱 Se estiver no iPhone")
+        st.caption(
+            "O gravador depende da permissão de microfone do navegador. Se tocar no microfone e nada acontecer, "
+            "permita o microfone para o site e recarregue a página. Enquanto isso, o upload de áudio e o campo digitado continuam disponíveis."
+        )
 
     with st.container(border=True):
         st.markdown("#### 🌦️ Clima")
