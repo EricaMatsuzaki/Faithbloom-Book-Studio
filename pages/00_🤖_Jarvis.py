@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title
+from armazenamento import listar_livros, listar_livros_colorir
 from jarvis_assistant import AUTONOMY_MODES, build_status_cards, interpret_request
 
 st.set_page_config(page_title="Jarvis · FaithBloom", page_icon="🤖", layout="wide")
@@ -15,7 +16,16 @@ hero(
     "Praticidade sem perder o controle · MVP funcional",
 )
 
-st.info("🌷 Nesta primeira versão, Jarvis entende a intenção e prepara a rota. Ele não publica, não gasta créditos e não altera Masters oficiais sem sua aprovação.")
+st.info("🌷 Jarvis já entende sua intenção, verifica a rota e pode encaminhar você ao fluxo existente correto. Ele não publica, não gasta créditos e não altera Masters oficiais sem sua aprovação.")
+
+try:
+    recent_story_books = listar_livros()[:3]
+except Exception:
+    recent_story_books = []
+try:
+    recent_coloring_books = listar_livros_colorir()[:2]
+except Exception:
+    recent_coloring_books = []
 
 left, right = st.columns([2.1, 1])
 with left:
@@ -43,7 +53,7 @@ with left:
         list(AUTONOMY_MODES),
         format_func=lambda x: {"assistant": "🤝 Assistente", "copilot": "🧭 Copiloto", "manager": "🧠 Gerente"}[x],
         horizontal=True,
-        help="O MVP ainda mantém aprovação humana nos pontos críticos em todos os modos.",
+        help="O MVP mantém aprovação humana nos pontos críticos em todos os modos.",
     )
     if st.button("✨ Jarvis, organize isso", type="primary", use_container_width=True, disabled=not request.strip()):
         try:
@@ -58,11 +68,21 @@ with right:
     st.markdown("### 🤖 Jarvis Hoje")
     with st.container(border=True):
         st.markdown("**Estado do MVP**")
-        st.write("🟢 Interpretação de intenção")
-        st.write("🟢 Roteamento editorial")
+        st.write("🟢 Entende pedidos em linguagem natural")
+        st.write("🟢 Roteia para módulos existentes")
         st.write("🟢 Proteção anti-duplicação")
-        st.write("🟢 Aprovação humana")
+        st.write("🟢 Encaminhamento com sua confirmação")
         st.write("🟡 Voz e briefing diário — próximos")
+
+    if recent_story_books or recent_coloring_books:
+        st.markdown("#### 📚 Projetos recentes")
+        for item in recent_story_books:
+            st.caption(f"📖 {item.get('titulo') or '(sem título)'} · {item.get('colecao') or 'sem coleção'}")
+        for item in recent_coloring_books:
+            st.caption(f"🖍️ {item.get('titulo') or '(sem título)'}")
+    else:
+        st.caption("📚 Seus projetos recentes aparecerão aqui quando houver itens salvos.")
+
     st.markdown("#### ⚡ Acessos rápidos")
     st.page_link("pages/0_🤖_Orquestrador_FaithBloom.py", label="🧠 Orquestrador avançado", use_container_width=True)
     st.page_link("pages/14_👥_Character_Universe.py", label="👥 Personagens", use_container_width=True)
@@ -107,9 +127,13 @@ if result:
     st.write(" → ".join(labels.get(x, x.replace("_", " ").title()) for x in plan.get("route", [])))
 
     st.markdown("### 👀 Próximo checkpoint")
-    st.write("Jarvis preparou o caminho, mas ainda não iniciou geração cara nem publicação. O próximo passo é confirmar a proposta e entrar no fluxo apropriado.")
-    a, b = st.columns(2)
-    a.page_link("pages/0_🤖_Orquestrador_FaithBloom.py", label="✅ Continuar no Orquestrador", use_container_width=True)
-    b.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="🪄 Abrir Prompt Mestre", use_container_width=True)
+    st.write("Jarvis preparou o caminho. Ao confirmar, ele apenas leva você ao fluxo do FaithBloom que já existe para esse projeto; nada caro ou irreversível começa automaticamente.")
+    confirm, advanced = st.columns([1.4, 1])
+    if confirm.button("✅ Confirmar e continuar com Jarvis", type="primary", use_container_width=True, disabled=not audit["ok"]):
+        st.session_state["jarvis_approved_request"] = result["request"]
+        st.session_state["jarvis_approved_route"] = result["route_plan"]
+        st.session_state["jarvis_handoff_from_mvp"] = True
+        st.switch_page(result.get("next_page") or "pages/0_🤖_Orquestrador_FaithBloom.py")
+    advanced.page_link("pages/0_🤖_Orquestrador_FaithBloom.py", label="🧠 Abrir modo avançado", use_container_width=True)
 
 st.caption("Jarvis MVP · FaithBloom · camada conversacional sobre o Orquestrador existente — não duplica Studios ou Guardians.")
