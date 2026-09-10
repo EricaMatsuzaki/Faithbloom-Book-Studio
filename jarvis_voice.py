@@ -2,7 +2,7 @@
 
 Esta implementação NÃO duplica o Audiobook Studio nem o TTS do OpenRouter.
 Ela acrescenta transcrição de fala (STT), coordenação de resposta curta e integra
-clima atual via Open-Meteo, reutilizando ``openrouter_client.gerar_audio`` na saída.
+clima via Open-Meteo, reutilizando ``openrouter_client.gerar_audio`` na saída.
 """
 from __future__ import annotations
 
@@ -20,13 +20,8 @@ from controle_geracao import (
     iniciar_requisicao,
 )
 from jarvis_assistant import interpret_request
-from jarvis_weather import build_weather_reply, extract_location, is_weather_request
-from openrouter_client import (
-    OPENROUTER_BASE_URL,
-    _json_resposta,
-    _post_com_retry,
-    gerar_audio,
-)
+from jarvis_weather import build_weather_reply, extract_location, is_weather_request, requested_day_offset
+from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_retry, gerar_audio
 
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
 JARVIS_VOICE_MODEL = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "openai/gpt-4o-mini-tts-2025-12-15")
@@ -52,26 +47,16 @@ def _normalizar_formato(fmt: str) -> str:
 
 
 def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "pt") -> dict[str, Any]:
-    """Transcreve áudio pelo endpoint STT, com guardrails de custo já existentes."""
     if not audio_bytes:
         raise ValueError("Grave uma mensagem antes de enviar ao Jarvis.")
     formato = _normalizar_formato(fmt)
     idioma = (language or "pt").strip()
-
     digest = hashlib.sha256(audio_bytes).hexdigest()[:24]
     assinatura_conteudo = f"jarvis-stt|{digest}|format:{formato}|language:{idioma}"
     estimativa = max(0.001, POLITICA.estimativa_audio_min_usd * 0.10)
-    req_id, assinatura, estimativa, inicio = iniciar_requisicao(
-        "audio", MODELO_TRANSCRICAO, assinatura_conteudo, estimativa
-    )
+    req_id, assinatura, estimativa, inicio = iniciar_requisicao("audio", MODELO_TRANSCRICAO, assinatura_conteudo, estimativa)
     try:
-        payload = {
-            "model": MODELO_TRANSCRICAO,
-            "input_audio": {
-                "data": base64.b64encode(audio_bytes).decode("ascii"),
-                "format": formato,
-            },
-        }
+        payload = {"model": MODELO_TRANSCRICAO, "input_audio": {"data": base64.b64encode(audio_bytes).decode("ascii"), "format": formato}}
         if idioma:
             payload["language"] = idioma
         resp = _post_com_retry(f"{OPENROUTER_BASE_URL}/audio/transcriptions", payload, 60)
@@ -79,28 +64,10 @@ def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "p
         texto = str(dados.get("text") or "").strip()
         if not texto:
             raise JarvisVoiceError("Não consegui entender a gravação. Tente falar um pouco mais perto do microfone.")
-        finalizar_requisicao(
-            req_id,
-            assinatura,
-            "audio",
-            MODELO_TRANSCRICAO,
-            estimativa,
-            inicio,
-            "sucesso",
-            extrair_custo_reportado(dados),
-        )
+        finalizar_requisicao(req_id, assinatura, "audio", MODELO_TRANSCRICAO, estimativa, inicio, "sucesso", extrair_custo_reportado(dados))
         return {"text": texto, "model": MODELO_TRANSCRICAO, "usage": dados.get("usage")}
     except Exception as exc:
-        finalizar_requisicao(
-            req_id,
-            assinatura,
-            "audio",
-            MODELO_TRANSCRICAO,
-            estimativa,
-            inicio,
-            "erro",
-            detalhe=sanitizar_texto(str(exc)),
-        )
+        finalizar_requisicao(req_id, assinatura, "audio", MODELO_TRANSCRICAO, estimativa, inicio, "erro", detalhe=sanitizar_texto(str(exc)))
         raise
     except BaseException:
         liberar_requisicao(assinatura)
@@ -132,7 +99,7 @@ def build_spoken_reply(
         location = extract_location(texto) or (weather_location or "").strip()
         if not location:
             return "Claro. Para consultar a previsão do tempo, me diga a cidade. Por exemplo: Jarvis, como está o tempo em Toyohashi?"
-        return build_weather_reply(location)
+        return build_weather_reply(location, day_offset=requested_day_offset(texto))
 
     if project_progress and _parece_continuar_projeto(texto):
         return str(project_progress.get("message") or "Encontrei seu projeto atual e posso continuar do próximo checkpoint.")
@@ -153,18 +120,10 @@ def build_spoken_reply(
 
 
 def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | None = None) -> str:
-    """Reutiliza o TTS oficial com um perfil sonoro específico do Jarvis.
-
-    O Audiobook Studio mantém sua configuração própria. O Jarvis usa por padrão
-    um modelo de speech com MP3 e instruções de estilo compatíveis com OpenRouter.
-    """
+    """Reutiliza o TTS oficial com um perfil sonoro específico do Jarvis."""
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
     return gerar_audio(
-        text.strip(),
-        name,
-        voice=voice or JARVIS_VOICE_ID,
-        model=JARVIS_VOICE_MODEL,
-        instructions=JARVIS_VOICE_INSTRUCTIONS,
-        response_format="mp3",
+        text.strip(), name, voice=voice or JARVIS_VOICE_ID, model=JARVIS_VOICE_MODEL,
+        instructions=JARVIS_VOICE_INSTRUCTIONS, response_format="mp3",
     )
