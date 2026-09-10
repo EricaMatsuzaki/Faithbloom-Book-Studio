@@ -1,5 +1,8 @@
+import base64
+
 import pytest
 
+import jarvis_push_to_talk as ptt
 import jarvis_voice as voice
 
 
@@ -93,3 +96,23 @@ def test_synthesize_reply_delegates_to_existing_tts(monkeypatch):
     path = voice.synthesize_reply("Olá, Erica!", name="jarvis_teste", voice="voz-1")
     assert path == "saida_audio/mock.mp3"
     assert called == {"text": "Olá, Erica!", "name": "jarvis_teste", "voice": "voz-1"}
+
+
+def test_push_to_talk_decodes_browser_webm_payload():
+    payload = {
+        "id": "rec-1",
+        "data": base64.b64encode(b"fake-webm-audio").decode("ascii"),
+        "mime_type": "audio/webm;codecs=opus",
+    }
+    decoded = ptt.decode_recording(payload)
+    assert decoded == (b"fake-webm-audio", "webm", "rec-1")
+
+
+def test_push_to_talk_maps_ios_mp4_to_m4a():
+    payload = {
+        "id": "rec-ios",
+        "data": base64.b64encode(b"fake-mp4-audio").decode("ascii"),
+        "mime_type": "audio/mp4",
+    }
+    decoded = ptt.decode_recording(payload)
+    assert decoded == (b"fake-mp4-audio", "m4a", "rec-ios")
