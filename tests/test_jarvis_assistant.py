@@ -32,6 +32,21 @@ def test_jarvis_can_request_existing_derived_studios():
     assert "music" in route
 
 
+def test_inspiring_film_is_origin_not_automatic_video_output():
+    result = jarvis.interpret_request("Crie uma história infantil inspirada em um filme sobre coragem")
+    assert result["origin"] == "inspiring_work"
+    assert "animation_video" not in result["route_plan"]["route"]
+
+
+def test_jarvis_handoff_reuses_existing_pages():
+    story = jarvis.interpret_request("Crie uma história infantil")
+    coloring = jarvis.interpret_request("Crie um livro de colorir")
+    activity = jarvis.interpret_request("Crie um livro de atividades")
+    assert story["next_page"] == "pages/39_✍️_Historia_4_Estilos.py"
+    assert coloring["next_page"] == "pages/3_🖍️_Livros_de_Colorir.py"
+    assert activity["next_page"] == "pages/23_🧩_Activity_Book_Studio.py"
+
+
 def test_jarvis_never_auto_publishes():
     result = jarvis.interpret_request("Crie uma história infantil")
     assert result["route_plan"]["auto_publish"] is False
