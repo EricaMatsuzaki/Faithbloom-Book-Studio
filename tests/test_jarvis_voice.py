@@ -131,7 +131,7 @@ def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
         return "Entendi: você quer continuar o livro da Mel. Posso preparar o próximo checkpoint."
 
     monkeypatch.setattr(voice, "build_natural_reply", fake_natural)
-    reply = voice.build_spoken_reply("Continue o livro da Mel", result=route)
+    reply = voice.build_spoken_reply("Continue o livro da Mel", result=route, natural=True)
     assert "livro da Mel" in reply
     assert called["route_result"] is route
 
@@ -153,3 +153,19 @@ def test_push_to_talk_maps_ios_mp4_to_m4a():
     payload = {"id": "rec-ios", "data": base64.b64encode(b"fake-mp4-audio").decode("ascii"), "mime_type": "audio/mp4"}
     decoded = ptt.decode_recording(payload)
     assert decoded == (b"fake-mp4-audio", "m4a", "rec-ios")
+
+
+def test_premium_shell_uses_the_approved_visual_asset():
+    assert ptt._SKIN_PATH.name == "jarvis_premium_ui_reference.jpg"
+    assert ptt._SKIN_PATH.exists()
+    assert ptt._skin_b64()
+    assert "fb-jarvis-skin" in ptt.HTML
+
+
+def test_premium_shell_keeps_voice_text_and_navigation_interactive():
+    assert "fb-ptt" in ptt.HTML
+    assert "fb-text-input" in ptt.HTML
+    assert 'data-nav="create"' in ptt.HTML
+    assert 'data-nav="characters"' in ptt.HTML
+    assert "typed_request" in ptt.JS
+    assert "navigation" in ptt.JS
