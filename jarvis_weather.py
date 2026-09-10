@@ -55,9 +55,11 @@ def is_weather_request(text: str) -> bool:
     value = (text or "").casefold()
     hints = (
         "previsão do tempo", "previsao do tempo", "tempo hoje", "tempo amanhã",
-        "tempo amanha", "vai chover", "chuva hoje", "chuva amanhã", "chuva amanha",
-        "temperatura hoje", "temperatura amanhã", "temperatura amanha", "clima hoje",
-        "clima amanhã", "clima amanha", "weather", "forecast",
+        "tempo amanha", "tempo em ", "tempo no ", "tempo na ", "como está o tempo",
+        "como esta o tempo", "vai chover", "chuva hoje", "chuva amanhã", "chuva amanha",
+        "temperatura hoje", "temperatura amanhã", "temperatura amanha", "temperatura em ",
+        "clima hoje", "clima amanhã", "clima amanha", "clima em ", "clima no ", "clima na ",
+        "weather", "forecast",
     )
     return any(h in value for h in hints)
 
