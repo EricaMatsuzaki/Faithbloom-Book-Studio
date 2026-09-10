@@ -61,26 +61,40 @@ def test_weather_voice_request_asks_city_when_missing():
 def test_weather_voice_request_uses_realtime_weather_module(monkeypatch):
     called = {}
 
-    def fake_weather(location):
+    def fake_weather(location, **kwargs):
         called["location"] = location
+        called["day_offset"] = kwargs.get("day_offset")
         return "Em Toyohashi, agora está 28 graus e parcialmente nublado."
 
     monkeypatch.setattr(voice, "build_weather_reply", fake_weather)
     reply = voice.build_spoken_reply("Jarvis, como está o tempo em Toyohashi?")
     assert called["location"] == "Toyohashi"
+    assert called["day_offset"] == 0
     assert "28 graus" in reply
 
 
 def test_weather_voice_can_use_configured_default_city(monkeypatch):
-    monkeypatch.setattr(voice, "build_weather_reply", lambda location: f"Clima consultado em {location}.")
+    monkeypatch.setattr(voice, "build_weather_reply", lambda location, **kwargs: f"Clima consultado em {location}.")
     reply = voice.build_spoken_reply("Vai chover hoje?", weather_location="Nagoya, Japan")
     assert reply == "Clima consultado em Nagoya, Japan."
 
 
+def test_weather_voice_tomorrow_selects_next_day(monkeypatch):
+    called = {}
+
+    def fake_weather(location, **kwargs):
+        called.update(location=location, **kwargs)
+        return "Amanhã haverá chuva leve."
+
+    monkeypatch.setattr(voice, "build_weather_reply", fake_weather)
+    reply = voice.build_spoken_reply("Previsão do tempo em Toyohashi amanhã")
+    assert called["location"] == "Toyohashi"
+    assert called["day_offset"] == 1
+    assert "Amanhã" in reply
+
+
 def test_continue_project_speaks_existing_progress_message():
-    progress = {
-        "message": "Recebi a história. O próximo passo é confirmar os personagens antes das ilustrações."
-    }
+    progress = {"message": "Recebi a história. O próximo passo é confirmar os personagens antes das ilustrações."}
     reply = voice.build_spoken_reply("Continue meu projeto atual", project_progress=progress)
     assert reply == progress["message"]
 
@@ -104,20 +118,12 @@ def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypa
 
 
 def test_push_to_talk_decodes_browser_webm_payload():
-    payload = {
-        "id": "rec-1",
-        "data": base64.b64encode(b"fake-webm-audio").decode("ascii"),
-        "mime_type": "audio/webm;codecs=opus",
-    }
+    payload = {"id": "rec-1", "data": base64.b64encode(b"fake-webm-audio").decode("ascii"), "mime_type": "audio/webm;codecs=opus"}
     decoded = ptt.decode_recording(payload)
     assert decoded == (b"fake-webm-audio", "webm", "rec-1")
 
 
 def test_push_to_talk_maps_ios_mp4_to_m4a():
-    payload = {
-        "id": "rec-ios",
-        "data": base64.b64encode(b"fake-mp4-audio").decode("ascii"),
-        "mime_type": "audio/mp4",
-    }
+    payload = {"id": "rec-ios", "data": base64.b64encode(b"fake-mp4-audio").decode("ascii"), "mime_type": "audio/mp4"}
     decoded = ptt.decode_recording(payload)
     assert decoded == (b"fake-mp4-audio", "m4a", "rec-ios")
