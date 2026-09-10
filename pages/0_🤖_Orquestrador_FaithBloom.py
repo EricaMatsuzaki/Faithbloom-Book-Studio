@@ -1,4 +1,4 @@
-"""FaithBloom Orchestrator — practical author-controlled visual workflow."""
+"""FaithBloom Orchestrator — generic editorial routing + author-controlled visual workflow."""
 from __future__ import annotations
 
 import uuid
@@ -6,6 +6,14 @@ import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title
 from character_universe import listar_personagens_oficiais, carregar_personagem_oficial
+from orchestrator_editorial import (
+    AUDIENCES,
+    EDITORIAL_LINES,
+    ORIGINS,
+    PROJECT_TYPES,
+    anti_duplication_report,
+    build_editorial_route,
+)
 from orchestrator_visual import (
     GENERATION_MODES,
     approve_character_candidate,
@@ -27,12 +35,105 @@ aplicar_estilo()
 
 hero(
     "🤖 Orquestrador FaithBloom",
-    "Praticidade sem perder o controle: história primeiro, depois personagens e cenários aprovados, e só então cenas e ilustrações.",
-    "Visual Preflight · World/Location Master · Element Lock · Cost Gate",
+    "Uma entrada para vários tipos de projeto: o Orquestrador reutiliza os Studios e Guardians que já existem e só abre novas capacidades quando realmente necessário.",
+    "Ideia → Origem → Projeto → Público → Linha editorial → Especialistas existentes → QA → Distribuição",
 )
 
 st.info(
-    "🔒 Regra do Orquestrador: nenhum lote visual caro deve começar antes da sua aprovação da história, personagens principais, cenários essenciais e estilo visual. Uma candidata aprovada não vira Character Master oficial automaticamente."
+    "♻️ Regra anti-duplicação: verificar → reutilizar → estender → criar somente se a capacidade ainda não existir. Translation & Localization, Publishing/Distribution, Character Universe, QA e Cost Gate permanecem compartilhados."
+)
+
+section_title(
+    "0 · Defina o projeto",
+    "Escolha a intenção editorial primeiro. O FaithBloom monta a rota usando as capacidades já existentes, sem criar um segundo tradutor, distribuidor, Character Universe ou QA.",
+    "Orquestração editorial",
+)
+
+c1, c2 = st.columns(2)
+with c1:
+    project_keys = list(PROJECT_TYPES)
+    selected_project_type = st.selectbox(
+        "Tipo de projeto",
+        project_keys,
+        format_func=lambda key: PROJECT_TYPES[key]["label"],
+        key="orchestrator_project_type",
+    )
+    origin_keys = list(ORIGINS)
+    selected_origin = st.selectbox(
+        "Origem / inspiração",
+        origin_keys,
+        format_func=lambda key: ORIGINS[key],
+        key="orchestrator_origin",
+    )
+with c2:
+    audience_keys = list(AUDIENCES)
+    default_audience = audience_keys.index("3_8") if "3_8" in audience_keys else 0
+    selected_audience = st.selectbox(
+        "Público / faixa etária",
+        audience_keys,
+        index=default_audience,
+        format_func=lambda key: AUDIENCES[key],
+        key="orchestrator_audience",
+    )
+    editorial_keys = list(EDITORIAL_LINES)
+    selected_editorial_line = st.selectbox(
+        "Linha editorial",
+        editorial_keys,
+        format_func=lambda key: EDITORIAL_LINES[key],
+        key="orchestrator_editorial_line",
+    )
+
+derived_labels = {
+    "audiobook": "🎧 Audiobook",
+    "animation": "🎬 Animação / vídeo",
+    "music": "🎵 Música / trilha",
+}
+selected_derived = st.multiselect(
+    "Saídas derivadas desejadas (opcional)",
+    list(derived_labels),
+    format_func=lambda key: derived_labels[key],
+    key="orchestrator_derived_outputs",
+)
+
+editorial_route = build_editorial_route(
+    selected_project_type,
+    origin=selected_origin,
+    audience=selected_audience,
+    editorial_line=selected_editorial_line,
+    derived_outputs=selected_derived,
+)
+dup_report = anti_duplication_report(editorial_route)
+
+with st.container(border=True):
+    st.markdown(f"### {editorial_route['project_label']}")
+    st.caption(
+        f"{editorial_route['origin_label']} · {editorial_route['audience_label']} · {editorial_route['editorial_line_label']}"
+    )
+    if dup_report["ok"]:
+        st.success("✅ Rota validada sem capacidades duplicadas.")
+    else:
+        st.error("🚨 A rota contém duplicidade ou capacidade não registrada e deve ser corrigida antes de executar.")
+    with st.expander("🧭 Ver capacidades que serão reutilizadas"):
+        for capability_id in editorial_route["route"]:
+            meta = editorial_route["capabilities"][capability_id]
+            status = meta.get("status", "")
+            status_icon = "✅" if status == "existing" else "🟡"
+            st.write(f"{status_icon} `{capability_id}` · {meta.get('kind', '')} · {status}")
+        st.caption("Translation/Localization e Publishing/Distribution aparecem uma única vez porque são camadas compartilhadas do FaithBloom.")
+
+visual_project = bool(PROJECT_TYPES[selected_project_type].get("visual"))
+if not visual_project:
+    st.info(
+        "🧭 Este tipo de projeto não exige pré-voo visual obrigatório. A rota editorial acima já está definida e reutiliza os módulos existentes. O pré-voo visual abaixo fica reservado aos projetos que precisam de personagens, cenários ou imagens."
+    )
+    st.divider()
+    st.caption("FaithBloom Orchestrator · roteamento editorial genérico · política anti-duplicação ativa.")
+    st.stop()
+
+st.divider()
+st.markdown("## 🎨 Pré-voo visual do projeto")
+st.info(
+    "🔒 Nenhum lote visual caro deve começar antes da sua aprovação do conteúdo-base, personagens principais, cenários essenciais e estilo visual. Uma candidata aprovada não vira Character Master oficial automaticamente."
 )
 
 with st.expander("💰 Como quero gerar imagens", expanded=True):
@@ -49,14 +150,14 @@ with st.expander("💰 Como quero gerar imagens", expanded=True):
     budget_limit = st.number_input("Limite (US$)", min_value=0.0, value=5.0, step=0.50, disabled=not budget_enabled)
     st.caption("Operações pagas continuam exigindo confirmação; o limite impede estouro silencioso do orçamento.")
 
-section_title("1 · História primeiro", "Escreva/cole a história aprovada ou use o Roteirista. Só depois o Orquestrador abre o pré-voo visual.", "Autoria")
+section_title("1 · Conteúdo-base primeiro", "Escreva/cole o conteúdo aprovado ou use o Roteirista quando o projeto for narrativo. Só depois o Orquestrador abre o pré-voo visual.", "Autoria")
 left, right = st.columns([2, 1])
 with left:
     title = st.text_input("Título do projeto", value=st.session_state.get("orchestrator_title", ""), placeholder="Ex.: A nova aventura da Mel")
     collection = st.text_input("Coleção", value=st.session_state.get("orchestrator_collection", "Pequenas Histórias, Grandes Lições"))
-    story = st.text_area("História / texto-base", height=220, placeholder="Cole aqui a versão que será usada para definir personagens e cenários.")
+    story = st.text_area("História / conteúdo-base", height=220, placeholder="Cole aqui a versão que será usada para definir personagens e cenários.")
 with right:
-    st.markdown("#### Quer criar a história com o FaithBloom?")
+    st.markdown("#### Projeto narrativo?")
     st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="✍️ Abrir Roteirista", use_container_width=True)
     st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="🪄 Abrir Prompt-Mestre", use_container_width=True)
 
@@ -68,7 +169,7 @@ if st.button("🌱 Criar pré-voo visual", type="primary", use_container_width=T
     locs = [x.strip() for x in locations_text.split(",") if x.strip()]
     plan = create_visual_plan(
         project_id=uuid.uuid4().hex,
-        title=title or "Novo livro FaithBloom",
+        title=title or "Novo projeto FaithBloom",
         story_text=story,
         characters=[{"id": x, "name": x, "principal": True} for x in chars],
         locations=[{"id": x, "name": x, "required": True} for x in locs],
@@ -88,11 +189,11 @@ if not plan:
     st.warning("Não foi possível carregar o pré-voo visual atual.")
     st.stop()
 
-section_title("2 · Checkpoint da história", "Aprovar aqui libera apenas a próxima etapa; ainda não gera imagens.", "Checkpoint")
+section_title("2 · Checkpoint do conteúdo", "Aprovar aqui libera apenas a próxima etapa; ainda não gera imagens.", "Checkpoint")
 if plan.get("approvals", {}).get("story"):
-    st.success("✅ História aprovada para o pré-voo visual.")
+    st.success("✅ Conteúdo-base aprovado para o pré-voo visual.")
 else:
-    if st.button("✅ Aprovar história para seguir ao visual", use_container_width=True):
+    if st.button("✅ Aprovar conteúdo para seguir ao visual", use_container_width=True):
         approve_story(plan)
         st.rerun()
 
@@ -106,7 +207,7 @@ for char in plan.get("characters", []):
     with st.container(border=True):
         st.markdown(f"#### 👤 {char.get('name') or cid}")
         if approval.get("approved"):
-            st.success("✅ Referência visual aprovada para este livro.")
+            st.success("✅ Referência visual aprovada para este projeto.")
             if approval.get("official_master_promoted"):
                 st.caption("⭐ Promoção a Master oficial registrada com aprovação humana.")
         else:
@@ -131,7 +232,7 @@ for char in plan.get("characters", []):
                     approve_character_candidate(plan, cid, candidate, candidate)
                     st.rerun()
 
-section_title("4 · World / Location Master", "Defina os lugares principais agora. Assim você pode reprovar o jardim ou a casa antes de gastar com todas as cenas.", "Cenários")
+section_title("4 · World / Location Master", "Defina os lugares principais agora. Assim você pode reprovar um cenário antes de gastar com todas as cenas.", "Cenários")
 for loc in plan.get("locations", []):
     key = str(loc.get("id") or loc.get("name") or "")
     approval = plan.get("approvals", {}).get("locations", {}).get(key, {})
@@ -152,7 +253,7 @@ for loc in plan.get("locations", []):
                 st.success("Cenário salvo como World/Location Master aprovado.")
                 st.rerun()
 
-section_title("5 · Estilo visual", "A estética do livro também precisa ser aprovada antes de gerar o lote de cenas.", "Style Master")
+section_title("5 · Estilo visual", "A estética do projeto também precisa ser aprovada antes de gerar o lote de cenas.", "Style Master")
 if plan.get("approvals", {}).get("style"):
     st.success("✅ Style Master aprovado para este projeto.")
 else:
@@ -165,7 +266,7 @@ plan = load_visual_plan(plan_id)
 status = visual_preflight_status(plan)
 section_title("6 · Liberação do Diretor de Cena", "O Orquestrador só libera A/B/C quando tudo que define o universo visual já passou por você.", "Gate")
 cols = st.columns(4)
-cols[0].metric("História", "✅" if status["story_approved"] else "⏳")
+cols[0].metric("Conteúdo", "✅" if status["story_approved"] else "⏳")
 cols[1].metric("Personagens", "✅" if not status["missing_characters"] else f"⏳ {len(status['missing_characters'])}")
 cols[2].metric("Cenários", "✅" if not status["missing_locations"] else f"⏳ {len(status['missing_locations'])}")
 cols[3].metric("Estilo", "✅" if status["style_approved"] else "⏳")
@@ -212,4 +313,4 @@ a.page_link("pages/14_👥_Character_Universe.py", label="👥 Character Univers
 b.page_link("pages/19_✨_Restoration_Studio.py", label="✨ Restaurar imagem/página", use_container_width=True)
 c.page_link("pages/11_🛡️_Custos_e_Seguranca.py", label="🛡️ Custos & Segurança", use_container_width=True)
 
-st.caption("FaithBloom Orchestrator · Visual approval gates · o original e os Masters oficiais permanecem sob aprovação humana.")
+st.caption("FaithBloom Orchestrator · roteamento editorial genérico · Visual approval gates · Masters oficiais permanecem sob aprovação humana.")
