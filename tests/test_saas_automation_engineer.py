@@ -3,10 +3,23 @@ from agents import engenheiro_saas_automacao as eng
 
 def test_profile_has_broad_saas_skill_coverage():
     assert eng.ROLE_ID == "saas_automation_engineer"
-    assert len(eng.SKILL_DOMAINS) >= 10
-    assert len(eng.all_skills()) >= 80
-    for required in ("architecture", "backend", "frontend", "data", "auth_security", "automation", "testing", "devops", "observability", "reliability"):
+    assert len(eng.SKILL_DOMAINS) >= 15
+    assert len(eng.all_skills()) >= 140
+    for required in (
+        "architecture", "backend", "fullstack", "frontend", "websites", "ux_ui", "seo_growth",
+        "data", "auth_security", "automation", "integrations", "testing", "devops",
+        "observability", "reliability",
+    ):
         assert required in eng.SKILL_DOMAINS
+
+
+def test_fullstack_and_web_deliverables_are_covered():
+    skills = set(eng.all_skills())
+    for required in (
+        "full-stack application development", "landing pages", "responsive UI", "REST APIs",
+        "technical SEO", "design systems", "dashboard development", "third-party APIs",
+    ):
+        assert required in skills
 
 
 def test_request_is_classified_into_multiple_domains():
@@ -15,6 +28,19 @@ def test_request_is_classified_into_multiple_domains():
     assert "devops" in domains
     assert "testing" in domains
     assert "observability" in domains
+
+
+def test_app_request_is_classified_as_fullstack():
+    domains = eng.classify_request("Crie um app full stack com dashboard, API e login")
+    assert "fullstack" in domains
+    assert "integrations" in domains
+
+
+def test_landing_page_request_is_classified_for_web_and_growth():
+    domains = eng.classify_request("Crie uma landing page responsiva com SEO e analytics")
+    assert "websites" in domains
+    assert "frontend" in domains
+    assert "seo_growth" in domains
 
 
 def test_execution_plan_preserves_anti_duplication_sequence():
@@ -60,7 +86,7 @@ def test_release_readiness_is_conservative():
 
 def test_public_entrypoint_returns_operational_agent_contract():
     result = eng.handle_saas_request("Automatize uma fila segura de geração", existing_components=["Fila de Produção"])
-    assert result["agent"] == "Arquiteto SaaS & Automação"
-    assert result["skill_count"] >= 80
+    assert result["agent"] == "Arquiteto SaaS, Full-Stack & Automação"
+    assert result["skill_count"] >= 140
     assert "automation" in result["domains"]
     assert result["non_negotiables"]
