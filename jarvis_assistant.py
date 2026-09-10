@@ -150,6 +150,47 @@ def interpret_request(text: str) -> dict:
     }
 
 
+def inspect_project_state(state: dict | None) -> dict:
+    """Read existing Story Book state and report progress without changing it."""
+    state = dict(state or {})
+    story_ready = bool(state.get("cenas_texto") or state.get("estilo_escolhido_no_comparador"))
+    characters_ready = bool(state.get("personagens"))
+    review_ready = bool(state.get("revisao_aprovada"))
+    visuals_ready = bool(state.get("cenas_imagem_aprovadas") or state.get("imagens_cenas_enviadas"))
+    package_ready = bool(state.get("pacote_pronto"))
+
+    if package_ready:
+        next_step = "publish_or_distribute"
+        message = "O pacote está pronto. Posso levar você para publicação e distribuição."
+    elif visuals_ready:
+        next_step = "layout_and_qa"
+        message = "As imagens já avançaram. O próximo foco é QA, diagramação e preparação de saída."
+    elif review_ready:
+        next_step = "visual_preflight"
+        message = "A história está revisada. Agora posso coordenar personagens, cenários e pré-voo visual."
+    elif story_ready and characters_ready:
+        next_step = "story_review"
+        message = "Recebi a história e os personagens. O próximo checkpoint é a revisão editorial."
+    elif story_ready:
+        next_step = "characters"
+        message = "Recebi a história. O próximo passo é confirmar os personagens antes das ilustrações."
+    else:
+        next_step = "story"
+        message = "Ainda estamos na construção da história."
+
+    return {
+        "title": state.get("titulo") or "Projeto atual",
+        "collection": state.get("colecao") or "",
+        "story_ready": story_ready,
+        "characters_ready": characters_ready,
+        "review_ready": review_ready,
+        "visuals_ready": visuals_ready,
+        "package_ready": package_ready,
+        "next_step": next_step,
+        "message": message,
+    }
+
+
 def build_status_cards(result: dict) -> list[dict]:
     plan = result.get("route_plan") or {}
     return [
