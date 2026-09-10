@@ -117,7 +117,7 @@ def enrich_follow_up(text: str, history: list[dict[str, Any]] | None, *, default
         location = str(meta.get("location") or default_weather_location or "").strip()
         if location:
             when = "amanhã" if "amanh" in normalized else "hoje" if "hoje" in normalized else "mais tarde"
-            return f"previsão do tempo {when} em {location}"
+            return f"previsão do tempo em {location} {when}"
     return clean
 
 
