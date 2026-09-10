@@ -32,7 +32,7 @@ CSS = """
 
 JS = r"""
 export default function(component) {
-  const { parentElement, setTriggerValue } = component;
+  const { parentElement, setStateValue, setTriggerValue } = component;
   const button = parentElement.querySelector('#ptt');
   const label = parentElement.querySelector('.ptt-label');
   const status = parentElement.querySelector('#ptt-status');
@@ -99,13 +99,20 @@ export default function(component) {
             cleanup();
             return;
           }
-          setStatus('✅ Recebi. Jarvis está processando...');
-          setTriggerValue('recording', {
-            id: `${Date.now()}-${blob.size}`,
+          const recordingId = `${Date.now()}-${blob.size}`;
+          const payload = {
+            id: recordingId,
             data: base64Data,
             mime_type: mime,
             duration_ms: duration
-          });
+          };
+
+          // O áudio fica em state (persistente no ComponentResult) e um trigger
+          // pequeno força o rerun. Isto evita depender de um trigger enorme com
+          // todo o base64, que pode não chegar de forma confiável ao Python.
+          setStateValue('recording', payload);
+          setStatus('✅ Recebi. Enviando ao Jarvis...');
+          setTriggerValue('submitted', recordingId);
           cleanup();
         };
         reader.readAsDataURL(blob);
@@ -178,7 +185,7 @@ def decode_recording(payload: dict[str, Any] | None) -> tuple[bytes, str, str] |
 
 
 def push_to_talk(*, key: str = "jarvis_push_to_talk"):
-    """Renderiza push-to-talk V2. Retorna ``result.recording`` ao soltar.
+    """Renderiza push-to-talk V2. Retorna state ``recording`` + trigger ``submitted``.
 
     Em Streamlit antigo, retorna ``None`` para que a página use o fallback nativo.
     """
@@ -195,6 +202,7 @@ def push_to_talk(*, key: str = "jarvis_push_to_talk"):
     )
     return widget(
         key=key,
-        default={"recording": None},
+        default={"recording": None, "submitted": None},
         on_recording_change=lambda: None,
+        on_submitted_change=lambda: None,
     )
