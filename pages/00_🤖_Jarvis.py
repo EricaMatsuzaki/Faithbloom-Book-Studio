@@ -5,7 +5,7 @@ import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title
 from armazenamento import listar_livros, listar_livros_colorir
-from jarvis_assistant import AUTONOMY_MODES, build_status_cards, interpret_request
+from jarvis_assistant import AUTONOMY_MODES, build_status_cards, inspect_project_state, interpret_request
 
 st.set_page_config(page_title="Jarvis · FaithBloom", page_icon="🤖", layout="wide")
 aplicar_estilo()
@@ -16,7 +16,7 @@ hero(
     "Praticidade sem perder o controle · MVP funcional",
 )
 
-st.info("🌷 Jarvis já entende sua intenção, verifica a rota e pode encaminhar você ao fluxo existente correto. Ele não publica, não gasta créditos e não altera Masters oficiais sem sua aprovação.")
+st.info("🌷 Jarvis já entende sua intenção, verifica a rota, encaminha ao fluxo correto e começa a reconhecer o progresso quando você volta. Ele não publica, não gasta créditos e não altera Masters oficiais sem sua aprovação.")
 
 try:
     recent_story_books = listar_livros()[:3]
@@ -26,6 +26,31 @@ try:
     recent_coloring_books = listar_livros_colorir()[:2]
 except Exception:
     recent_coloring_books = []
+
+current_state = st.session_state.get("state")
+project_progress = inspect_project_state(current_state) if current_state else None
+
+if st.session_state.get("jarvis_handoff_from_mvp") and project_progress:
+    with st.container(border=True):
+        st.markdown("### 🤖 Recebi o projeto de volta")
+        st.success(project_progress["message"])
+        p1, p2, p3, p4, p5 = st.columns(5)
+        p1.metric("História", "✅" if project_progress["story_ready"] else "⏳")
+        p2.metric("Personagens", "✅" if project_progress["characters_ready"] else "⏳")
+        p3.metric("Revisão", "✅" if project_progress["review_ready"] else "⏳")
+        p4.metric("Imagens", "✅" if project_progress["visuals_ready"] else "⏳")
+        p5.metric("Pacote", "✅" if project_progress["package_ready"] else "⏳")
+        st.caption(f"Projeto: {project_progress['title']}" + (f" · Coleção: {project_progress['collection']}" if project_progress["collection"] else ""))
+        if project_progress["next_step"] == "characters":
+            st.page_link("pages/14_👥_Character_Universe.py", label="👥 Continuar com personagens", use_container_width=True)
+        elif project_progress["next_step"] == "story_review":
+            st.page_link("pages/1_📖_Criar_do_Zero.py", label="📝 Continuar para revisão editorial", use_container_width=True)
+        elif project_progress["next_step"] == "visual_preflight":
+            st.page_link("pages/0_🤖_Orquestrador_FaithBloom.py", label="🎬 Continuar para pré-voo visual", use_container_width=True)
+        elif project_progress["next_step"] == "layout_and_qa":
+            st.page_link("pages/25_🛡️_Quality_Guardian.py", label="✅ Continuar para QA e diagramação", use_container_width=True)
+        elif project_progress["next_step"] == "publish_or_distribute":
+            st.page_link("pages/26_🌐_Publishing_Distribution_Center.py", label="🚀 Continuar para publicação e distribuição", use_container_width=True)
 
 left, right = st.columns([2.1, 1])
 with left:
@@ -72,6 +97,7 @@ with right:
         st.write("🟢 Roteia para módulos existentes")
         st.write("🟢 Proteção anti-duplicação")
         st.write("🟢 Encaminhamento com sua confirmação")
+        st.write("🟢 Reconhece progresso do Story Book ao retornar")
         st.write("🟡 Voz e briefing diário — próximos")
 
     if recent_story_books or recent_coloring_books:
