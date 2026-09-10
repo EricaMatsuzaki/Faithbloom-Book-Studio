@@ -1,8 +1,7 @@
-"""Conversa por voz do Jarvis — STT + resposta falada com aprovação visível."""
+"""Conversa por voz do Jarvis — STT + resposta falada + clima atual."""
 from __future__ import annotations
 
 import os
-import re
 import uuid
 
 import streamlit as st
@@ -10,6 +9,7 @@ import streamlit as st
 from estilo import aplicar_estilo
 from jarvis_assistant import inspect_project_state, interpret_request
 from jarvis_voice import build_spoken_reply, synthesize_reply, transcribe_audio
+from jarvis_weather import is_weather_request
 
 st.set_page_config(page_title="Jarvis por Voz · FaithBloom", page_icon="🎙️", layout="wide")
 aplicar_estilo()
@@ -21,15 +21,17 @@ st.markdown(
     .jv-shell h1{color:white!important;margin:.2rem 0 .4rem;font-size:clamp(2rem,4vw,3.2rem)}
     .jv-shell p{color:rgba(255,255,255,.86);max-width:850px;line-height:1.6;margin:0}
     .jv-bot{font-size:4rem;display:inline-block;animation:jvFloat 3.2s ease-in-out infinite;filter:drop-shadow(0 0 18px rgba(117,242,239,.35))}
-    .jv-status{display:inline-block;margin-top:.8rem;padding:.28rem .7rem;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);font-weight:700;font-size:.8rem}
+    .jv-status{display:inline-block;margin:.8rem .35rem 0 0;padding:.28rem .7rem;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);font-weight:700;font-size:.8rem}
     .jv-bubble{border-radius:20px 20px 20px 6px;padding:1rem 1.1rem;background:linear-gradient(135deg,rgba(34,168,153,.09),rgba(139,108,246,.08));border:1px solid rgba(34,168,153,.17);line-height:1.55;margin:.6rem 0}
     @keyframes jvFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
     </style>
     <div class="jv-shell">
       <div class="jv-bot">🤖🎙️</div>
       <h1>Jarvis por Voz</h1>
-      <p>Fale naturalmente. Eu transcrevo sua mensagem, organizo o pedido com o mesmo Jarvis do FaithBloom e respondo em voz alta usando o TTS que o projeto já possui.</p>
-      <span class="jv-status">🟢 Voz sob demanda · nada é publicado automaticamente</span>
+      <p>Fale naturalmente. Eu transcrevo sua mensagem, organizo pedidos do FaithBloom e também posso consultar o clima atual quando você pedir.</p>
+      <span class="jv-status">🟢 Voz sob demanda</span>
+      <span class="jv-status">🌦️ Clima conectado</span>
+      <span class="jv-status">👀 Aprovação humana</span>
     </div>
     """,
     unsafe_allow_html=True,
@@ -48,12 +50,24 @@ with left:
     st.markdown("### 🎤 Fale comigo")
     recording = st.audio_input("Grave sua mensagem para o Jarvis")
 
-    language = st.selectbox(
-        "Idioma da fala",
-        options=["pt", "en", "ja", "es"],
-        format_func=lambda x: {"pt": "🇧🇷 Português", "en": "🇺🇸 English", "ja": "🇯🇵 日本語", "es": "🇪🇸 Español"}[x],
-        index=0,
-    )
+    controls = st.columns([1, 1.4])
+    with controls[0]:
+        language = st.selectbox(
+            "Idioma da fala",
+            options=["pt", "en", "ja", "es"],
+            format_func=lambda x: {"pt": "🇧🇷 Português", "en": "🇺🇸 English", "ja": "🇯🇵 日本語", "es": "🇪🇸 Español"}[x],
+            index=0,
+        )
+    with controls[1]:
+        weather_location = st.text_input(
+            "Cidade padrão para clima (opcional)",
+            value=st.session_state.get("jarvis_weather_location", ""),
+            placeholder="Ex.: Toyohashi, Japan",
+            help="Se você disser a cidade na própria pergunta, ela terá prioridade. Este campo evita precisar repetir a cidade toda vez.",
+        )
+        st.session_state["jarvis_weather_location"] = weather_location.strip()
+
+    st.caption("🌦️ Exemplos: “Jarvis, como está o tempo em Toyohashi?” · “Vai chover hoje?”")
 
     if st.button(
         "✨ Enviar para o Jarvis",
@@ -71,7 +85,7 @@ with left:
 
                 # Pedidos editoriais continuam usando exatamente o mesmo interpretador/roteador.
                 lower = transcript.casefold()
-                is_weather = any(x in lower for x in ("previsão do tempo", "previsao do tempo", "tempo hoje", "vai chover", "clima hoje", "weather"))
+                is_weather = is_weather_request(transcript)
                 result = None
                 if not is_weather:
                     result = interpret_request(transcript)
@@ -81,6 +95,7 @@ with left:
                     transcript,
                     result=result,
                     project_progress=project_progress,
+                    weather_location=weather_location,
                 )
                 st.session_state["jarvis_voice_reply"] = reply
 
@@ -88,7 +103,9 @@ with left:
                 audio_path = synthesize_reply(reply, name=name)
                 st.session_state["jarvis_voice_audio"] = audio_path
 
-                if any(x in lower for x in ("incrível", "incrivel", "sensacional", "uau")):
+                if is_weather:
+                    st.session_state["jarvis_visual_expression"] = "normal"
+                elif any(x in lower for x in ("incrível", "incrivel", "sensacional", "uau")):
                     st.session_state["jarvis_visual_expression"] = "star"
                 elif any(x in lower for x in ("amor", "carinho", "amizade", "família", "familia", "fé", "fe")):
                     st.session_state["jarvis_visual_expression"] = "heart"
@@ -116,9 +133,17 @@ with right:
         st.markdown("#### Como funciona")
         st.write("🎙️ Você grava")
         st.write("📝 Jarvis transcreve")
-        st.write("🧠 Usa o roteador já existente")
+        st.write("🌦️ Consulta clima quando solicitado")
+        st.write("🧠 Usa o roteador editorial nos pedidos de projeto")
         st.write("🔊 Reutiliza o TTS do FaithBloom")
         st.write("👀 Você continua aprovando decisões importantes")
+
+    with st.container(border=True):
+        st.markdown("#### 🌦️ Clima")
+        st.caption(
+            "O clima usa Open-Meteo e geocodificação por cidade. Se você não disser a cidade na frase, "
+            "o Jarvis usa a cidade padrão preenchida ao lado. A consulta de clima não usa créditos de LLM."
+        )
 
     if project_progress:
         with st.container(border=True):
@@ -134,4 +159,4 @@ with right:
         )
 
 st.page_link("pages/00_🤖_Jarvis.py", label="← Voltar para a Home do Jarvis", use_container_width=True)
-st.caption("Jarvis Voice MVP · STT novo + TTS existente · praticidade sem perder o controle.")
+st.caption("Jarvis Voice MVP · STT + clima atual + TTS existente · praticidade sem perder o controle.")
