@@ -1,0 +1,160 @@
+"""Camada de voz do Jarvis sobre os serviços já existentes do FaithBloom.
+
+Esta implementação NÃO duplica o Audiobook Studio nem o TTS do OpenRouter.
+Ela acrescenta somente transcrição de fala (STT) e coordenação de uma resposta
+curta do Jarvis, reutilizando ``openrouter_client.gerar_audio`` para a voz.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import os
+from typing import Any
+
+from controle_geracao import (
+    POLITICA,
+    extrair_custo_reportado,
+    finalizar_requisicao,
+    liberar_requisicao,
+    sanitizar_texto,
+    iniciar_requisicao,
+)
+from jarvis_assistant import interpret_request
+from openrouter_client import (
+    OPENROUTER_BASE_URL,
+    _json_resposta,
+    _post_com_retry,
+    gerar_audio,
+)
+
+MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
+SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
+
+
+class JarvisVoiceError(RuntimeError):
+    """Erro de voz apresentado ao usuário sem vazar credenciais/payloads."""
+
+
+def _normalizar_formato(fmt: str) -> str:
+    value = (fmt or "wav").strip().lower().lstrip(".")
+    if value not in SUPPORTED_AUDIO_FORMATS:
+        raise ValueError(f"Formato de áudio não suportado: {value}")
+    return value
+
+
+def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "pt") -> dict[str, Any]:
+    """Transcreve áudio pelo endpoint STT, com guardrails de custo já existentes."""
+    if not audio_bytes:
+        raise ValueError("Grave uma mensagem antes de enviar ao Jarvis.")
+    formato = _normalizar_formato(fmt)
+    idioma = (language or "pt").strip()
+
+    digest = hashlib.sha256(audio_bytes).hexdigest()[:24]
+    assinatura_conteudo = f"jarvis-stt|{digest}|format:{formato}|language:{idioma}"
+    estimativa = max(0.001, POLITICA.estimativa_audio_min_usd * 0.10)
+    req_id, assinatura, estimativa, inicio = iniciar_requisicao(
+        "audio", MODELO_TRANSCRICAO, assinatura_conteudo, estimativa
+    )
+    try:
+        payload = {
+            "model": MODELO_TRANSCRICAO,
+            "input_audio": {
+                "data": base64.b64encode(audio_bytes).decode("ascii"),
+                "format": formato,
+            },
+        }
+        if idioma:
+            payload["language"] = idioma
+        resp = _post_com_retry(f"{OPENROUTER_BASE_URL}/audio/transcriptions", payload, 60)
+        dados = _json_resposta(resp)
+        texto = str(dados.get("text") or "").strip()
+        if not texto:
+            raise JarvisVoiceError("Não consegui entender a gravação. Tente falar um pouco mais perto do microfone.")
+        finalizar_requisicao(
+            req_id,
+            assinatura,
+            "audio",
+            MODELO_TRANSCRICAO,
+            estimativa,
+            inicio,
+            "sucesso",
+            extrair_custo_reportado(dados),
+        )
+        return {"text": texto, "model": MODELO_TRANSCRICAO, "usage": dados.get("usage")}
+    except Exception as exc:
+        finalizar_requisicao(
+            req_id,
+            assinatura,
+            "audio",
+            MODELO_TRANSCRICAO,
+            estimativa,
+            inicio,
+            "erro",
+            detalhe=sanitizar_texto(str(exc)),
+        )
+        raise
+    except BaseException:
+        liberar_requisicao(assinatura)
+        raise
+
+
+def _parece_pedido_tempo(text: str) -> bool:
+    value = (text or "").casefold()
+    termos_tempo = (
+        "previsão do tempo",
+        "previsao do tempo",
+        "tempo hoje",
+        "vai chover",
+        "chuva hoje",
+        "temperatura hoje",
+        "clima hoje",
+        "weather",
+    )
+    return any(x in value for x in termos_tempo)
+
+
+def _parece_continuar_projeto(text: str) -> bool:
+    value = (text or "").casefold()
+    return any(x in value for x in ("continuar", "continue", "retomar", "retome", "projeto atual"))
+
+
+def build_spoken_reply(
+    transcript: str,
+    *,
+    result: dict | None = None,
+    project_progress: dict | None = None,
+) -> str:
+    """Cria uma resposta falada curta sem gastar uma segunda chamada de LLM."""
+    texto = (transcript or "").strip()
+    if not texto:
+        return "Não consegui ouvir uma mensagem. Grave novamente e tente de novo."
+
+    if _parece_pedido_tempo(texto):
+        return (
+            "Eu já consigo conversar por voz, mas a previsão do tempo em tempo real ainda não está conectada ao FaithBloom. "
+            "Quando o módulo de clima for ativado, eu poderei responder isso com dados atuais."
+        )
+
+    if project_progress and _parece_continuar_projeto(texto):
+        return str(project_progress.get("message") or "Encontrei seu projeto atual e posso continuar do próximo checkpoint.")
+
+    interpreted = result or interpret_request(texto)
+    plan = interpreted.get("route_plan") or {}
+    projeto = plan.get("project_label") or "seu projeto"
+    publico = plan.get("audience_label") or "o público escolhido"
+    if (interpreted.get("anti_duplication") or {}).get("ok", False):
+        return (
+            f"Entendi. Você quer {projeto} para {publico}. Eu organizei a rota usando os especialistas que já existem no FaithBloom. "
+            "Vou pedir sua confirmação antes de avançar para qualquer etapa importante."
+        )
+    return (
+        f"Entendi o pedido de {projeto}, mas encontrei um ponto que precisa de revisão na rota. "
+        "Não vou avançar automaticamente até você confirmar."
+    )
+
+
+def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | None = None) -> str:
+    """Reutiliza o TTS oficial já empregado pelo Audiobook Studio."""
+    if not (text or "").strip():
+        raise ValueError("A resposta do Jarvis está vazia.")
+    return gerar_audio(text.strip(), name, voice=voice)
