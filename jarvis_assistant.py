@@ -124,7 +124,7 @@ def interpret_request(text: str) -> dict:
     project_type = infer_project_type(text)
     origin = infer_origin(text)
     audience = infer_audience(text)
-    editorial_line = infer_editorial_line(text)
+    editorial_line = "christian" if origin == "bible" else infer_editorial_line(text)
     derived_outputs = infer_derived_outputs(text)
     route = build_editorial_route(
         project_type,
