@@ -85,17 +85,22 @@ def test_continue_project_speaks_existing_progress_message():
     assert reply == progress["message"]
 
 
-def test_synthesize_reply_delegates_to_existing_tts(monkeypatch):
+def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypatch):
     called = {}
 
-    def fake_generate(text, name, voice=None):
-        called.update(text=text, name=name, voice=voice)
+    def fake_generate(text, name, voice=None, **kwargs):
+        called.update(text=text, name=name, voice=voice, **kwargs)
         return "saida_audio/mock.mp3"
 
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
     path = voice.synthesize_reply("Olá, Erica!", name="jarvis_teste", voice="voz-1")
     assert path == "saida_audio/mock.mp3"
-    assert called == {"text": "Olá, Erica!", "name": "jarvis_teste", "voice": "voz-1"}
+    assert called["text"] == "Olá, Erica!"
+    assert called["name"] == "jarvis_teste"
+    assert called["voice"] == "voz-1"
+    assert called["model"] == voice.JARVIS_VOICE_MODEL
+    assert called["response_format"] == "mp3"
+    assert "futurista" in called["instructions"]
 
 
 def test_push_to_talk_decodes_browser_webm_payload():
