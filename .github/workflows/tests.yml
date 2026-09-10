@@ -39,7 +39,31 @@ jobs:
           PYTHONPATH: .
         run: pytest -q
 
+      - name: Audit Python dependencies
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+  fullstack-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
       - name: Run full-stack repository audit
+        id: fullstack_audit
+        continue-on-error: true
         env:
           PYTHONPATH: .
         run: python scripts_fullstack_audit.py
@@ -50,8 +74,13 @@ jobs:
         with:
           name: faithbloom-fullstack-audit
           path: FULLSTACK_AUDIT_REPORT.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
-      - name: Audit Python dependencies
-        run: pip-audit -r requirements.txt --progress-spinner off
+      - name: Enforce full-stack audit blockers
+        if: always()
+        run: |
+          if [ "${{ steps.fullstack_audit.outcome }}" != "success" ]; then
+            echo "Full-stack audit found objective blockers. See uploaded report."
+            exit 1
+          fi
