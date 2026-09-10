@@ -47,6 +47,28 @@ def test_jarvis_handoff_reuses_existing_pages():
     assert activity["next_page"] == "pages/23_🧩_Activity_Book_Studio.py"
 
 
+def test_jarvis_recognizes_story_result_after_handoff():
+    progress = jarvis.inspect_project_state({
+        "titulo": "A aventura da Mel",
+        "colecao": "Pequenas Histórias, Grandes Lições",
+        "cenas_texto": [{"numero": 1, "texto": "Era uma vez..."}],
+        "personagens": {},
+        "revisao_aprovada": False,
+    })
+    assert progress["story_ready"] is True
+    assert progress["characters_ready"] is False
+    assert progress["next_step"] == "characters"
+
+
+def test_jarvis_advances_to_visual_after_review():
+    progress = jarvis.inspect_project_state({
+        "cenas_texto": [{"numero": 1, "texto": "Texto"}],
+        "personagens": {"Mel": {"nome": "Mel"}},
+        "revisao_aprovada": True,
+    })
+    assert progress["next_step"] == "visual_preflight"
+
+
 def test_jarvis_never_auto_publishes():
     result = jarvis.interpret_request("Crie uma história infantil")
     assert result["route_plan"]["auto_publish"] is False
