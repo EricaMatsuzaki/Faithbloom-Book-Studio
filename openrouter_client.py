@@ -47,8 +47,6 @@ def _headers() -> dict:
 
 def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
     ultimo: Exception | None = None
-    # Uma chamada de imagem pode continuar no provedor após timeout local.
-    # Não reenviar automaticamente uma operação paga sem idempotência.
     tentativas = 1 if url.rstrip("/").endswith("/images") else max(1, POLITICA.tentativas_http)
     for tentativa in range(1, tentativas + 1):
         try:
@@ -113,18 +111,11 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
         finalizar_requisicao(req_id,assinatura,"texto",MODELO_TEXTO,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
         raise
     except BaseException:
-        # Stop/Rerun do Streamlit não herdam de Exception. Libere e propague.
         liberar_requisicao(assinatura)
         raise
 
 
 def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None, provider: str | None = None, aspect_ratio: str | None = None, output_format: str | None = "png") -> str:
-    """Gera imagem aceitando cena-base + múltiplas referências visuais oficiais.
-
-    `imagem_base` continua compatível com chamadas antigas. `imagens_referencia` é
-    usado pelo Restoration Studio para anexar Character Masters sem substituir a
-    cena original como referência principal.
-    """
     if resolution not in {None, "1K", "2K", "4K"}:
         raise ValueError("Resolução inválida. Escolha 1K, 2K ou 4K.")
     if provider not in {None, "google-vertex", "google-ai-studio"}:
@@ -176,9 +167,7 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
         imagens=dados.get("data") or []
         b64_imagem=imagens[0].get("b64_json","") if imagens and isinstance(imagens[0],dict) else ""
         if not b64_imagem:
-            raise OpenRouterFaithBloomError(
-                "O provedor não retornou uma imagem nesta chamada. Tente novamente ou revise o modelo selecionado."
-            )
+            raise OpenRouterFaithBloomError("O provedor não retornou uma imagem nesta chamada. Tente novamente ou revise o modelo selecionado.")
         media_type = imagens[0].get("media_type", "image/png")
         extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(media_type)
         if not extension:
@@ -192,41 +181,52 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
         finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
         raise
     except BaseException:
-        # Stop/Rerun do Streamlit não herdam de Exception. Libere e propague.
         liberar_requisicao(assinatura)
         raise
 
 
-def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str, voice: str | None = None) -> str:
-    """Gera MP3 via TTS mantendo compatibilidade com o pipeline legado.
+def gerar_audio(
+    texto_com_marcacoes: str,
+    nome_arquivo: str,
+    voice: str | None = None,
+    *,
+    model: str | None = None,
+    instructions: str | None = None,
+    response_format: str = "mp3",
+) -> str:
+    """Gera voz usando o endpoint TTS já compartilhado pelo FaithBloom.
 
-    Marcadores editoriais do FaithBloom são convertidos para pontuação natural
-    antes de enviar ao TTS, evitando que o sintetizador leia ``[pausa curta]``
-    em voz alta. O Voice Profile pode fornecer um ``provider_voice_id``; quando
-    vazio, usa-se a voz padrão configurada no ambiente.
+    ``model`` e ``instructions`` permitem especializar a identidade sonora do
+    Jarvis sem criar um segundo cliente de áudio nem alterar o Audiobook Studio.
     """
     texto_tts=converter_marcacoes_para_texto_natural(texto_com_marcacoes)
     palavras=max(1,len(texto_tts.split()))
     mins=max(0.1,palavras/145.0)
     estimativa=POLITICA.estimativa_audio_min_usd*mins
+    selected_model=(model or MODELO_VOZ).strip()
     voice_id=(voice or VOZ_PADRAO or "").strip()
-    assinatura_conteudo=texto_tts+(f"|voice:{voice_id}" if voice_id else "")
-    req_id,assinatura,estimativa,inicio=iniciar_requisicao("audio",MODELO_VOZ,assinatura_conteudo,estimativa)
+    fmt=(response_format or "mp3").strip().lower()
+    if fmt not in {"mp3", "pcm"}:
+        raise ValueError("Formato de voz inválido. Use mp3 ou pcm.")
+    assinatura_conteudo=texto_tts+f"|model:{selected_model}|format:{fmt}"+(f"|voice:{voice_id}" if voice_id else "")
+    req_id,assinatura,estimativa,inicio=iniciar_requisicao("audio",selected_model,assinatura_conteudo,estimativa)
     try:
-        payload={"model":MODELO_VOZ,"input":texto_tts,"response_format":"mp3"}
+        payload={"model":selected_model,"input":texto_tts,"response_format":fmt}
         if voice_id:
             payload["voice"]=voice_id
+        if instructions and instructions.strip():
+            payload["instructions"]=instructions.strip()
         resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/audio/speech",payload,120)
-        caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.mp3")
+        extension="mp3" if fmt == "mp3" else "pcm"
+        caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.{extension}")
         with open(caminho,"wb") as f:
             f.write(resp.content)
-        finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"sucesso")
+        finalizar_requisicao(req_id,assinatura,"audio",selected_model,estimativa,inicio,"sucesso")
         return caminho
     except Exception as exc:
-        finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        finalizar_requisicao(req_id,assinatura,"audio",selected_model,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
         raise
     except BaseException:
-        # Stop/Rerun do Streamlit não herdam de Exception. Libere e propague.
         liberar_requisicao(assinatura)
         raise
 
