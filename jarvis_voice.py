@@ -20,17 +20,21 @@ from controle_geracao import (
     iniciar_requisicao,
 )
 from jarvis_assistant import interpret_request
+from jarvis_dialogue import build_natural_reply
 from jarvis_weather import build_weather_reply, extract_location, is_weather_request, requested_day_offset
 from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_retry, gerar_audio
 
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
 JARVIS_VOICE_MODEL = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "openai/gpt-4o-mini-tts-2025-12-15")
-JARVIS_VOICE_ID = os.environ.get("OPENROUTER_VOZ_JARVIS", "alloy")
+# Onyx gives the prototype a deeper adult base than Alloy. This is an original
+# FaithBloom profile, not a clone or imitation of any actor/character voice.
+JARVIS_VOICE_ID = os.environ.get("OPENROUTER_VOZ_JARVIS", "onyx")
 JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
     "OPENROUTER_INSTRUCOES_VOZ_JARVIS",
-    "Fale em português do Brasil com voz adulta, calma, confiante, elegante e tecnológica. "
-    "Use ritmo natural, dicção clara, tom acolhedor e sofisticado, como um assistente executivo futurista. "
-    "Evite soar infantil, caricato ou excessivamente animado.",
+    "Fale em português do Brasil com voz masculina adulta, média-grave, calma e confiante. "
+    "Use uma cadência britânica refinada e discreta, dicção muito clara, ritmo controlado, "
+    "tom elegante de assistente executivo futurista e humor sutil quando apropriado. "
+    "Não imite nenhum ator ou personagem conhecido. Evite soar infantil, caricato, teatral ou excessivamente animado.",
 )
 SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
 
@@ -89,8 +93,15 @@ def build_spoken_reply(
     result: dict | None = None,
     project_progress: dict | None = None,
     weather_location: str | None = None,
+    history: list[dict[str, Any]] | None = None,
+    natural: bool = False,
 ) -> str:
-    """Cria uma resposta falada curta sem gastar uma segunda chamada de LLM."""
+    """Cria uma resposta falada curta.
+
+    Clima e progresso usam dados determinísticos. Para a experiência conversacional
+    da UI, ``natural=True`` usa o modelo de texto já existente para compreender o
+    pedido e evitar respostas repetitivas, preservando a rota e as aprovações.
+    """
     texto = (transcript or "").strip()
     if not texto:
         return "Não consegui ouvir uma mensagem. Grave novamente e tente de novo."
@@ -105,6 +116,18 @@ def build_spoken_reply(
         return str(project_progress.get("message") or "Encontrei seu projeto atual e posso continuar do próximo checkpoint.")
 
     interpreted = result or interpret_request(texto)
+    if natural:
+        try:
+            return build_natural_reply(
+                texto,
+                history=history,
+                route_result=interpreted,
+                project_progress=project_progress,
+            )
+        except Exception:
+            # A conversa continua mesmo se o modelo textual estiver indisponível.
+            pass
+
     plan = interpreted.get("route_plan") or {}
     projeto = plan.get("project_label") or "seu projeto"
     publico = plan.get("audience_label") or "o público escolhido"
