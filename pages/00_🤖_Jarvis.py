@@ -1,7 +1,6 @@
 """Jarvis MVP — conversational front door for FaithBloom."""
 from __future__ import annotations
 
-import re
 import streamlit as st
 
 from estilo import aplicar_estilo
@@ -137,6 +136,13 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# Entrada de voz da Home: reutiliza a tela e os serviços de voz já existentes.
+# Assim a Home ganha um CTA claro sem duplicar STT, TTS, clima ou controles de custo.
+st.markdown("<div style='height:.45rem'></div>", unsafe_allow_html=True)
+if st.button("🎙️ Falar com Jarvis", type="primary", use_container_width=True, key="jarvis_voice_home"):
+    st.switch_page("pages/01_🎙️_Jarvis_Voz.py")
+st.caption("🎤 Fale sobre seu projeto ou pergunte sobre o clima. O Jarvis ouve, responde por texto e também por voz.")
 
 with st.expander("🎭 Ver as expressões do Jarvis", expanded=False):
     st.caption("Prévia visual beta. As reações não mudam o conteúdo do projeto nem gastam créditos.")
