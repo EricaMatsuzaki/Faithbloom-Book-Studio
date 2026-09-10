@@ -9,7 +9,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-SCHEMA = "faithbloom.saas-fullstack-automation-engineer.v2"
+from security_baseline import security_by_default_gate
+
+SCHEMA = "faithbloom.saas-fullstack-automation-engineer.v3"
 ROLE_ID = "saas_automation_engineer"
 NAME = "Arquiteto SaaS, Full-Stack & Automação"
 MISSION = (
@@ -63,6 +65,9 @@ SKILL_DOMAINS: dict[str, tuple[str, ...]] = {
         "authentication", "authorization", "RBAC", "tenant isolation", "secrets management",
         "OWASP", "input validation", "secure uploads", "least privilege", "privacy by design",
         "CSRF/XSS/SQL injection awareness", "secure cookies", "session security", "CORS concepts",
+        "security by default", "fail-closed production gates", "MFA for privileged users",
+        "recent re-authentication for critical actions", "security headers", "vulnerability scanning",
+        "dependency security review", "malicious upload controls", "cross-tenant access prevention",
     ),
     "saas_product": (
         "multi-tenancy", "plans/entitlements", "usage metering", "quotas", "feature flags",
@@ -87,7 +92,7 @@ SKILL_DOMAINS: dict[str, tuple[str, ...]] = {
     "testing": (
         "unit tests", "integration tests", "contract tests", "end-to-end tests", "regression tests",
         "browser tests", "load tests", "failure injection", "test fixtures", "CI quality gates",
-        "UI smoke tests", "API tests", "migration tests", "accessibility tests concepts",
+        "UI smoke tests", "API tests", "migration tests", "accessibility tests concepts", "security regression tests",
     ),
     "devops": (
         "Git/GitHub", "branching", "pull requests", "GitHub Actions", "CI/CD", "Streamlit Cloud",
@@ -122,12 +127,14 @@ NON_NEGOTIABLES = (
     "manter ações pagas ou de alto impacto atrás de guardrails e aprovação",
     "interfaces devem ser responsivas, acessíveis e funcionais antes de serem consideradas concluídas",
     "sites e landing pages devem separar conteúdo, apresentação e integrações para facilitar manutenção",
+    "Security by Default é obrigatório: nenhum SaaS ou produto digital pode ser considerado pronto para produção sem Security Gate PASS",
+    "isolamento de tenant, autorização e proteção de dados devem falhar de forma fechada quando a evidência estiver ausente",
 )
 
 TASK_HINTS = {
     "architecture": ("arquitetura", "refator", "módulo", "modulo", "estrutura", "duplic"),
     "automation": ("automat", "workflow", "fila", "job", "webhook", "gatilho", "scheduler"),
-    "security": ("segurança", "seguranca", "auth", "login", "permiss", "token", "secret"),
+    "security": ("segurança", "seguranca", "auth", "login", "permiss", "token", "secret", "rls", "mfa", "vulnerab"),
     "data": ("supabase", "banco", "database", "sql", "persist", "migra", "backup"),
     "frontend": ("streamlit", "interface", "ui", "ux", "responsiv", "mobile", "css", "frontend"),
     "fullstack": ("full stack", "fullstack", "app", "aplicativo", "aplicação", "aplicacao", "dashboard", "painel", "crud"),
@@ -179,10 +186,11 @@ def build_execution_plan(text: str, *, existing_components: list[str] | None = N
         {"phase": "verify", "action": "Auditar arquitetura, branch, dependências, módulos, UI e testes relacionados antes de editar."},
         {"phase": "reuse", "action": "Mapear componentes, estilos, serviços e integrações existentes que já resolvem total ou parcialmente o pedido."},
         {"phase": "design", "action": "Definir fluxo, estados, responsividade, acessibilidade, contratos de API e persistência antes da implementação."},
+        {"phase": "security", "action": "Aplicar Security by Default: autenticação, autorização, tenant isolation, RLS/dados, secrets, APIs, uploads, logs, backup, privacidade, dependências e controles web."},
         {"phase": "extend", "action": "Preferir extensão compatível e pequena sobre componentes canônicos existentes."},
         {"phase": "implement", "action": "Criar código novo somente para lacunas comprovadas, com interfaces explícitas, tratamento de erros e rollback."},
-        {"phase": "validate", "action": "Executar testes unitários, integração, UI/E2E/regressão aplicáveis e validar falhas reais de runtime."},
-        {"phase": "release", "action": "Confirmar CI, observabilidade, segurança, migrações, SEO/performance quando aplicável, rollback e aprovação humana antes de release."},
+        {"phase": "validate", "action": "Executar testes unitários, integração, segurança, UI/E2E/regressão aplicáveis e validar falhas reais de runtime."},
+        {"phase": "release", "action": "Confirmar CI, Security Gate, observabilidade, migrações, SEO/performance quando aplicável, rollback e aprovação humana antes de release."},
     ]
     return {
         "schema": SCHEMA,
@@ -192,6 +200,8 @@ def build_execution_plan(text: str, *, existing_components: list[str] | None = N
         "domains": domains,
         "existing_components": components,
         "anti_duplication_sequence": ["verify", "reuse", "extend", "create_if_missing"],
+        "security_by_default": True,
+        "production_requires_security_gate": True,
         "steps": steps,
         "requires_explicit_approval": high_impact,
         "status": "needs_approval" if high_impact else "planned",
@@ -226,17 +236,37 @@ def automation_safety_gate(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def production_security_readiness(
+    security_controls: dict[str, Any] | None,
+    *,
+    privileged_access: bool = True,
+) -> dict[str, Any]:
+    """Security Gate oficial do agente para SaaS/produtos digitais em produção."""
+    return security_by_default_gate(
+        security_controls,
+        production=True,
+        privileged_access=privileged_access,
+    )
+
+
 def release_readiness(checks: dict[str, Any]) -> dict[str, Any]:
-    """Gate conservador: só marca ready quando todos os checks obrigatórios passam."""
+    """Gate conservador: produção exige Security-by-Default além de CI/rollback."""
     checks = dict(checks or {})
+    security = production_security_readiness(
+        checks.get("security_controls"),
+        privileged_access=bool(checks.get("privileged_access", True)),
+    )
     mandatory = (
-        "tests", "ci", "security", "migration_safety", "rollback", "secrets", "observability",
+        "tests", "ci", "migration_safety", "rollback", "secrets", "observability",
     )
     missing = [name for name in mandatory if checks.get(name) is not True]
+    if not security["ready"]:
+        missing.append("security_gate")
     return {
         "ready": not missing,
         "missing": missing,
         "status": "ready" if not missing else "blocked",
+        "security_gate": security,
     }
 
 
@@ -249,4 +279,5 @@ def handle_saas_request(text: str, *, existing_components: list[str] | None = No
         "skill_domains": list(SKILL_DOMAINS),
         "skill_count": len(all_skills()),
         "non_negotiables": list(NON_NEGOTIABLES),
+        "security_policy": "security_by_default_fail_closed",
     })
