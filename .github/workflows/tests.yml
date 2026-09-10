@@ -39,5 +39,19 @@ jobs:
           PYTHONPATH: .
         run: pytest -q
 
+      - name: Run full-stack repository audit
+        env:
+          PYTHONPATH: .
+        run: python scripts_fullstack_audit.py
+
+      - name: Upload full-stack audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: faithbloom-fullstack-audit
+          path: FULLSTACK_AUDIT_REPORT.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Audit Python dependencies
         run: pip-audit -r requirements.txt --progress-spinner off
