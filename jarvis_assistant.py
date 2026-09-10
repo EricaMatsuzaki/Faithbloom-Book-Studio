@@ -19,15 +19,17 @@ AUTONOMY_MODES = {
     "manager": "Gerente",
 }
 
+# More explicit formats come first. This prevents a certification keyword such as
+# "JLPT" from overriding an explicit request for an "apostila".
 PROJECT_HINTS = [
     ("coloring_book", ("colorir", "pintar", "line art")),
     ("activity_book", ("atividade", "atividades", "labirinto", "caça-palavras")),
     ("comic", ("hq", "quadrinho", "quadrinhos", "gibi")),
     ("flashcards", ("flashcard", "flashcards", "memorização")),
-    ("exam_prep", ("prova", "certificação", "preparatório", "jlpt", "eiken", "ielts")),
     ("study_book", ("apostila", "livro de estudos", "material de estudo")),
     ("study_guide", ("guia de estudos", "plano de estudos")),
     ("workbook", ("workbook", "caderno de exercícios")),
+    ("exam_prep", ("prova", "certificação", "preparatório", "jlpt", "eiken", "ielts")),
     ("teen_devotional", ("devocional adolescente", "devocional para adolescente")),
     ("children_devotional", ("devocional infantil", "devocional para criança")),
     ("teen_advice", ("conselhos para adolescente", "conselho para adolescente")),
@@ -85,11 +87,17 @@ def infer_editorial_line(text: str) -> str:
 
 
 def infer_derived_outputs(text: str) -> list[str]:
+    """Infer explicit derived outputs only.
+
+    A protected/inspiring work mentioned as an origin (for example, "inspirado em
+    um filme") must not silently become a request to produce a film. Video output
+    therefore requires an explicit production verb/format signal.
+    """
     value = _norm(text)
     outputs = []
     if any(x in value for x in ("audiobook", "áudio livro", "audio livro", "narração")):
         outputs.append("audiobook")
-    if any(x in value for x in ("animação", "animacao", "desenho animado", "vídeo", "video", "filme")):
+    if any(x in value for x in ("animação", "animacao", "desenho animado", "vídeo", "video")) or re.search(r"\b(faça|fazer|produza|produzir|crie|criar)\s+(um\s+)?filme\b", value):
         outputs.append("animation")
     if any(x in value for x in ("música", "musica", "canção", "cancao", "trilha sonora")):
         outputs.append("music")
