@@ -50,11 +50,28 @@ def test_spoken_reply_reuses_editorial_route_and_requires_confirmation():
     assert "confirma" in lower
 
 
-def test_weather_voice_request_does_not_pretend_realtime_access():
+def test_weather_voice_request_asks_city_when_missing():
     reply = voice.build_spoken_reply("Jarvis, qual é a previsão do tempo para hoje?")
-    lower = reply.casefold()
-    assert "tempo real" in lower
-    assert "ainda não" in lower
+    assert "cidade" in reply.casefold()
+
+
+def test_weather_voice_request_uses_realtime_weather_module(monkeypatch):
+    called = {}
+
+    def fake_weather(location):
+        called["location"] = location
+        return "Em Toyohashi, agora está 28 graus e parcialmente nublado."
+
+    monkeypatch.setattr(voice, "build_weather_reply", fake_weather)
+    reply = voice.build_spoken_reply("Jarvis, como está o tempo em Toyohashi?")
+    assert called["location"] == "Toyohashi"
+    assert "28 graus" in reply
+
+
+def test_weather_voice_can_use_configured_default_city(monkeypatch):
+    monkeypatch.setattr(voice, "build_weather_reply", lambda location: f"Clima consultado em {location}.")
+    reply = voice.build_spoken_reply("Vai chover hoje?", weather_location="Nagoya, Japan")
+    assert reply == "Clima consultado em Nagoya, Japan."
 
 
 def test_continue_project_speaks_existing_progress_message():
