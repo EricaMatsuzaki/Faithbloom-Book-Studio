@@ -29,6 +29,14 @@ from openrouter_client import (
 )
 
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
+JARVIS_VOICE_MODEL = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "openai/gpt-4o-mini-tts-2025-12-15")
+JARVIS_VOICE_ID = os.environ.get("OPENROUTER_VOZ_JARVIS", "alloy")
+JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
+    "OPENROUTER_INSTRUCOES_VOZ_JARVIS",
+    "Fale em português do Brasil com voz adulta, calma, confiante, elegante e tecnológica. "
+    "Use ritmo natural, dicção clara, tom acolhedor e sofisticado, como um assistente executivo futurista. "
+    "Evite soar infantil, caricato ou excessivamente animado.",
+)
 SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
 
 
@@ -100,7 +108,6 @@ def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "p
 
 
 def _parece_pedido_tempo(text: str) -> bool:
-    """Compatibilidade interna: delega a detecção ao módulo de clima."""
     return is_weather_request(text)
 
 
@@ -146,7 +153,18 @@ def build_spoken_reply(
 
 
 def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | None = None) -> str:
-    """Reutiliza o TTS oficial já empregado pelo Audiobook Studio."""
+    """Reutiliza o TTS oficial com um perfil sonoro específico do Jarvis.
+
+    O Audiobook Studio mantém sua configuração própria. O Jarvis usa por padrão
+    um modelo de speech com MP3 e instruções de estilo compatíveis com OpenRouter.
+    """
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
-    return gerar_audio(text.strip(), name, voice=voice)
+    return gerar_audio(
+        text.strip(),
+        name,
+        voice=voice or JARVIS_VOICE_ID,
+        model=JARVIS_VOICE_MODEL,
+        instructions=JARVIS_VOICE_INSTRUCTIONS,
+        response_format="mp3",
+    )
