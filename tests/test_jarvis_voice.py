@@ -145,6 +145,29 @@ def test_non_gemini_tts_input_is_not_wrapped():
     assert voice._prepare_tts_input("Olá", "openai/some-current-tts") == "Olá"
 
 
+def test_tts_sanitizer_removes_emojis_without_changing_visible_reply():
+    reply = "Tudo certo, Erica. 😊 ❤️ Pronto para continuar."
+    spoken = voice._sanitize_tts_text(reply)
+    assert "😊" not in spoken
+    assert "❤" not in spoken
+    assert "rosto sorridente" not in spoken.casefold()
+    assert spoken == "Tudo certo, Erica. Pronto para continuar."
+    assert "😊" in reply
+
+
+def test_synthesize_reply_never_sends_emoji_to_tts(monkeypatch):
+    called = {}
+
+    def fake_generate(text, name, voice=None, **kwargs):
+        called["text"] = text
+        return "saida_audio/mock.mp3"
+
+    monkeypatch.setattr(voice, "gerar_audio", fake_generate)
+    voice.synthesize_reply("Está tudo pronto 😊", name="emoji_test")
+    assert "😊" not in called["text"]
+    assert "Está tudo pronto" in called["text"]
+
+
 def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
     route = {
         "route_plan": {"project_label": "História infantil", "audience_label": "3–8 anos"},
