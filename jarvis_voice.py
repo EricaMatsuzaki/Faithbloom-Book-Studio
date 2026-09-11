@@ -209,16 +209,38 @@ def build_spoken_reply(
     )
 
 
+def _log_tts_runtime_failure(exc: Exception, *, model: str, voice: str, response_format: str) -> None:
+    """Registra diagnóstico técnico seguro no log do Streamlit sem expor secrets."""
+    detail = sanitizar_texto(str(exc)) or exc.__class__.__name__
+    print(
+        "[FaithBloom Jarvis TTS] falha de runtime "
+        f"model={model} voice={voice} format={response_format} "
+        f"error={detail}",
+        flush=True,
+    )
+
+
 def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | None = None) -> str:
     """Reutiliza o TTS oficial com perfil Jarvis e parâmetros compatíveis por provider."""
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
     prepared_text = _prepare_tts_input(text, JARVIS_VOICE_MODEL)
-    return gerar_audio(
-        prepared_text,
-        name,
-        voice=voice or JARVIS_VOICE_ID,
-        model=JARVIS_VOICE_MODEL,
-        instructions=_voice_instructions_for_model(JARVIS_VOICE_MODEL),
-        response_format="mp3",
-    )
+    selected_voice = voice or JARVIS_VOICE_ID
+    response_format = "mp3"
+    try:
+        return gerar_audio(
+            prepared_text,
+            name,
+            voice=selected_voice,
+            model=JARVIS_VOICE_MODEL,
+            instructions=_voice_instructions_for_model(JARVIS_VOICE_MODEL),
+            response_format=response_format,
+        )
+    except Exception as exc:
+        _log_tts_runtime_failure(
+            exc,
+            model=JARVIS_VOICE_MODEL,
+            voice=selected_voice,
+            response_format=response_format,
+        )
+        raise
