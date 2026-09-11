@@ -7,6 +7,7 @@ import mimetypes
 import os
 import time
 import uuid
+import wave
 from typing import Any
 
 import requests
@@ -198,6 +199,9 @@ def gerar_audio(
 
     ``model`` e ``instructions`` permitem especializar a identidade sonora do
     Jarvis sem criar um segundo cliente de áudio nem alterar o Audiobook Studio.
+
+    Para Gemini TTS em PCM, convertemos o fluxo cru 24 kHz/16-bit/mono para WAV.
+    Isso evita que Safari/Streamlit tentem reproduzir bytes PCM como se fossem MP3.
     """
     texto_tts=converter_marcacoes_para_texto_natural(texto_com_marcacoes)
     palavras=max(1,len(texto_tts.split()))
@@ -217,10 +221,22 @@ def gerar_audio(
         if instructions and instructions.strip():
             payload["instructions"]=instructions.strip()
         resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/audio/speech",payload,120)
-        extension="mp3" if fmt == "mp3" else "pcm"
-        caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.{extension}")
-        with open(caminho,"wb") as f:
-            f.write(resp.content)
+        if not resp.content:
+            raise OpenRouterFaithBloomError("A OpenRouter retornou áudio vazio.")
+
+        if fmt == "pcm" and selected_model.startswith("google/gemini-"):
+            caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.wav")
+            with wave.open(caminho, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(24000)
+                wav_file.writeframes(resp.content)
+        else:
+            extension="mp3" if fmt == "mp3" else "pcm"
+            caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.{extension}")
+            with open(caminho,"wb") as f:
+                f.write(resp.content)
+
         finalizar_requisicao(req_id,assinatura,"audio",selected_model,estimativa,inicio,"sucesso")
         return caminho
     except Exception as exc:
