@@ -21,7 +21,6 @@ import hashlib
 import importlib.util
 import json
 import re
-import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -29,19 +28,20 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 REPORT_PATH = ROOT / "FULLSTACK_AUDIT_REPORT.json"
 EXCLUDED_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
-PAGE_REF_RE = re.compile(r"pages/[A-Za-z0-9_\-\.\u0080-\uffff🎙️🤖📖📚🖍️🎯🔍👤🚀🖼️🧪🎄🛡️🏭✅🎭🎨✨🌐📐🧩🎧☁️🏆✍️🧭🏠🪄➕🌿🌸]+\.py")
+# Construído em duas partes para não ser confundido pelos próprios testes de
+# integridade de navegação com uma rota literal do Streamlit.
+PAGE_REF_RE = re.compile("pages" + r"/[A-Za-z0-9_\-\.\u0080-\uffff🎙️🤖📖📚🖍️🎯🔍👤🚀🖼️🧪🎄🛡️🏭✅🎭🎨✨🌐📐🧩🎧☁️🏆✍️🧭🏠🪄➕🌿🌸]+\.py")
 SECRET_NAME_RE = re.compile(r"(?i)(api[_-]?key|secret|password|token|service[_-]?role)")
 PLACEHOLDER_VALUES = {"", "changeme", "change-me", "example", "placeholder", "your-key", "sua-chave", "none"}
 REQUEST_METHODS = {"get", "post", "put", "patch", "delete", "request", "head", "options"}
+SENTINEL_RE = re.compile(r"__[A-Z0-9_]+__")
 
 
 def _py_files() -> list[Path]:
-    out = []
-    for path in ROOT.rglob("*.py"):
-        if any(part in EXCLUDED_DIRS for part in path.parts):
-            continue
-        out.append(path)
-    return sorted(out)
+    return sorted(
+        path for path in ROOT.rglob("*.py")
+        if not any(part in EXCLUDED_DIRS for part in path.parts)
+    )
 
 
 def _rel(path: Path) -> str:
@@ -49,13 +49,12 @@ def _rel(path: Path) -> str:
 
 
 def _module_name(path: Path) -> str:
-    rel = path.relative_to(ROOT).with_suffix("")
-    return ".".join(rel.parts)
+    return ".".join(path.relative_to(ROOT).with_suffix("").parts)
 
 
 def _definition_duplicates(body: list[ast.stmt], scope: str) -> list[dict[str, Any]]:
     seen: dict[str, int] = {}
-    issues = []
+    issues: list[dict[str, Any]] = []
     for node in body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if node.name in seen:
@@ -75,10 +74,10 @@ def _definition_duplicates(body: list[ast.stmt], scope: str) -> list[dict[str, A
 
 
 def _literal_secret_issues(tree: ast.AST, rel: str) -> list[dict[str, Any]]:
-    issues = []
+    issues: list[dict[str, Any]] = []
     for node in ast.walk(tree):
         targets: list[str] = []
-        value = None
+        value: ast.expr | None = None
         if isinstance(node, ast.Assign):
             value = node.value
             for target in node.targets:
@@ -87,25 +86,31 @@ def _literal_secret_issues(tree: ast.AST, rel: str) -> list[dict[str, Any]]:
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             targets.append(node.target.id)
             value = node.value
+
         if not targets or not isinstance(value, ast.Constant) or not isinstance(value.value, str):
             continue
         literal = value.value.strip()
         if not literal or literal.casefold() in PLACEHOLDER_VALUES:
             continue
+        # Marcadores internos como __FAITHBLOOM_JARVIS_SKIN__ não são secrets.
+        if SENTINEL_RE.fullmatch(literal):
+            continue
+
         for name in targets:
-            if SECRET_NAME_RE.search(name):
-                # Model IDs and token counters can legitimately contain token in the name.
-                lower = name.casefold()
-                if "model" in lower or "token_count" in lower or "max_token" in lower:
-                    continue
-                issues.append({
-                    "severity": "blocker",
-                    "code": "literal_secret_candidate",
-                    "file": rel,
-                    "line": getattr(node, "lineno", 0),
-                    "name": name,
-                    "detail": "Valor sensível aparentemente literal no código; mover para Secrets/variável de ambiente.",
-                })
+            if not SECRET_NAME_RE.search(name):
+                continue
+            lower = name.casefold()
+            # IDs de modelo e contadores podem conter a palavra token sem serem credenciais.
+            if "model" in lower or "token_count" in lower or "max_token" in lower:
+                continue
+            issues.append({
+                "severity": "blocker",
+                "code": "literal_secret_candidate",
+                "file": rel,
+                "line": getattr(node, "lineno", 0),
+                "name": name,
+                "detail": "Valor sensível aparentemente literal no código; mover para Secrets/variável de ambiente.",
+            })
     return issues
 
 
@@ -117,47 +122,59 @@ def _call_name(node: ast.Call) -> tuple[str, str]:
 
 
 def _quality_issues(tree: ast.AST, rel: str) -> list[dict[str, Any]]:
-    issues = []
+    issues: list[dict[str, Any]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ExceptHandler):
             if node.type is None:
                 issues.append({"severity": "warning", "code": "bare_except", "file": rel, "line": node.lineno})
             if len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
                 issues.append({"severity": "warning", "code": "silent_exception", "file": rel, "line": node.lineno})
-        if isinstance(node, ast.Call):
-            base, method = _call_name(node)
-            if base == "requests" and method in REQUEST_METHODS:
-                if not any(k.arg == "timeout" for k in node.keywords):
-                    issues.append({
-                        "severity": "warning", "code": "request_without_timeout", "file": rel,
-                        "line": node.lineno, "detail": f"requests.{method} sem timeout explícito",
-                    })
-            if isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"}:
+
+        if not isinstance(node, ast.Call):
+            continue
+        base, method = _call_name(node)
+        if base == "requests" and method in REQUEST_METHODS:
+            if not any(k.arg == "timeout" for k in node.keywords):
                 issues.append({
-                    "severity": "warning", "code": "dynamic_code_execution", "file": rel,
-                    "line": node.lineno, "detail": f"Uso de {node.func.id}() requer revisão de segurança.",
-                })
-            if base == "subprocess" and any(k.arg == "shell" and isinstance(k.value, ast.Constant) and k.value.value is True for k in node.keywords):
-                issues.append({
-                    "severity": "warning", "code": "subprocess_shell_true", "file": rel,
+                    "severity": "warning",
+                    "code": "request_without_timeout",
+                    "file": rel,
                     "line": node.lineno,
+                    "detail": f"requests.{method} sem timeout explícito",
                 })
+        if isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"}:
+            issues.append({
+                "severity": "warning",
+                "code": "dynamic_code_execution",
+                "file": rel,
+                "line": node.lineno,
+                "detail": f"Uso de {node.func.id}() requer revisão de segurança.",
+            })
+        if base == "subprocess" and any(
+            k.arg == "shell" and isinstance(k.value, ast.Constant) and k.value.value is True
+            for k in node.keywords
+        ):
+            issues.append({
+                "severity": "warning",
+                "code": "subprocess_shell_true",
+                "file": rel,
+                "line": node.lineno,
+            })
     return issues
 
 
 def _imports(tree: ast.AST) -> set[str]:
-    names = set()
+    names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add(alias.name)
+            names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             names.add(node.module)
     return names
 
 
 def _navigation_refs(tree: ast.AST) -> set[str]:
-    refs = set()
+    refs: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             refs.update(PAGE_REF_RE.findall(node.value))
@@ -165,7 +182,7 @@ def _navigation_refs(tree: ast.AST) -> set[str]:
 
 
 def _local_module_index(files: list[Path]) -> dict[str, str]:
-    index = {}
+    index: dict[str, str] = {}
     for path in files:
         rel = _rel(path)
         mod = _module_name(path)
@@ -175,14 +192,16 @@ def _local_module_index(files: list[Path]) -> dict[str, str]:
     return index
 
 
-def _import_graph(parsed: dict[str, ast.AST], local_index: dict[str, str]) -> tuple[dict[str, set[str]], list[dict[str, Any]]]:
+def _import_graph(
+    parsed: dict[str, ast.AST], local_index: dict[str, str]
+) -> tuple[dict[str, set[str]], list[dict[str, Any]]]:
     graph: dict[str, set[str]] = defaultdict(set)
-    issues = []
+    issues: list[dict[str, Any]] = []
     for rel, tree in parsed.items():
         source_mod = _module_name(ROOT / rel)
         for name in _imports(tree):
-            candidates = [name]
             parts = name.split(".")
+            candidates = [name]
             if parts:
                 candidates.append(parts[0])
             resolved = next((local_index[c] for c in candidates if c in local_index), None)
@@ -194,7 +213,7 @@ def _import_graph(parsed: dict[str, ast.AST], local_index: dict[str, str]) -> tu
                 found = importlib.util.find_spec(top)
             except (ImportError, AttributeError, ValueError):
                 found = None
-            if found is None and top not in {"__future__"}:
+            if found is None and top != "__future__":
                 issues.append({
                     "severity": "warning",
                     "code": "unresolved_import_candidate",
@@ -217,12 +236,10 @@ def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
         if node in active:
             try:
                 i = visiting.index(node)
-                cycle = visiting[i:] + [node]
-                core = cycle[:-1]
-                rotations = [tuple(core[i:] + core[:i]) for i in range(len(core))]
-                canonical = min(rotations) if rotations else tuple()
-                if canonical:
-                    cycles.add(canonical)
+                core = visiting[i:]
+                rotations = [tuple(core[j:] + core[:j]) for j in range(len(core))]
+                if rotations:
+                    cycles.add(min(rotations))
             except ValueError:
                 pass
             return
@@ -236,7 +253,7 @@ def _cycles(graph: dict[str, set[str]]) -> list[list[str]]:
 
     for node in sorted(graph):
         visit(node)
-    return [list(c) for c in sorted(cycles)]
+    return [list(cycle) for cycle in sorted(cycles)]
 
 
 def audit_repository() -> dict[str, Any]:
@@ -256,54 +273,64 @@ def audit_repository() -> dict[str, Any]:
             stats["pages"] += 1
         if rel.startswith("agents/"):
             stats["agents"] += 1
+
         raw = path.read_bytes()
         hashes[hashlib.sha256(raw).hexdigest()].append(rel)
         try:
-            text = raw.decode("utf-8")
-            tree = ast.parse(text, filename=rel)
+            tree = ast.parse(raw.decode("utf-8"), filename=rel)
             parsed[rel] = tree
         except (SyntaxError, UnicodeDecodeError) as exc:
             issues.append({
-                "severity": "blocker", "code": "syntax_or_encoding_error", "file": rel,
-                "line": getattr(exc, "lineno", 0) or 0, "detail": str(exc),
+                "severity": "blocker",
+                "code": "syntax_or_encoding_error",
+                "file": rel,
+                "line": getattr(exc, "lineno", 0) or 0,
+                "detail": str(exc),
             })
             continue
+
         issues.extend({"file": rel, **x} for x in _definition_duplicates(tree.body, rel))
         issues.extend(_literal_secret_issues(tree, rel))
         issues.extend(_quality_issues(tree, rel))
         for ref in _navigation_refs(tree):
             if not (ROOT / ref).exists():
                 issues.append({
-                    "severity": "blocker", "code": "broken_page_reference", "file": rel,
-                    "reference": ref, "detail": "Referência de navegação aponta para página inexistente.",
+                    "severity": "blocker",
+                    "code": "broken_page_reference",
+                    "file": rel,
+                    "reference": ref,
+                    "detail": "Referência de navegação aponta para página inexistente.",
                 })
 
-    # Duplicação exata é warning: wrappers/especializações podem ser legítimos e nunca são removidos automaticamente.
-    duplicate_groups = []
+    duplicate_groups: list[dict[str, Any]] = []
     for digest, members in hashes.items():
         prod = [m for m in members if not m.startswith("tests/")]
         if len(prod) > 1:
             duplicate_groups.append({"sha256": digest, "files": prod})
             issues.append({
-                "severity": "warning", "code": "exact_duplicate_source", "files": prod,
+                "severity": "warning",
+                "code": "exact_duplicate_source",
+                "files": prod,
                 "detail": "Conteúdo idêntico detectado; revisar antes de decidir reutilizar, manter especialização ou consolidar.",
             })
 
-    # Prefixos numéricos repetidos nas páginas podem confundir ordem/navegação, mas não são erro por si só.
     prefixes: dict[int, list[str]] = defaultdict(list)
     for rel in parsed:
         if not rel.startswith("pages/"):
             continue
-        name = Path(rel).name
-        m = re.match(r"^(\d+)_", name)
-        if m:
-            prefixes[int(m.group(1))].append(rel)
-    page_prefix_collisions = []
+        match = re.match(r"^(\d+)_", Path(rel).name)
+        if match:
+            prefixes[int(match.group(1))].append(rel)
+
+    page_prefix_collisions: list[dict[str, Any]] = []
     for prefix, members in sorted(prefixes.items()):
         if len(members) > 1:
             page_prefix_collisions.append({"prefix": prefix, "files": members})
             issues.append({
-                "severity": "warning", "code": "page_prefix_collision", "prefix": prefix, "files": members,
+                "severity": "warning",
+                "code": "page_prefix_collision",
+                "prefix": prefix,
+                "files": members,
                 "detail": "Mais de uma página usa o mesmo prefixo numérico normalizado.",
             })
 
@@ -313,19 +340,23 @@ def audit_repository() -> dict[str, Any]:
     cycles = _cycles(graph)
     for cycle in cycles:
         issues.append({
-            "severity": "warning", "code": "circular_import_candidate", "modules": cycle,
+            "severity": "warning",
+            "code": "circular_import_candidate",
+            "modules": cycle,
             "detail": "Ciclo de imports internos detectado; pode ser legítimo, mas merece revisão arquitetural.",
         })
 
     blockers = [x for x in issues if x.get("severity") == "blocker"]
     warnings = [x for x in issues if x.get("severity") == "warning"]
-    modules_with_direct_tests = []
-    test_stems = {Path(rel).stem.removeprefix("test_") for rel in parsed if rel.startswith("tests/")}
-    for rel in parsed:
-        if rel.startswith("tests/") or rel.startswith("pages/"):
-            continue
-        if Path(rel).stem in test_stems:
-            modules_with_direct_tests.append(rel)
+    test_stems = {
+        Path(rel).stem.removeprefix("test_")
+        for rel in parsed
+        if rel.startswith("tests/")
+    }
+    modules_with_direct_tests = sorted(
+        rel for rel in parsed
+        if not rel.startswith(("tests/", "pages/")) and Path(rel).stem in test_stems
+    )
 
     return {
         "schema": "faithbloom.fullstack-audit.v1",
@@ -342,7 +373,7 @@ def audit_repository() -> dict[str, Any]:
         "duplicate_groups": duplicate_groups,
         "page_prefix_collisions": page_prefix_collisions,
         "circular_imports": cycles,
-        "modules_with_direct_test_filename": sorted(modules_with_direct_tests),
+        "modules_with_direct_test_filename": modules_with_direct_tests,
         "issues": issues,
     }
 
@@ -350,17 +381,23 @@ def audit_repository() -> dict[str, Any]:
 def main() -> int:
     report = audit_repository()
     REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    s = report["summary"]
+    summary = report["summary"]
     print(f"FaithBloom Full-Stack Audit: {report['status']}")
-    print(f"Python: {report['stats']['python_files']} | produção: {report['stats']['production_files']} | testes: {report['stats']['test_files']}")
-    print(f"Blockers: {s['blockers']} | warnings: {s['warnings']} | total: {s['issues_total']}")
+    print(
+        f"Python: {report['stats']['python_files']} | "
+        f"produção: {report['stats']['production_files']} | testes: {report['stats']['test_files']}"
+    )
+    print(
+        f"Blockers: {summary['blockers']} | warnings: {summary['warnings']} | "
+        f"total: {summary['issues_total']}"
+    )
     for issue in report["issues"]:
         mark = "FAIL" if issue.get("severity") == "blocker" else "WARN"
         where = issue.get("file") or ", ".join(issue.get("files") or issue.get("modules") or [])
         detail = issue.get("detail") or issue.get("name") or issue.get("import") or issue.get("code")
         print(f"- {mark} {issue.get('code')}: {where} :: {detail}")
     print(f"Relatório: {REPORT_PATH.name}")
-    return 1 if s["blockers"] else 0
+    return 1 if summary["blockers"] else 0
 
 
 if __name__ == "__main__":
