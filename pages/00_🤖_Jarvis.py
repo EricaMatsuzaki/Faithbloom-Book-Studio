@@ -1,8 +1,8 @@
-"""Jarvis canônico — interface futurística, voz, texto e roteamento FaithBloom.
+"""Jarvis canônico — interface futurística, voz automática, texto e roteamento FaithBloom.
 
-Esta página é a porta de entrada operacional do Jarvis. A interface usa HTML/CSS
-real via ``st.html`` (não Markdown) para evitar que o Safari/iPhone exponha tags
-como texto. Voz e texto usam controles nativos do Streamlit para maior robustez.
+A página usa controles nativos do Streamlit para microfone/áudio e HTML real para
+a camada visual. Depois que a usuária grava uma mensagem, o fluxo é automático:
+STT -> entendimento/roteamento -> resposta -> TTS -> reprodução automática.
 """
 from __future__ import annotations
 
@@ -55,12 +55,7 @@ def _greeting() -> str:
         now = datetime.now(ZoneInfo(timezone_name))
     except Exception:
         now = datetime.now()
-    if now.hour < 12:
-        opening = "Bom dia"
-    elif now.hour < 18:
-        opening = "Boa tarde"
-    else:
-        opening = "Boa noite"
+    opening = "Bom dia" if now.hour < 12 else "Boa tarde" if now.hour < 18 else "Boa noite"
     return f"{opening}, Erica. Estou online e pronto para ajudar."
 
 
@@ -86,7 +81,8 @@ def _set_stage(stage: str, message: str | None = None) -> None:
 
 
 def _synthesize(reply: str) -> None:
-    token = f"jarvis_{uuid.uuid4().hex[:10]}"
+    """Gera um novo áudio e um token único para autoplay exatamente uma vez."""
+    token = f"jarvis_{uuid.uuid4().hex[:12]}"
     st.session_state["jarvis_audio_path"] = ""
     st.session_state["jarvis_audio_error"] = ""
     try:
@@ -161,21 +157,17 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
     history = append_turn(history, "assistant", reply, intent=intent, metadata=metadata)
     st.session_state["jarvis_conversation_history"] = history
     st.session_state["jarvis_reply"] = reply
-    _set_stage("speaking", "Resposta pronta.")
+    _set_stage("speaking", "Preparando resposta em voz…")
     _synthesize(reply)
     return reply
 
 
 def _render_hero(stage: str, status_message: str, reply: str) -> None:
-    """Renderiza a camada visual sem passar pelo parser Markdown do Streamlit."""
     safe_stage = stage if stage in {"idle", "thinking", "speaking", "error"} else "idle"
     safe_status = html.escape(status_message or "Online")
     safe_reply = html.escape(reply or "")
     safe_greeting = html.escape(_greeting())
-    reply_markup = (
-        f'<div class="fb-reply"><strong>Jarvis:</strong> {safe_reply}</div>'
-        if safe_reply else ""
-    )
+    reply_markup = f'<div class="fb-reply"><strong>Jarvis:</strong> {safe_reply}</div>' if safe_reply else ""
     markup = f"""
 <style>
 .fb-stage{{position:relative;overflow:hidden;border-radius:30px;padding:clamp(20px,4vw,48px);background:radial-gradient(circle at 72% 22%,rgba(74,236,255,.18),transparent 20%),radial-gradient(circle at 75% 70%,rgba(121,91,255,.22),transparent 28%),linear-gradient(135deg,#071b2b,#0c3f50 48%,#282660);color:#fff;border:1px solid rgba(125,238,255,.22);box-shadow:0 28px 80px rgba(13,48,78,.25)}}
@@ -190,34 +182,11 @@ def _render_hero(stage: str, status_message: str, reply: str) -> None:
 .fb-head{{position:absolute;left:14px;top:44px;width:192px;height:144px;border-radius:49% 49% 43% 43%/43% 43% 52% 52%;background:linear-gradient(145deg,#fff,#d8e9f5 62%,#aabdd0);border:2px solid rgba(255,255,255,.95);box-shadow:inset -12px -14px 25px rgba(57,80,110,.16),0 0 35px rgba(83,237,255,.22)}}.fb-face{{position:absolute;inset:17px 16px 21px;border-radius:48px;background:radial-gradient(circle at 50% 23%,#18476a,#07131f 69%);border:2px solid #76f4ef;box-shadow:inset 0 0 30px rgba(80,219,245,.14),0 0 23px rgba(89,239,242,.36)}}
 .fb-eye{{position:absolute;top:44px;width:40px;height:14px;border-top:7px solid #77fff4;border-radius:50%;filter:drop-shadow(0 0 7px #77fff4);animation:blink 5s infinite}}.fb-eye.l{{left:31px}}.fb-eye.r{{right:31px}}.fb-smile{{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);width:38px;height:18px;border-bottom:6px solid #78fff5;border-radius:0 0 28px 28px;filter:drop-shadow(0 0 8px #78fff5)}}.fb-scan{{position:absolute;left:18px;right:18px;top:55px;height:2px;background:linear-gradient(90deg,transparent,#75fff7,transparent);box-shadow:0 0 14px #75fff7;opacity:0;animation:scan 4.8s ease-in-out infinite}}
 .fb-body{{position:absolute;left:47px;top:188px;width:126px;height:105px;border-radius:34px 34px 46px 46px;background:linear-gradient(145deg,#fff,#d9e8f2 67%,#a5b8cb);border:2px solid rgba(255,255,255,.92);box-shadow:inset -11px -13px 22px rgba(55,76,105,.15)}}.fb-core{{position:absolute;left:50%;top:23px;transform:translateX(-50%);width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:#071927;border:4px solid #66eef1;box-shadow:0 0 28px rgba(102,238,241,.72);font-size:25px;color:#ff7fd1;animation:core 1.7s ease-in-out infinite}}.fb-arm{{position:absolute;top:205px;width:29px;height:76px;border-radius:20px;background:linear-gradient(#f6fbff,#a9bed0);border:1px solid rgba(255,255,255,.9)}}.fb-arm.l{{left:23px;transform:rotate(18deg)}}.fb-arm.r{{right:23px;transform:rotate(-18deg)}}
-.fb-stage[data-state='thinking'] .fb-core{{animation-duration:.72s}}.fb-stage[data-state='thinking'] .fb-scan{{opacity:.9;animation-duration:1.2s}}.fb-stage[data-state='speaking'] .fb-core{{box-shadow:0 0 42px rgba(255,112,212,.72),0 0 28px rgba(102,238,241,.8)}}.fb-stage[data-state='error'] .fb-dot{{background:#ff8b8b;box-shadow:0 0 16px #ff8b8b}}
-.fb-reply{{margin-top:1rem;padding:1rem 1.05rem;border-radius:18px;background:linear-gradient(135deg,rgba(43,222,218,.08),rgba(127,96,255,.08));border:1px solid rgba(100,227,239,.16);line-height:1.55}}
+.fb-stage[data-state='thinking'] .fb-core{{animation-duration:.72s}}.fb-stage[data-state='thinking'] .fb-scan{{opacity:.9;animation-duration:1.2s}}.fb-stage[data-state='speaking'] .fb-core{{box-shadow:0 0 42px rgba(255,112,212,.72),0 0 28px rgba(102,238,241,.8)}}.fb-stage[data-state='error'] .fb-dot{{background:#ff8b8b;box-shadow:0 0 16px #ff8b8b}}.fb-reply{{margin-top:1rem;padding:1rem 1.05rem;border-radius:18px;background:linear-gradient(135deg,rgba(43,222,218,.08),rgba(127,96,255,.08));border:1px solid rgba(100,227,239,.16);line-height:1.55}}
 @keyframes float{{0%,100%{{transform:translateY(0) rotateY(-2deg)}}50%{{transform:translateY(-12px) rotateY(2deg)}}}}@keyframes aura{{0%,100%{{transform:scale(.96);opacity:.7}}50%{{transform:scale(1.06);opacity:1}}}}@keyframes floor{{0%,100%{{transform:scaleX(.9);opacity:.55}}50%{{transform:scaleX(1.1);opacity:.9}}}}@keyframes pulse{{50%{{transform:scale(1.45);opacity:.55}}}}@keyframes core{{0%,100%{{transform:translateX(-50%) scale(.94)}}50%{{transform:translateX(-50%) scale(1.07)}}}}@keyframes blink{{0%,46%,50%,100%{{transform:scaleY(1)}}48%{{transform:scaleY(.08)}}}}@keyframes scan{{0%,55%{{transform:translateY(0);opacity:0}}60%{{opacity:.85}}80%{{transform:translateY(70px);opacity:.45}}100%{{opacity:0}}}}
-@media(max-width:850px){{.fb-stage{{padding:20px 17px;border-radius:22px}}.fb-grid{{grid-template-columns:1fr}}.fb-robot-wrap{{min-height:290px;order:-1}}.fb-robot{{transform:scale(.83);transform-origin:center}}.fb-title{{font-size:3.05rem}}.fb-copy{{font-size:1rem}}}}
-@media(prefers-reduced-motion:reduce){{.fb-robot,.fb-aura,.fb-floor,.fb-dot,.fb-core,.fb-eye,.fb-scan{{animation:none!important}}}}
+@media(max-width:850px){{.fb-stage{{padding:20px 17px;border-radius:22px}}.fb-grid{{grid-template-columns:1fr}}.fb-robot-wrap{{min-height:290px;order:-1}}.fb-robot{{transform:scale(.83);transform-origin:center}}.fb-title{{font-size:3.05rem}}.fb-copy{{font-size:1rem}}}}@media(prefers-reduced-motion:reduce){{.fb-robot,.fb-aura,.fb-floor,.fb-dot,.fb-core,.fb-eye,.fb-scan{{animation:none!important}}}}
 </style>
-<section class="fb-stage" data-state="{safe_stage}">
-  <div class="fb-grid">
-    <div>
-      <span class="fb-kicker">FaithBloom Intelligence · Jarvis Core</span>
-      <div class="fb-title">JARVIS</div>
-      <div class="fb-copy">{safe_greeting} Fale ou escreva o que deseja criar, revisar, continuar ou diagnosticar. Eu coordeno os módulos existentes e mantenho decisões críticas sob sua aprovação.</div>
-      <div class="fb-pills"><span class="fb-pill">🟢 Online</span><span class="fb-pill">🎙️ Voz</span><span class="fb-pill">🧠 Contexto</span><span class="fb-pill">♻️ Anti-duplicação</span><span class="fb-pill">🔐 Security by Default</span></div>
-      <div class="fb-status"><span class="fb-dot"></span>{safe_status}</div>
-      {reply_markup}
-    </div>
-    <div class="fb-robot-wrap">
-      <div class="fb-aura"></div>
-      <div class="fb-floor"></div>
-      <div class="fb-robot" aria-label="Jarvis animado do FaithBloom">
-        <div class="fb-ant"></div>
-        <div class="fb-head"><div class="fb-face"><div class="fb-eye l"></div><div class="fb-eye r"></div><div class="fb-smile"></div><div class="fb-scan"></div></div></div>
-        <div class="fb-arm l"></div><div class="fb-arm r"></div>
-        <div class="fb-body"><div class="fb-core">♥</div></div>
-      </div>
-    </div>
-  </div>
-</section>
+<section class="fb-stage" data-state="{safe_stage}"><div class="fb-grid"><div><span class="fb-kicker">FaithBloom Intelligence · Jarvis Core</span><div class="fb-title">JARVIS</div><div class="fb-copy">{safe_greeting} Fale ou escreva o que deseja criar, revisar, continuar ou diagnosticar. Depois da sua fala, eu respondo automaticamente por voz quando o TTS estiver disponível.</div><div class="fb-pills"><span class="fb-pill">🟢 Online</span><span class="fb-pill">🎙️ Voz automática</span><span class="fb-pill">🧠 Contexto</span><span class="fb-pill">♻️ Anti-duplicação</span><span class="fb-pill">🔐 Security by Default</span></div><div class="fb-status"><span class="fb-dot"></span>{safe_status}</div>{reply_markup}</div><div class="fb-robot-wrap"><div class="fb-aura"></div><div class="fb-floor"></div><div class="fb-robot" aria-label="Jarvis animado do FaithBloom"><div class="fb-ant"></div><div class="fb-head"><div class="fb-face"><div class="fb-eye l"></div><div class="fb-eye r"></div><div class="fb-smile"></div><div class="fb-scan"></div></div></div><div class="fb-arm l"></div><div class="fb-arm r"></div><div class="fb-body"><div class="fb-core">♥</div></div></div></div></div></section>
 """
     st.html(markup)
 
@@ -231,12 +200,10 @@ project_progress = inspect_project_state(current_state) if current_state else No
 stage = st.session_state.get("jarvis_stage", "idle")
 status_message = st.session_state.get("jarvis_status_message", "Online")
 reply = st.session_state.get("jarvis_reply", "")
-
 _render_hero(stage, status_message, reply)
 
 st.markdown("### Converse com o Jarvis")
 left, right = st.columns([1, 1], gap="large")
-
 with left:
     audio = st.audio_input("🎙️ Fale com o Jarvis", key="jarvis_native_audio")
     if audio is not None:
@@ -245,7 +212,7 @@ with left:
         if digest != st.session_state.get("jarvis_last_native_audio"):
             st.session_state["jarvis_last_native_audio"] = digest
             try:
-                _set_stage("thinking", "Transcrevendo sua fala…")
+                _set_stage("thinking", "Transcrevendo e preparando sua resposta…")
                 transcript = transcribe_audio(
                     audio_bytes,
                     fmt=_audio_format(getattr(audio, "type", None)),
@@ -276,11 +243,22 @@ with right:
             _set_stage("error", "Não consegui concluir esse pedido agora. Tente novamente.")
             st.rerun()
 
-# Player nativo é mais robusto no Safari/iPhone que autoplay em componente customizado.
+# Autoplay exatamente uma vez por nova resposta. O áudio continua visível para replay manual.
 audio_path = str(st.session_state.get("jarvis_audio_path") or "")
+reply_token = str(st.session_state.get("jarvis_reply_token") or "")
 if audio_path and os.path.exists(audio_path):
+    should_autoplay = bool(
+        reply_token and reply_token != st.session_state.get("jarvis_last_autoplay_token")
+    )
+    if should_autoplay:
+        st.session_state["jarvis_last_autoplay_token"] = reply_token
+        _set_stage("speaking", "Jarvis está respondendo por voz…")
     st.markdown("#### 🔊 Resposta em voz")
-    st.audio(audio_path, format="audio/mpeg")
+    try:
+        st.audio(audio_path, format="audio/mpeg", autoplay=should_autoplay)
+    except TypeError:
+        # Compatibilidade defensiva com versões antigas do Streamlit.
+        st.audio(audio_path, format="audio/mpeg")
 elif st.session_state.get("jarvis_audio_error") and reply:
     st.info("A resposta textual está pronta. A voz premium ficou indisponível nesta tentativa.")
 
@@ -309,11 +287,11 @@ with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown(
         """
 - Conversa natural por **texto e voz** com memória curta.
+- **Resposta automática em voz** depois da gravação quando o TTS estiver disponível.
 - Roteamento para o **Orquestrador FaithBloom** e módulos existentes.
 - Consulta de **clima** quando solicitada.
 - Continuidade de projeto e navegação segura.
 - **Anti-duplicação**, aprovação humana e proteção de Masters.
-- Resposta por **TTS premium** quando o provedor estiver disponível.
         """
     )
 
