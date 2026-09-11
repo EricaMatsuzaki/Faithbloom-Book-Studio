@@ -27,41 +27,67 @@ WMO_PT = {
 
 
 def is_weather_request(text: str) -> bool:
+    """Reconhece pedidos naturais de clima, inclusive variações comuns do STT."""
     value = (text or "").casefold()
     hints = (
-        "previsão do tempo", "previsao do tempo", "tempo hoje", "tempo amanhã", "tempo amanha",
-        "tempo em ", "tempo no ", "tempo na ", "como está o tempo", "como esta o tempo", "vai chover",
-        "chuva hoje", "chuva amanhã", "chuva amanha", "temperatura hoje", "temperatura amanhã",
-        "temperatura amanha", "temperatura em ", "clima hoje", "clima amanhã", "clima amanha",
-        "clima em ", "clima no ", "clima na ", "weather", "forecast",
+        "previsão do tempo", "previsao do tempo", "previsão de tempo", "previsao de tempo",
+        "previsão aqui", "previsao aqui", "previsão para", "previsao para",
+        "tempo hoje", "tempo amanhã", "tempo amanha", "tempo agora",
+        "tempo em ", "tempo no ", "tempo na ", "tempo aqui",
+        "como está o tempo", "como esta o tempo", "como fica o tempo",
+        "vai chover", "chance de chuva", "chuva hoje", "chuva amanhã", "chuva amanha",
+        "temperatura hoje", "temperatura amanhã", "temperatura amanha", "temperatura em ",
+        "temperatura aqui", "clima hoje", "clima amanhã", "clima amanha", "clima agora",
+        "clima em ", "clima no ", "clima na ", "clima aqui", "weather", "forecast",
     )
     return any(h in value for h in hints)
 
 
 def requested_day_offset(text: str) -> int:
     value = (text or "").casefold()
-    if any(x in value for x in ("amanhã", "amanha", "tomorrow")):
-        return 1
     if any(x in value for x in ("depois de amanhã", "depois de amanha", "day after tomorrow")):
         return 2
+    if any(x in value for x in ("amanhã", "amanha", "tomorrow")):
+        return 1
     return 0
+
+
+def _clean_location(candidate: str) -> str | None:
+    value = (candidate or "").strip(" ,")
+    if not value:
+        return None
+    # Remove termos de tempo/data que podem vir depois do nome da cidade.
+    value = re.sub(
+        r"\b(?:hoje|amanh[aã]|agora|neste momento|essa tarde|esta tarde|essa noite|esta noite|today|tomorrow)\b.*$",
+        "",
+        value,
+        flags=re.I,
+    ).strip(" ,")
+    # STT costuma produzir 'aqui em Toyohashi'; queremos apenas Toyohashi.
+    value = re.sub(r"^(?:aqui\s+)?(?:em|no|na|para)\s+", "", value, flags=re.I).strip(" ,")
+    return value if len(value) >= 2 else None
 
 
 def extract_location(text: str) -> str | None:
     raw = (text or "").strip()
     if not raw:
         return None
+
     patterns = (
-        r"(?:tempo|clima|previs[aã]o(?:\s+do\s+tempo)?|temperatura|chuva)\s+(?:para|em|de|no|na)\s+([^?!.]+)",
-        r"(?:vai\s+chover)\s+(?:em|no|na)\s+([^?!.]+)",
+        # Ex.: 'previsão do tempo para Nagoya', 'previsão de tempo em Toyohashi'.
+        r"(?:tempo|clima|previs[aã]o(?:\s+(?:do|de)\s+tempo)?|temperatura|chuva)\s+(?:para|em|no|na)\s+([^?!.]+)",
+        # Ex.: 'qual a previsão de tempo aqui em Toyohashi?'.
+        r"(?:previs[aã]o(?:\s+(?:do|de)\s+tempo)?|tempo|clima|temperatura)[^?!.]{0,45}?\baqui\s+(?:em|no|na)\s+([^?!.]+)",
+        # Ex.: 'aqui em Toyohashi, vai chover?'.
+        r"\baqui\s+(?:em|no|na)\s+([^?!.]+)",
+        r"(?:vai\s+chover|chance\s+de\s+chuva)\s+(?:em|no|na)\s+([^?!.]+)",
         r"(?:weather|forecast)\s+(?:in|for)\s+([^?!.]+)",
     )
     for pattern in patterns:
         match = re.search(pattern, raw, flags=re.I)
         if match:
-            candidate = match.group(1).strip(" ,")
-            candidate = re.sub(r"\b(?:hoje|amanh[aã]|agora|this morning|today|tomorrow)\b.*$", "", candidate, flags=re.I).strip(" ,")
-            if len(candidate) >= 2:
+            candidate = _clean_location(match.group(1))
+            if candidate:
                 return candidate
     return None
 
