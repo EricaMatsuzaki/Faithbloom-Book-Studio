@@ -1,9 +1,9 @@
 """Interactive heart microphone for the canonical FaithBloom Jarvis.
 
-The heart is the voice control: tap once to listen, tap again to stop. The same
-component also plays the newest TTS reply automatically and exposes a recording
-state back to Streamlit. It deliberately contains no business logic; STT/TTS and
-routing remain in the existing Jarvis modules.
+The heart is the voice control: tap once to listen, tap again to stop. Audio
+playback is intentionally handled by the native Streamlit player in the canonical
+Jarvis page, which is more reliable on Safari/iPhone. This component owns only
+microphone capture and visual state; it must never synthesize or replay speech.
 """
 from __future__ import annotations
 
@@ -33,16 +33,15 @@ JS = r"""
 export default function(component){
  const {parentElement,setStateValue,data}=component;const root=parentElement.querySelector('#jh-shell');if(!root)return;
  const heart=root.querySelector('#jh-heart'),robot=root.querySelector('#jh-robot'),status=root.querySelector('#jh-status');
- const replyAudio=(data&&data.reply_audio)||'',replyText=(data&&data.reply_text)||'',replyToken=(data&&data.reply_token)||'',stage=(data&&data.stage)||'idle';
+ const stage=(data&&data.stage)||'idle';
  const setVisual=(mode,text)=>{['listening','thinking','speaking'].forEach(c=>{heart?.classList.remove(c);robot?.classList.remove(c)});if(mode&&mode!=='idle'){heart?.classList.add(mode);robot?.classList.add(mode)}if(status&&text)status.textContent=text;};
- if(stage==='thinking')setVisual('thinking','Pensando…');else if(stage==='speaking')setVisual('speaking','Preparando resposta…');
- const nativeSpeak=(text)=>{if(!text||!('speechSynthesis'in window))return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';u.rate=.93;u.pitch=.88;u.onstart=()=>setVisual('speaking','Jarvis está falando…');u.onend=()=>setVisual('idle','Toque no coração para falar');speechSynthesis.speak(u)}catch(_){}};
- const playReply=()=>{if(replyAudio){try{const a=new Audio('data:audio/mpeg;base64,'+replyAudio);a.onplay=()=>setVisual('speaking','Jarvis está falando…');a.onended=()=>setVisual('idle','Toque no coração para falar');a.onerror=()=>nativeSpeak(replyText);const p=a.play();if(p&&p.catch)p.catch(()=>nativeSpeak(replyText));return}catch(_){}}nativeSpeak(replyText)};
- try{if(replyToken&&replyToken!==sessionStorage.getItem('fb_heart_reply')){sessionStorage.setItem('fb_heart_reply',replyToken);setTimeout(playReply,120)}}catch(_){if(replyText)setTimeout(playReply,120)}
+ if(stage==='thinking')setVisual('thinking','Pensando…');
+ else if(stage==='speaking')setVisual('idle','Toque no coração para falar');
+ else setVisual('idle','Toque no coração para falar');
  if(root.dataset.bound==='1')return;root.dataset.bound='1';let rec=null,stream=null,chunks=[],started=0;
  const cleanup=()=>{if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}rec=null};
  const stop=()=>{if(rec&&rec.state==='recording'){setVisual('thinking','Enviando e preparando resposta…');rec.stop()}};
- const start=async()=>{try{window.speechSynthesis?.cancel();stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];const types=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];const mime=types.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported?.(t));rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onerror=()=>{setVisual('idle','Microfone indisponível');cleanup()};rec.onstop=()=>{const duration=Date.now()-started,mt=rec?.mimeType||chunks[0]?.type||'audio/webm',blob=new Blob(chunks,{type:mt});if(!blob.size||duration<350){setVisual('idle','Fale um pouco mais e tente novamente');cleanup();return}const reader=new FileReader();reader.onloadend=()=>{const s=String(reader.result||''),encoded=s.includes(',')?s.split(',',2)[1]:'';if(encoded){setStateValue('recording',{id:`heart-${Date.now()}-${blob.size}`,data:encoded,mime_type:mt,duration_ms:duration});setVisual('thinking','Pensando…')}else setVisual('idle','Não consegui preparar o áudio');cleanup()};reader.readAsDataURL(blob)};rec.start(120);started=Date.now();setVisual('listening','Ouvindo… toque novamente para terminar')}catch(e){cleanup();setVisual('idle',String(e?.name||'').includes('NotAllowed')?'Permita o microfone no navegador':'Não consegui acessar o microfone')}};
+ const start=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];const types=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];const mime=types.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported?.(t));rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onerror=()=>{setVisual('idle','Microfone indisponível');cleanup()};rec.onstop=()=>{const duration=Date.now()-started,mt=rec?.mimeType||chunks[0]?.type||'audio/webm',blob=new Blob(chunks,{type:mt});if(!blob.size||duration<350){setVisual('idle','Fale um pouco mais e tente novamente');cleanup();return}const reader=new FileReader();reader.onloadend=()=>{const s=String(reader.result||''),encoded=s.includes(',')?s.split(',',2)[1]:'';if(encoded){setStateValue('recording',{id:`heart-${Date.now()}-${blob.size}`,data:encoded,mime_type:mt,duration_ms:duration});setVisual('thinking','Pensando…')}else setVisual('idle','Não consegui preparar o áudio');cleanup()};reader.readAsDataURL(blob)};rec.start(120);started=Date.now();setVisual('listening','Ouvindo… toque novamente para terminar')}catch(e){cleanup();setVisual('idle',String(e?.name||'').includes('NotAllowed')?'Permita o microfone no navegador':'Não consegui acessar o microfone')}};
  heart?.addEventListener('click',()=>{if(rec&&rec.state==='recording')stop();else start()});return()=>{try{if(rec&&rec.state==='recording')rec.stop()}catch(_){}cleanup()};
 }
 """
