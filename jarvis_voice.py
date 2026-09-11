@@ -27,8 +27,23 @@ from jarvis_weather import build_weather_reply, extract_location, is_weather_req
 from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_retry, gerar_audio
 
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
-JARVIS_VOICE_MODEL = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "openai/gpt-4o-mini-tts-2025-12-15")
-JARVIS_VOICE_ID = os.environ.get("OPENROUTER_VOZ_JARVIS", "onyx")
+DEFAULT_JARVIS_VOICE_MODEL = "google/gemini-3.1-flash-tts-preview"
+LEGACY_UNAVAILABLE_TTS_MODELS = {"openai/gpt-4o-mini-tts-2025-12-15"}
+
+_configured_voice_model = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "").strip()
+JARVIS_VOICE_MODEL = (
+    DEFAULT_JARVIS_VOICE_MODEL
+    if not _configured_voice_model or _configured_voice_model in LEGACY_UNAVAILABLE_TTS_MODELS
+    else _configured_voice_model
+)
+
+_configured_voice_id = os.environ.get("OPENROUTER_VOZ_JARVIS", "").strip()
+if JARVIS_VOICE_MODEL.startswith("google/") and _configured_voice_id in {"", "onyx"}:
+    # Protege deployments com secret/config legado do antigo perfil OpenAI.
+    JARVIS_VOICE_ID = "alloy"
+else:
+    JARVIS_VOICE_ID = _configured_voice_id or "alloy"
+
 JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
     "OPENROUTER_INSTRUCOES_VOZ_JARVIS",
     "Fale em português do Brasil com voz masculina adulta, média-grave, calma e confiante. "
@@ -49,6 +64,11 @@ def _normalizar_formato(fmt: str) -> str:
     if value not in SUPPORTED_AUDIO_FORMATS:
         raise ValueError(f"Formato de áudio não suportado: {value}")
     return value
+
+
+def _voice_instructions_for_model(model: str) -> str | None:
+    """Só envia instruções quando o modelo/provider aceita esse parâmetro."""
+    return JARVIS_VOICE_INSTRUCTIONS if (model or "").startswith("openai/") else None
 
 
 def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "pt") -> dict[str, Any]:
@@ -161,10 +181,14 @@ def build_spoken_reply(
 
 
 def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | None = None) -> str:
-    """Reutiliza o TTS oficial com um perfil sonoro específico do Jarvis."""
+    """Reutiliza o TTS oficial com perfil Jarvis e parâmetros compatíveis por provider."""
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
     return gerar_audio(
-        text.strip(), name, voice=voice or JARVIS_VOICE_ID, model=JARVIS_VOICE_MODEL,
-        instructions=JARVIS_VOICE_INSTRUCTIONS, response_format="mp3",
+        text.strip(),
+        name,
+        voice=voice or JARVIS_VOICE_ID,
+        model=JARVIS_VOICE_MODEL,
+        instructions=_voice_instructions_for_model(JARVIS_VOICE_MODEL),
+        response_format="mp3",
     )
