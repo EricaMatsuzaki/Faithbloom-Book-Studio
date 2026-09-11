@@ -2,7 +2,8 @@
 
 Esta implementação NÃO duplica o Audiobook Studio nem o TTS do OpenRouter.
 Ela acrescenta transcrição de fala (STT), coordenação de resposta curta e integra
-clima via Open-Meteo, reutilizando ``openrouter_client.gerar_audio`` na saída.
+clima via Open-Meteo e briefing útil para estrangeiros no Japão, reutilizando
+``openrouter_client.gerar_audio`` na saída.
 """
 from __future__ import annotations
 
@@ -21,13 +22,12 @@ from controle_geracao import (
 )
 from jarvis_assistant import interpret_request
 from jarvis_dialogue import build_natural_reply
+from jarvis_japan_briefing import build_japan_news_reply, is_daily_briefing_request, is_japan_news_request
 from jarvis_weather import build_weather_reply, extract_location, is_weather_request, requested_day_offset
 from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_retry, gerar_audio
 
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
 JARVIS_VOICE_MODEL = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "openai/gpt-4o-mini-tts-2025-12-15")
-# Onyx gives the prototype a deeper adult base than Alloy. This is an original
-# FaithBloom profile, not a clone or imitation of any actor/character voice.
 JARVIS_VOICE_ID = os.environ.get("OPENROUTER_VOZ_JARVIS", "onyx")
 JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
     "OPENROUTER_INSTRUCOES_VOZ_JARVIS",
@@ -37,6 +37,7 @@ JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
     "Não imite nenhum ator ou personagem conhecido. Evite soar infantil, caricato, teatral ou excessivamente animado.",
 )
 SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
+DEFAULT_BRIEFING_LOCATION = os.environ.get("JARVIS_BRIEFING_LOCATION", "Toyohashi, Japan")
 
 
 class JarvisVoiceError(RuntimeError):
@@ -87,6 +88,20 @@ def _parece_continuar_projeto(text: str) -> bool:
     return any(x in value for x in ("continuar", "continue", "retomar", "retome", "projeto atual"))
 
 
+def _build_daily_briefing(location: str) -> str:
+    parts: list[str] = []
+    try:
+        parts.append(build_weather_reply(location, day_offset=0))
+    except Exception:
+        parts.append(f"Não consegui consultar o clima de {location} nesta tentativa.")
+    try:
+        news_reply, _items = build_japan_news_reply(limit=5)
+        parts.append(news_reply)
+    except Exception:
+        parts.append("As fontes de notícias para estrangeiros no Japão ficaram indisponíveis nesta tentativa.")
+    return " Briefing de hoje. " + " ".join(parts)
+
+
 def build_spoken_reply(
     transcript: str,
     *,
@@ -96,15 +111,18 @@ def build_spoken_reply(
     history: list[dict[str, Any]] | None = None,
     natural: bool = False,
 ) -> str:
-    """Cria uma resposta falada curta.
-
-    Clima e progresso usam dados determinísticos. Na UI, quando a rota já foi
-    interpretada, a resposta passa automaticamente pela camada conversacional
-    para evitar a mesma frase genérica em pedidos diferentes.
-    """
+    """Cria uma resposta falada curta com rotas determinísticas para clima/notícias."""
     texto = (transcript or "").strip()
     if not texto:
         return "Não consegui ouvir uma mensagem. Grave novamente e tente de novo."
+
+    if is_daily_briefing_request(texto):
+        location = extract_location(texto) or (weather_location or "").strip() or DEFAULT_BRIEFING_LOCATION
+        return _build_daily_briefing(location)
+
+    if is_japan_news_request(texto):
+        news_reply, _items = build_japan_news_reply(limit=5)
+        return news_reply
 
     if is_weather_request(texto):
         location = extract_location(texto) or (weather_location or "").strip()
@@ -126,7 +144,6 @@ def build_spoken_reply(
                 project_progress=project_progress,
             )
         except Exception:
-            # A conversa continua mesmo se o modelo textual estiver indisponível.
             pass
 
     plan = interpreted.get("route_plan") or {}
