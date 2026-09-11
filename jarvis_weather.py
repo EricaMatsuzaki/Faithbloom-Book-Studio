@@ -56,6 +56,14 @@ def _clean_location(candidate: str) -> str | None:
     value = (candidate or "").strip(" ,")
     if not value:
         return None
+    # Remove uma segunda oração comum após a cidade, por exemplo:
+    # "Toyohashi, vai chover amanhã" -> "Toyohashi".
+    value = re.split(
+        r"\s*,\s*(?=(?:vai\s+chover|vai\s+fazer|como\s+fica|qual\s+(?:a|é)\s+previs[aã]o|tempo|clima|temperatura)\b)",
+        value,
+        maxsplit=1,
+        flags=re.I,
+    )[0].strip(" ,")
     # Remove termos de tempo/data que podem vir depois do nome da cidade.
     value = re.sub(
         r"\b(?:hoje|amanh[aã]|agora|neste momento|essa tarde|esta tarde|essa noite|esta noite|today|tomorrow)\b.*$",
