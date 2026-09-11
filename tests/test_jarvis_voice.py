@@ -104,15 +104,19 @@ def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypa
 
     def fake_generate(text, name, voice=None, **kwargs):
         called.update(text=text, name=name, voice=voice, **kwargs)
-        return "saida_audio/mock.mp3"
+        return "saida_audio/mock.wav" if kwargs.get("response_format") == "pcm" else "saida_audio/mock.mp3"
 
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
     path = voice.synthesize_reply("Olá, Erica!", name="jarvis_teste", voice="voz-1")
-    assert path == "saida_audio/mock.mp3"
+    expected_format = "pcm" if voice.JARVIS_VOICE_MODEL.startswith("google/gemini-") else "mp3"
     assert called["name"] == "jarvis_teste"
     assert called["voice"] == "voz-1"
     assert called["model"] == voice.JARVIS_VOICE_MODEL
-    assert called["response_format"] == "mp3"
+    assert called["response_format"] == expected_format
+    if expected_format == "pcm":
+        assert path.endswith(".wav")
+    else:
+        assert path.endswith(".mp3")
     if voice.JARVIS_VOICE_MODEL.startswith("google/gemini-"):
         assert "<TRANSCRIPT>" in called["text"]
         assert "Olá, Erica!" in called["text"]
@@ -169,22 +173,26 @@ def test_synthesize_reply_never_sends_emoji_to_tts(monkeypatch):
     def fake_generate(text, name, voice=None, **kwargs):
         called["text"] = text
         called["voice"] = voice
-        return "saida_audio/mock.mp3"
+        called["response_format"] = kwargs.get("response_format")
+        return "saida_audio/mock.wav"
 
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
     voice.synthesize_reply("Está tudo pronto 😊", name="emoji_test")
     assert "😊" not in called["text"]
     assert "Está tudo pronto" in called["text"]
     assert called["voice"] == "Charon"
+    assert called["response_format"] == "pcm"
 
 
 def test_runtime_success_log_reports_effective_voice_profile(monkeypatch, capsys):
-    monkeypatch.setattr(voice, "gerar_audio", lambda *a, **k: "saida_audio/mock.mp3")
+    monkeypatch.setattr(voice, "gerar_audio", lambda *a, **k: "saida_audio/mock.wav")
     voice.synthesize_reply("Teste de voz", name="voice_profile_test")
     output = capsys.readouterr().out
     assert "[FaithBloom Jarvis TTS] sucesso" in output
     assert f"profile={voice.JARVIS_VOICE_PROFILE_VERSION}" in output
     assert "voice=Charon" in output
+    assert "format=pcm" in output
+    assert "file=.wav" in output
 
 
 def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
@@ -230,7 +238,7 @@ def test_tts_runtime_failure_is_logged_with_safe_profile_context(monkeypatch, ca
     assert "[FaithBloom Jarvis TTS]" in output
     assert f"model={voice.JARVIS_VOICE_MODEL}" in output
     assert f"voice={voice.JARVIS_VOICE_ID}" in output
-    assert "format=mp3" in output
+    assert "format=pcm" in output
     assert "HTTP 403" in output
 
 
