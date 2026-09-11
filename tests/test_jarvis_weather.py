@@ -14,12 +14,16 @@ class FakeResponse:
 
 def test_detects_weather_request():
     assert weather.is_weather_request("Jarvis, vai chover hoje?") is True
+    assert weather.is_weather_request("Qual a previsão de tempo aqui em Toyohashi?") is True
+    assert weather.is_weather_request("Como fica o tempo em Nagoya amanhã?") is True
     assert weather.is_weather_request("Crie uma história infantil") is False
 
 
 def test_extracts_location_from_portuguese_request():
     assert weather.extract_location("Jarvis, como está o tempo em Toyohashi?") == "Toyohashi"
     assert weather.extract_location("Qual a previsão do tempo para Nagoya hoje?") == "Nagoya"
+    assert weather.extract_location("Qual a previsão de tempo aqui em Toyohashi?") == "Toyohashi"
+    assert weather.extract_location("Aqui em Toyohashi, vai chover amanhã?") == "Toyohashi"
 
 
 def test_missing_location_is_not_invented():
