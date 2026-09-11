@@ -109,15 +109,17 @@ def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypa
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
     path = voice.synthesize_reply("Olá, Erica!", name="jarvis_teste", voice="voz-1")
     assert path == "saida_audio/mock.mp3"
-    assert called["text"] == "Olá, Erica!"
     assert called["name"] == "jarvis_teste"
     assert called["voice"] == "voz-1"
     assert called["model"] == voice.JARVIS_VOICE_MODEL
     assert called["response_format"] == "mp3"
-    if voice.JARVIS_VOICE_MODEL.startswith("openai/"):
-        assert "futurista" in called["instructions"]
-    else:
+    if voice.JARVIS_VOICE_MODEL.startswith("google/gemini-"):
+        assert "<TRANSCRIPT>" in called["text"]
+        assert "Olá, Erica!" in called["text"]
+        assert "assistente virtual original" in called["text"].casefold()
         assert called["instructions"] is None
+    else:
+        assert called["text"] == "Olá, Erica!"
 
 
 def test_voice_instructions_are_provider_aware():
@@ -125,6 +127,22 @@ def test_voice_instructions_are_provider_aware():
     openai_instructions = voice._voice_instructions_for_model("openai/some-current-tts")
     assert openai_instructions is not None
     assert "futurista" in openai_instructions.casefold()
+
+
+def test_gemini_input_receives_original_voice_direction_without_imitation():
+    prepared = voice._prepare_tts_input("Boa noite, Erica.", "google/gemini-3.1-flash-tts-preview")
+    lower = prepared.casefold()
+    assert "audio profile" in lower
+    assert "director's notes" in lower
+    assert "masculino adulto" in lower
+    assert "futurista" in lower
+    assert "não imite" in lower
+    assert "<transcript>" in lower
+    assert "boa noite, erica." in lower
+
+
+def test_non_gemini_tts_input_is_not_wrapped():
+    assert voice._prepare_tts_input("Olá", "openai/some-current-tts") == "Olá"
 
 
 def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
@@ -148,10 +166,14 @@ def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
 
 def test_default_jarvis_voice_uses_current_available_tts_profile():
     assert voice.JARVIS_VOICE_MODEL == "google/gemini-3.1-flash-tts-preview"
-    assert voice.JARVIS_VOICE_ID == "alloy"
+    assert voice.JARVIS_VOICE_ID == "Charon"
     instructions = voice.JARVIS_VOICE_INSTRUCTIONS.casefold()
-    assert "britânica" in instructions
+    assert "internacional" in instructions
     assert "não imite" in instructions
+
+
+def test_google_profile_never_falls_back_to_legacy_openai_voice_id():
+    assert voice.JARVIS_VOICE_ID.casefold() not in voice.LEGACY_OPENAI_VOICE_IDS
 
 
 def test_push_to_talk_decodes_browser_webm_payload():
