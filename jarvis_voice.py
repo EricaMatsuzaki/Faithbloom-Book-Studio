@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import unicodedata
 from typing import Any
 
 from controle_geracao import (
@@ -70,6 +71,28 @@ def _normalizar_formato(fmt: str) -> str:
     if value not in SUPPORTED_AUDIO_FORMATS:
         raise ValueError(f"Formato de áudio não suportado: {value}")
     return value
+
+
+def _sanitize_tts_text(text: str) -> str:
+    """Remove emojis/símbolos visuais antes do TTS sem alterar o texto exibido.
+
+    Alguns mecanismos TTS verbalizam o nome acessível do emoji (por exemplo,
+    "rosto sorridente com olhos sorridentes e bochechas rosadas"). O Jarvis pode
+    continuar mostrando emojis na interface, mas eles não entram no áudio.
+    """
+    value = text or ""
+    cleaned: list[str] = []
+    for char in value:
+        codepoint = ord(char)
+        category = unicodedata.category(char)
+        if category == "So":
+            continue
+        if char in {"\ufe0e", "\ufe0f", "\u200d", "\u20e3"}:
+            continue
+        if 0x1F3FB <= codepoint <= 0x1F3FF:
+            continue
+        cleaned.append(char)
+    return " ".join("".join(cleaned).split())
 
 
 def _voice_instructions_for_model(model: str) -> str | None:
@@ -224,7 +247,10 @@ def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | N
     """Reutiliza o TTS oficial com perfil Jarvis e parâmetros compatíveis por provider."""
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
-    prepared_text = _prepare_tts_input(text, JARVIS_VOICE_MODEL)
+    spoken_text = _sanitize_tts_text(text)
+    if not spoken_text:
+        raise ValueError("A resposta do Jarvis não contém conteúdo falável após remover elementos visuais.")
+    prepared_text = _prepare_tts_input(spoken_text, JARVIS_VOICE_MODEL)
     selected_voice = voice or JARVIS_VOICE_ID
     response_format = "mp3"
     try:
