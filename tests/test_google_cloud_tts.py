@@ -39,7 +39,7 @@ def test_voice_lab_limits_text_length():
 
 
 def test_missing_api_key_fails_before_network(monkeypatch):
-    monkeypatch.delenv(gtts.GOOGLE_TTS_API_KEY_ENV, raising=False)
+    monkeypatch.delenv(gtts.GOOGLE_TTS_CREDENTIAL_ENV, raising=False)
     with pytest.raises(gtts.GoogleCloudTTSError, match="GOOGLE_CLOUD_TTS_API_KEY"):
         gtts.synthesize_google_voice("Oi", "WaveNet-B")
 
