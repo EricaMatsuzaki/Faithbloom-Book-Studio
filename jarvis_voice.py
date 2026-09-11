@@ -28,7 +28,9 @@ from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_ret
 
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
 DEFAULT_JARVIS_VOICE_MODEL = "google/gemini-3.1-flash-tts-preview"
+DEFAULT_JARVIS_GEMINI_VOICE = "Charon"
 LEGACY_UNAVAILABLE_TTS_MODELS = {"openai/gpt-4o-mini-tts-2025-12-15"}
+LEGACY_OPENAI_VOICE_IDS = {"alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"}
 
 _configured_voice_model = os.environ.get("OPENROUTER_MODELO_VOZ_JARVIS", "").strip()
 JARVIS_VOICE_MODEL = (
@@ -38,18 +40,22 @@ JARVIS_VOICE_MODEL = (
 )
 
 _configured_voice_id = os.environ.get("OPENROUTER_VOZ_JARVIS", "").strip()
-if JARVIS_VOICE_MODEL.startswith("google/") and _configured_voice_id in {"", "onyx"}:
-    # Protege deployments com secret/config legado do antigo perfil OpenAI.
-    JARVIS_VOICE_ID = "alloy"
+if JARVIS_VOICE_MODEL.startswith("google/") and (
+    not _configured_voice_id or _configured_voice_id.casefold() in LEGACY_OPENAI_VOICE_IDS
+):
+    # Gemini TTS exige um voice ID da biblioteca Gemini. Evita secrets legados
+    # como "alloy"/"onyx", que pertencem a outros providers e fazem o TTS falhar.
+    JARVIS_VOICE_ID = DEFAULT_JARVIS_GEMINI_VOICE
 else:
     JARVIS_VOICE_ID = _configured_voice_id or "alloy"
 
 JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
     "OPENROUTER_INSTRUCOES_VOZ_JARVIS",
     "Fale em português do Brasil com voz masculina adulta, média-grave, calma e confiante. "
-    "Use uma cadência britânica refinada e discreta, dicção muito clara, ritmo controlado, "
+    "Use uma cadência internacional refinada e discreta, dicção muito clara, ritmo controlado, "
     "tom elegante de assistente executivo futurista e humor sutil quando apropriado. "
-    "Não imite nenhum ator ou personagem conhecido. Evite soar infantil, caricato, teatral ou excessivamente animado.",
+    "Não imite nenhum ator, personagem, celebridade ou voz protegida. "
+    "Evite soar infantil, caricato, teatral ou excessivamente animado.",
 )
 SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
 DEFAULT_BRIEFING_LOCATION = os.environ.get("JARVIS_BRIEFING_LOCATION", "Toyohashi, Japan")
@@ -67,8 +73,31 @@ def _normalizar_formato(fmt: str) -> str:
 
 
 def _voice_instructions_for_model(model: str) -> str | None:
-    """Só envia instruções quando o modelo/provider aceita esse parâmetro."""
+    """Só envia `instructions` quando o provider aceita esse parâmetro separado."""
     return JARVIS_VOICE_INSTRUCTIONS if (model or "").startswith("openai/") else None
+
+
+def _prepare_tts_input(text: str, model: str) -> str:
+    """Aplica direção de performance sem depender de parâmetro não suportado.
+
+    Gemini TTS aceita direção de voz em linguagem natural no próprio input. Mantemos
+    o texto falado claramente separado para reduzir o risco de o modelo narrar as
+    instruções de estilo.
+    """
+    clean = (text or "").strip()
+    if not (model or "").startswith("google/gemini-"):
+        return clean
+    return (
+        "SINTETIZE SOMENTE O CONTEÚDO ENTRE <TRANSCRIPT> E </TRANSCRIPT>. "
+        "NÃO LEIA ESTAS INSTRUÇÕES EM VOZ ALTA.\n\n"
+        "# AUDIO PROFILE\n"
+        "Assistente virtual original do FaithBloom: masculino adulto, sofisticado, sereno e inteligente.\n\n"
+        "# DIRECTOR'S NOTES\n"
+        f"{JARVIS_VOICE_INSTRUCTIONS}\n\n"
+        "<TRANSCRIPT>\n"
+        f"{clean}\n"
+        "</TRANSCRIPT>"
+    )
 
 
 def transcribe_audio(audio_bytes: bytes, *, fmt: str = "wav", language: str = "pt") -> dict[str, Any]:
@@ -184,8 +213,9 @@ def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | N
     """Reutiliza o TTS oficial com perfil Jarvis e parâmetros compatíveis por provider."""
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
+    prepared_text = _prepare_tts_input(text, JARVIS_VOICE_MODEL)
     return gerar_audio(
-        text.strip(),
+        prepared_text,
         name,
         voice=voice or JARVIS_VOICE_ID,
         model=JARVIS_VOICE_MODEL,
