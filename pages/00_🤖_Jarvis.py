@@ -61,15 +61,23 @@ def _set_stage(stage: str, message: str | None = None) -> None:
         st.session_state["jarvis_status_message"] = message
 
 
-def _synthesize(reply: str) -> None:
+def _synthesize(reply: str) -> bool:
     token = f"jarvis_{uuid.uuid4().hex[:12]}"
     st.session_state["jarvis_audio_path"] = ""
     st.session_state["jarvis_audio_error"] = ""
     try:
-        st.session_state["jarvis_audio_path"] = synthesize_reply(reply, name=token)
+        path = synthesize_reply(reply, name=token)
+        if path and os.path.exists(path) and os.path.getsize(path) > 0:
+            st.session_state["jarvis_audio_path"] = path
+            st.session_state["jarvis_reply_token"] = token
+            _set_stage("speaking", "Resposta pronta — reproduzindo voz…")
+            return True
+        st.session_state["jarvis_audio_error"] = "O TTS não gerou um arquivo de áudio válido."
     except Exception as exc:
         st.session_state["jarvis_audio_error"] = str(exc)
     st.session_state["jarvis_reply_token"] = token
+    _set_stage("idle", "Resposta pronta. A voz ficou indisponível nesta tentativa.")
+    return False
 
 
 def _audio_b64(path: str) -> str:
@@ -122,8 +130,6 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
             st.session_state["jarvis_last_weather_location"] = location
         reply = build_spoken_reply(clean, project_progress=project_progress, weather_location=location, history=history, natural=False)
     else:
-        # build_spoken_reply também reconhece notícias/briefing e usa a rota
-        # editorial somente quando o pedido realmente pertence ao FaithBloom.
         result = interpret_request(clean)
         st.session_state["jarvis_result"] = result
         reply = build_spoken_reply(
@@ -139,7 +145,7 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
     history = append_turn(history, "assistant", reply, intent=intent, metadata=metadata)
     st.session_state["jarvis_conversation_history"] = history
     st.session_state["jarvis_reply"] = reply
-    _set_stage("speaking", "Preparando resposta em voz…")
+    _set_stage("thinking", "Gerando resposta em voz…")
     _synthesize(reply)
     return reply
 
@@ -158,6 +164,7 @@ def _handle_audio(audio_bytes: bytes, fmt: str, recording_id: str, project_progr
 st.session_state.setdefault("jarvis_stage", "idle")
 st.session_state.setdefault("jarvis_status_message", "Online")
 st.session_state.setdefault("jarvis_reply", "")
+st.session_state.setdefault("jarvis_autoplayed_token", "")
 
 current_state = st.session_state.get("state")
 project_progress = inspect_project_state(current_state) if current_state else None
@@ -166,8 +173,6 @@ reply = str(st.session_state.get("jarvis_reply") or "")
 audio_path = str(st.session_state.get("jarvis_audio_path") or "")
 reply_token = str(st.session_state.get("jarvis_reply_token") or "")
 
-# Visual principal: o container Streamlit dá layout responsivo e o componente
-# à direita torna o coração um botão real de microfone.
 st.html("""
 <style>
 div.st-key-jarvis_core{position:relative;overflow:hidden;border-radius:30px;padding:clamp(20px,4vw,46px);background:radial-gradient(circle at 72% 22%,rgba(74,236,255,.18),transparent 20%),radial-gradient(circle at 75% 70%,rgba(121,91,255,.22),transparent 28%),linear-gradient(135deg,#071b2b,#0c3f50 48%,#282660);color:#fff;border:1px solid rgba(125,238,255,.22);box-shadow:0 28px 80px rgba(13,48,78,.25)}
@@ -191,9 +196,16 @@ with st.container(key="jarvis_core"):
             key="jarvis_heart_control",
             stage=stage,
             reply_text=reply,
-            reply_audio=_audio_b64(audio_path),
+            reply_audio="",
             reply_token=reply_token,
         )
+
+# A reprodução oficial acontece pelo player nativo do Streamlit. Em Safari/iPhone
+# isso é mais confiável que criar Audio() dentro do iframe do componente v2.
+if audio_path and os.path.exists(audio_path) and reply_token:
+    if reply_token != st.session_state.get("jarvis_autoplayed_token"):
+        st.audio(audio_path, format="audio/mpeg", autoplay=True)
+        st.session_state["jarvis_autoplayed_token"] = reply_token
 
 recording_payload = getattr(heart, "recording", None) if heart is not None else None
 decoded = None
@@ -239,12 +251,11 @@ if submitted and typed.strip():
         _set_stage("error", "Não consegui concluir esse pedido agora. Tente novamente.")
     st.rerun()
 
-# Replay manual continua disponível; a reprodução automática acontece dentro do coração.
 if audio_path and os.path.exists(audio_path):
     with st.expander("🔊 Ouvir novamente", expanded=False):
         st.audio(audio_path, format="audio/mpeg")
 elif st.session_state.get("jarvis_audio_error") and reply:
-    st.info("A resposta textual está pronta. A voz premium ficou indisponível nesta tentativa.")
+    st.error("A resposta textual está pronta, mas o TTS não gerou áudio nesta tentativa. O erro foi registrado para diagnóstico.")
 
 destination = st.session_state.get("jarvis_suggested_destination") or {}
 page_key = destination.get("destination") or destination.get("id")
