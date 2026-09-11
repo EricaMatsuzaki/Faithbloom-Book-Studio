@@ -155,17 +155,36 @@ def test_tts_sanitizer_removes_emojis_without_changing_visible_reply():
     assert "😊" in reply
 
 
+def test_tts_sanitizer_removes_known_spoken_emoji_accessibility_label():
+    reply = "Tudo certo. Rosto sorridente, com olhos sorridentes e bochechas rosadas. Vamos continuar."
+    spoken = voice._sanitize_tts_text(reply)
+    assert "rosto sorridente" not in spoken.casefold()
+    assert "bochechas rosadas" not in spoken.casefold()
+    assert spoken == "Tudo certo. Vamos continuar."
+
+
 def test_synthesize_reply_never_sends_emoji_to_tts(monkeypatch):
     called = {}
 
     def fake_generate(text, name, voice=None, **kwargs):
         called["text"] = text
+        called["voice"] = voice
         return "saida_audio/mock.mp3"
 
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
     voice.synthesize_reply("Está tudo pronto 😊", name="emoji_test")
     assert "😊" not in called["text"]
     assert "Está tudo pronto" in called["text"]
+    assert called["voice"] == "Charon"
+
+
+def test_runtime_success_log_reports_effective_voice_profile(monkeypatch, capsys):
+    monkeypatch.setattr(voice, "gerar_audio", lambda *a, **k: "saida_audio/mock.mp3")
+    voice.synthesize_reply("Teste de voz", name="voice_profile_test")
+    output = capsys.readouterr().out
+    assert "[FaithBloom Jarvis TTS] sucesso" in output
+    assert f"profile={voice.JARVIS_VOICE_PROFILE_VERSION}" in output
+    assert "voice=Charon" in output
 
 
 def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
