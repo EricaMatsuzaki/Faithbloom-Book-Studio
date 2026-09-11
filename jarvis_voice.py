@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 import unicodedata
 from typing import Any
 
@@ -30,6 +31,7 @@ from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_ret
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
 DEFAULT_JARVIS_VOICE_MODEL = "google/gemini-3.1-flash-tts-preview"
 DEFAULT_JARVIS_GEMINI_VOICE = "Charon"
+JARVIS_VOICE_PROFILE_VERSION = "2026-09-11-charon-v3"
 LEGACY_UNAVAILABLE_TTS_MODELS = {"openai/gpt-4o-mini-tts-2025-12-15"}
 LEGACY_OPENAI_VOICE_IDS = {"alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"}
 
@@ -41,11 +43,10 @@ JARVIS_VOICE_MODEL = (
 )
 
 _configured_voice_id = os.environ.get("OPENROUTER_VOZ_JARVIS", "").strip()
-if JARVIS_VOICE_MODEL.startswith("google/") and (
-    not _configured_voice_id or _configured_voice_id.casefold() in LEGACY_OPENAI_VOICE_IDS
-):
-    # Gemini TTS exige um voice ID da biblioteca Gemini. Evita secrets legados
-    # como "alloy"/"onyx", que pertencem a outros providers e fazem o TTS falhar.
+if JARVIS_VOICE_MODEL.startswith("google/"):
+    # Durante a estabilização do Jarvis canônico, a voz Google é fixada em Charon.
+    # Isso impede que um Secret antigo do Streamlit mantenha silenciosamente outra
+    # voz e faça a interface parecer que a alteração nunca entrou em produção.
     JARVIS_VOICE_ID = DEFAULT_JARVIS_GEMINI_VOICE
 else:
     JARVIS_VOICE_ID = _configured_voice_id or "alloy"
@@ -61,6 +62,15 @@ JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
 SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
 DEFAULT_BRIEFING_LOCATION = os.environ.get("JARVIS_BRIEFING_LOCATION", "Toyohashi, Japan")
 
+# Alguns TTS verbalizam rótulos acessíveis de emoji em vez de ignorá-los. Além de
+# remover o próprio emoji, removemos a frase conhecida que já apareceu no runtime.
+_SPOKEN_EMOJI_LABELS = (
+    re.compile(
+        r"\brosto\s+sorridente\s*,?\s*com\s+olhos\s+sorridentes\s+e\s+bochechas\s+rosadas\b[.!?]?",
+        re.IGNORECASE,
+    ),
+)
+
 
 class JarvisVoiceError(RuntimeError):
     """Erro de voz apresentado ao usuário sem vazar credenciais/payloads."""
@@ -74,12 +84,7 @@ def _normalizar_formato(fmt: str) -> str:
 
 
 def _sanitize_tts_text(text: str) -> str:
-    """Remove emojis/símbolos visuais antes do TTS sem alterar o texto exibido.
-
-    Alguns mecanismos TTS verbalizam o nome acessível do emoji (por exemplo,
-    "rosto sorridente com olhos sorridentes e bochechas rosadas"). O Jarvis pode
-    continuar mostrando emojis na interface, mas eles não entram no áudio.
-    """
+    """Remove emojis/rótulos visuais antes do TTS sem alterar o texto exibido."""
     value = text or ""
     cleaned: list[str] = []
     for char in value:
@@ -92,7 +97,12 @@ def _sanitize_tts_text(text: str) -> str:
         if 0x1F3FB <= codepoint <= 0x1F3FF:
             continue
         cleaned.append(char)
-    return " ".join("".join(cleaned).split())
+    result = "".join(cleaned)
+    for pattern in _SPOKEN_EMOJI_LABELS:
+        result = pattern.sub("", result)
+    result = re.sub(r"\s+([,.;:!?])", r"\1", result)
+    result = re.sub(r"([.!?])\s*([.!?])+", r"\1", result)
+    return " ".join(result.split()).strip()
 
 
 def _voice_instructions_for_model(model: str) -> str | None:
@@ -101,12 +111,7 @@ def _voice_instructions_for_model(model: str) -> str | None:
 
 
 def _prepare_tts_input(text: str, model: str) -> str:
-    """Aplica direção de performance sem depender de parâmetro não suportado.
-
-    Gemini TTS aceita direção de voz em linguagem natural no próprio input. Mantemos
-    o texto falado claramente separado para reduzir o risco de o modelo narrar as
-    instruções de estilo.
-    """
+    """Aplica direção de performance sem depender de parâmetro não suportado."""
     clean = (text or "").strip()
     if not (model or "").startswith("google/gemini-"):
         return clean
@@ -237,8 +242,18 @@ def _log_tts_runtime_failure(exc: Exception, *, model: str, voice: str, response
     detail = sanitizar_texto(str(exc)) or exc.__class__.__name__
     print(
         "[FaithBloom Jarvis TTS] falha de runtime "
-        f"model={model} voice={voice} format={response_format} "
+        f"profile={JARVIS_VOICE_PROFILE_VERSION} model={model} voice={voice} format={response_format} "
         f"error={detail}",
+        flush=True,
+    )
+
+
+def _log_tts_runtime_success(*, model: str, voice: str, response_format: str, spoken_text: str) -> None:
+    digest = hashlib.sha256(spoken_text.encode("utf-8")).hexdigest()[:12]
+    print(
+        "[FaithBloom Jarvis TTS] sucesso "
+        f"profile={JARVIS_VOICE_PROFILE_VERSION} model={model} voice={voice} format={response_format} "
+        f"text_sha={digest}",
         flush=True,
     )
 
@@ -254,7 +269,7 @@ def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | N
     selected_voice = voice or JARVIS_VOICE_ID
     response_format = "mp3"
     try:
-        return gerar_audio(
+        path = gerar_audio(
             prepared_text,
             name,
             voice=selected_voice,
@@ -262,6 +277,13 @@ def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | N
             instructions=_voice_instructions_for_model(JARVIS_VOICE_MODEL),
             response_format=response_format,
         )
+        _log_tts_runtime_success(
+            model=JARVIS_VOICE_MODEL,
+            voice=selected_voice,
+            response_format=response_format,
+            spoken_text=spoken_text,
+        )
+        return path
     except Exception as exc:
         _log_tts_runtime_failure(
             exc,
