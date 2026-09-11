@@ -16,7 +16,8 @@ from typing import Any, Callable
 import requests
 
 GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
-GOOGLE_TTS_API_KEY_ENV = "GOOGLE_CLOUD_TTS_API_KEY"
+# Nome da variável de ambiente, não o valor de uma credencial.
+GOOGLE_TTS_CREDENTIAL_ENV = "GOOGLE_CLOUD_TTS_API_KEY"
 VOICE_LAB_MAX_CHARS = 500
 OUTPUT_DIR = Path("saida_audio")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,10 +76,10 @@ def _clean_text(text: str) -> str:
 
 
 def _resolve_api_key(explicit_key: str | None = None) -> str:
-    key = (explicit_key or os.environ.get(GOOGLE_TTS_API_KEY_ENV) or "").strip()
+    key = (explicit_key or os.environ.get(GOOGLE_TTS_CREDENTIAL_ENV) or "").strip()
     if not key:
         raise GoogleCloudTTSError(
-            "Google Cloud TTS ainda não está configurado. Adicione GOOGLE_CLOUD_TTS_API_KEY "
+            f"Google Cloud TTS ainda não está configurado. Adicione {GOOGLE_TTS_CREDENTIAL_ENV} "
             "nos Secrets do Streamlit Cloud para liberar o Voice Lab."
         )
     return key
