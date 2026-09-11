@@ -61,6 +61,15 @@ def _set_stage(stage: str, message: str | None = None) -> None:
         st.session_state["jarvis_status_message"] = message
 
 
+def _audio_mime(path: str) -> str:
+    ext = os.path.splitext(path or "")[1].lower()
+    if ext == ".wav":
+        return "audio/wav"
+    if ext == ".pcm":
+        return "audio/pcm"
+    return "audio/mpeg"
+
+
 def _synthesize(reply: str) -> bool:
     token = f"jarvis_{uuid.uuid4().hex[:12]}"
     st.session_state["jarvis_audio_path"] = ""
@@ -84,7 +93,7 @@ def _audio_b64(path: str) -> str:
     if not path or not os.path.exists(path):
         return ""
     try:
-        with open(path, "rb") as fh:
+        with open(path,"rb") as fh:
             return base64.b64encode(fh.read()).decode("ascii")
     except OSError:
         return ""
@@ -200,11 +209,9 @@ with st.container(key="jarvis_core"):
             reply_token=reply_token,
         )
 
-# A reprodução oficial acontece pelo player nativo do Streamlit. Em Safari/iPhone
-# isso é mais confiável que criar Audio() dentro do iframe do componente v2.
 if audio_path and os.path.exists(audio_path) and reply_token:
     if reply_token != st.session_state.get("jarvis_autoplayed_token"):
-        st.audio(audio_path, format="audio/mpeg", autoplay=True)
+        st.audio(audio_path, format=_audio_mime(audio_path), autoplay=True)
         st.session_state["jarvis_autoplayed_token"] = reply_token
 
 recording_payload = getattr(heart, "recording", None) if heart is not None else None
@@ -253,9 +260,11 @@ if submitted and typed.strip():
 
 if audio_path and os.path.exists(audio_path):
     with st.expander("🔊 Ouvir novamente", expanded=False):
-        st.audio(audio_path, format="audio/mpeg")
+        st.audio(audio_path, format=_audio_mime(audio_path))
 elif st.session_state.get("jarvis_audio_error") and reply:
-    st.error("A resposta textual está pronta, mas o TTS não gerou áudio nesta tentativa. O erro foi registrado para diagnóstico.")
+    st.error("A resposta textual está pronta, mas o TTS não gerou áudio nesta tentativa.")
+    with st.expander("Diagnóstico da voz", expanded=False):
+        st.code(str(st.session_state.get("jarvis_audio_error") or "Erro não informado."))
 
 destination = st.session_state.get("jarvis_suggested_destination") or {}
 page_key = destination.get("destination") or destination.get("id")
