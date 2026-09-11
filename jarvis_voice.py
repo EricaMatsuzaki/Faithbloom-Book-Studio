@@ -31,7 +31,7 @@ from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_ret
 MODELO_TRANSCRICAO = os.environ.get("OPENROUTER_MODELO_STT", "openai/whisper-1")
 DEFAULT_JARVIS_VOICE_MODEL = "google/gemini-3.1-flash-tts-preview"
 DEFAULT_JARVIS_GEMINI_VOICE = "Charon"
-JARVIS_VOICE_PROFILE_VERSION = "2026-09-11-charon-v3"
+JARVIS_VOICE_PROFILE_VERSION = "2026-09-11-charon-pcm-v4"
 LEGACY_UNAVAILABLE_TTS_MODELS = {"openai/gpt-4o-mini-tts-2025-12-15"}
 LEGACY_OPENAI_VOICE_IDS = {"alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse"}
 
@@ -44,9 +44,6 @@ JARVIS_VOICE_MODEL = (
 
 _configured_voice_id = os.environ.get("OPENROUTER_VOZ_JARVIS", "").strip()
 if JARVIS_VOICE_MODEL.startswith("google/"):
-    # Durante a estabilização do Jarvis canônico, a voz Google é fixada em Charon.
-    # Isso impede que um Secret antigo do Streamlit mantenha silenciosamente outra
-    # voz e faça a interface parecer que a alteração nunca entrou em produção.
     JARVIS_VOICE_ID = DEFAULT_JARVIS_GEMINI_VOICE
 else:
     JARVIS_VOICE_ID = _configured_voice_id or "alloy"
@@ -62,8 +59,6 @@ JARVIS_VOICE_INSTRUCTIONS = os.environ.get(
 SUPPORTED_AUDIO_FORMATS = {"wav", "mp3", "flac", "m4a", "ogg", "webm", "aac"}
 DEFAULT_BRIEFING_LOCATION = os.environ.get("JARVIS_BRIEFING_LOCATION", "Toyohashi, Japan")
 
-# Alguns TTS verbalizam rótulos acessíveis de emoji em vez de ignorá-los. Além de
-# remover o próprio emoji, removemos a frase conhecida que já apareceu no runtime.
 _SPOKEN_EMOJI_LABELS = (
     re.compile(
         r"\brosto\s+sorridente\s*,?\s*com\s+olhos\s+sorridentes\s+e\s+bochechas\s+rosadas\b[.!?]?",
@@ -106,12 +101,10 @@ def _sanitize_tts_text(text: str) -> str:
 
 
 def _voice_instructions_for_model(model: str) -> str | None:
-    """Só envia `instructions` quando o provider aceita esse parâmetro separado."""
     return JARVIS_VOICE_INSTRUCTIONS if (model or "").startswith("openai/") else None
 
 
 def _prepare_tts_input(text: str, model: str) -> str:
-    """Aplica direção de performance sem depender de parâmetro não suportado."""
     clean = (text or "").strip()
     if not (model or "").startswith("google/gemini-"):
         return clean
@@ -238,7 +231,6 @@ def build_spoken_reply(
 
 
 def _log_tts_runtime_failure(exc: Exception, *, model: str, voice: str, response_format: str) -> None:
-    """Registra diagnóstico técnico seguro no log do Streamlit sem expor secrets."""
     detail = sanitizar_texto(str(exc)) or exc.__class__.__name__
     print(
         "[FaithBloom Jarvis TTS] falha de runtime "
@@ -248,18 +240,18 @@ def _log_tts_runtime_failure(exc: Exception, *, model: str, voice: str, response
     )
 
 
-def _log_tts_runtime_success(*, model: str, voice: str, response_format: str, spoken_text: str) -> None:
+def _log_tts_runtime_success(*, model: str, voice: str, response_format: str, spoken_text: str, path: str) -> None:
     digest = hashlib.sha256(spoken_text.encode("utf-8")).hexdigest()[:12]
     print(
         "[FaithBloom Jarvis TTS] sucesso "
         f"profile={JARVIS_VOICE_PROFILE_VERSION} model={model} voice={voice} format={response_format} "
-        f"text_sha={digest}",
+        f"file={os.path.splitext(path)[1].lower()} text_sha={digest}",
         flush=True,
     )
 
 
 def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | None = None) -> str:
-    """Reutiliza o TTS oficial com perfil Jarvis e parâmetros compatíveis por provider."""
+    """Reutiliza o TTS oficial com perfil Jarvis e saída compatível com Gemini/Safari."""
     if not (text or "").strip():
         raise ValueError("A resposta do Jarvis está vazia.")
     spoken_text = _sanitize_tts_text(text)
@@ -267,7 +259,9 @@ def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | N
         raise ValueError("A resposta do Jarvis não contém conteúdo falável após remover elementos visuais.")
     prepared_text = _prepare_tts_input(spoken_text, JARVIS_VOICE_MODEL)
     selected_voice = voice or JARVIS_VOICE_ID
-    response_format = "mp3"
+    # Gemini TTS produz PCM 24 kHz/16-bit/mono nativamente. Pedimos PCM e o cliente
+    # compartilhado o encapsula em WAV para reprodução confiável no Streamlit/Safari.
+    response_format = "pcm" if JARVIS_VOICE_MODEL.startswith("google/gemini-") else "mp3"
     try:
         path = gerar_audio(
             prepared_text,
@@ -282,6 +276,7 @@ def synthesize_reply(text: str, *, name: str = "jarvis_resposta", voice: str | N
             voice=selected_voice,
             response_format=response_format,
             spoken_text=spoken_text,
+            path=path,
         )
         return path
     except Exception as exc:
