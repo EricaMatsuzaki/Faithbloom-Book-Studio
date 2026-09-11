@@ -114,7 +114,17 @@ def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypa
     assert called["voice"] == "voz-1"
     assert called["model"] == voice.JARVIS_VOICE_MODEL
     assert called["response_format"] == "mp3"
-    assert "futurista" in called["instructions"]
+    if voice.JARVIS_VOICE_MODEL.startswith("openai/"):
+        assert "futurista" in called["instructions"]
+    else:
+        assert called["instructions"] is None
+
+
+def test_voice_instructions_are_provider_aware():
+    assert voice._voice_instructions_for_model("google/gemini-3.1-flash-tts-preview") is None
+    openai_instructions = voice._voice_instructions_for_model("openai/some-current-tts")
+    assert openai_instructions is not None
+    assert "futurista" in openai_instructions.casefold()
 
 
 def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
@@ -136,8 +146,9 @@ def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
     assert called["route_result"] is route
 
 
-def test_default_jarvis_voice_is_deeper_original_profile():
-    assert voice.JARVIS_VOICE_ID == "onyx"
+def test_default_jarvis_voice_uses_current_available_tts_profile():
+    assert voice.JARVIS_VOICE_MODEL == "google/gemini-3.1-flash-tts-preview"
+    assert voice.JARVIS_VOICE_ID == "alloy"
     instructions = voice.JARVIS_VOICE_INSTRUCTIONS.casefold()
     assert "britânica" in instructions
     assert "não imite" in instructions
