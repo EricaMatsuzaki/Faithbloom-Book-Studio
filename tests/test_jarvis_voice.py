@@ -176,6 +176,22 @@ def test_google_profile_never_falls_back_to_legacy_openai_voice_id():
     assert voice.JARVIS_VOICE_ID.casefold() not in voice.LEGACY_OPENAI_VOICE_IDS
 
 
+def test_tts_runtime_failure_is_logged_with_safe_profile_context(monkeypatch, capsys):
+    def fail_generate(*args, **kwargs):
+        raise RuntimeError("OpenRouter recusou a chamada (HTTP 403)")
+
+    monkeypatch.setattr(voice, "gerar_audio", fail_generate)
+    with pytest.raises(RuntimeError, match="HTTP 403"):
+        voice.synthesize_reply("Teste de diagnóstico")
+
+    output = capsys.readouterr().out
+    assert "[FaithBloom Jarvis TTS]" in output
+    assert f"model={voice.JARVIS_VOICE_MODEL}" in output
+    assert f"voice={voice.JARVIS_VOICE_ID}" in output
+    assert "format=mp3" in output
+    assert "HTTP 403" in output
+
+
 def test_push_to_talk_decodes_browser_webm_payload():
     payload = {"id": "rec-1", "data": base64.b64encode(b"fake-webm-audio").decode("ascii"), "mime_type": "audio/webm;codecs=opus"}
     decoded = ptt.decode_recording(payload)
