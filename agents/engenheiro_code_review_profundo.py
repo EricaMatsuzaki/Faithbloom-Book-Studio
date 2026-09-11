@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Any
 
-SCHEMA = "faithbloom.deep-code-review-engineer.v1"
+SCHEMA = "faithbloom.deep-code-review-engineer.v2"
 ROLE_ID = "deep_code_review_engineer"
 NAME = "Engenheiro de Code Review Profundo"
 MISSION = (
@@ -81,6 +81,7 @@ SKILL_DOMAINS: dict[str, tuple[str, ...]] = {
         "unit tests", "integration tests", "contract tests", "E2E", "regression tests",
         "failure reproduction", "minimal failing case", "log forensics", "runtime diagnostics",
         "browser/provider tests", "fault injection", "test doubles", "coverage gap analysis",
+        "CI failure triage", "test-log root-cause isolation", "fix-and-retest loop",
     ),
     "performance_reliability": (
         "latency analysis", "memory/resource leaks", "caching", "graceful degradation",
@@ -97,6 +98,9 @@ NON_NEGOTIABLES = (
     "preferir correção mínima com teste de regressão",
     "não mascarar falha com except amplo, fallback enganoso ou teste desabilitado",
     "não declarar corrigido sem evidência adequada ao tipo de falha",
+    "quando CI falhar: ler logs, isolar causa raiz, corrigir na mesma feature branch e executar novamente",
+    "não alterar nem fazer merge em release protegida durante autocorreção",
+    "não desabilitar teste para obter pipeline verde",
     "segurança, dados, custos, Masters e publicação permanecem fail-closed",
     "release protegida e merge exigem autorização explícita",
 )
@@ -145,6 +149,7 @@ def escalation_required(context: dict[str, Any] | None) -> bool:
         int(context.get("failed_fix_attempts") or 0) >= 2,
         bool(context.get("architecture_regression")),
         bool(context.get("security_or_data_risk")),
+        bool(context.get("ci_failed")),
     ))
 
 
@@ -193,6 +198,55 @@ def build_deep_review_plan(
         ],
         "anti_duplication_sequence": ["verify", "reuse", "extend", "create_if_missing"],
         "status": "ready_for_deep_review",
+    }
+
+
+def build_ci_remediation_plan(
+    *,
+    workflow_run: str | int,
+    failed_jobs: list[str] | None = None,
+    feature_branch: str,
+    protected_release_branch: str,
+) -> dict[str, Any]:
+    """Contrato seguro para o ciclo analisar -> corrigir -> testar novamente.
+
+    A função não executa GitHub Actions nem merge. Ela define o comportamento que
+    o agente deve seguir quando recebe acesso autorizado às ferramentas do repo.
+    """
+    feature = (feature_branch or "").strip()
+    release = (protected_release_branch or "").strip()
+    if not feature or not release:
+        raise ValueError("Feature branch e release protegida são obrigatórias.")
+    if feature == release:
+        raise ValueError("A feature branch não pode ser a própria release protegida.")
+    return {
+        "schema": SCHEMA,
+        "agent": NAME,
+        "workflow_run": str(workflow_run),
+        "failed_jobs": list(failed_jobs or []),
+        "feature_branch": feature,
+        "protected_release_branch": release,
+        "steps": [
+            "fetch_failed_job_logs",
+            "identify_first_root_cause_not_cascade",
+            "inspect_affected_function_callers_and_tests",
+            "verify_reuse_extend_before_create",
+            "apply_minimal_fix_on_feature_branch_only",
+            "add_or_update_regression_test",
+            "rerun_ci",
+            "inspect_new_failures_if_any",
+            "repeat_until_green_or_human_blocker",
+            "require_runtime_validation_for_runtime_bugs",
+        ],
+        "forbidden": [
+            "merge_pull_request",
+            "modify_protected_release_branch",
+            "disable_failing_tests",
+            "hide_errors_with_broad_fallback",
+            "delete_history_or_masters",
+        ],
+        "completion_rule": "CI green + regression evidence + runtime validation when applicable",
+        "status": "ready_for_safe_remediation",
     }
 
 
