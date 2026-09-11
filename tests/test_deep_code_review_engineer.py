@@ -8,6 +8,7 @@ def test_deep_review_agent_has_broad_semantic_skills():
     assert "business rules" in skills
     assert "API contract review" in skills
     assert "user journey" in skills
+    assert "CI failure triage" in skills
     assert len(skills) >= 70
 
 
@@ -18,6 +19,10 @@ def test_escalation_when_runtime_broken_despite_green_tests():
 def test_escalation_after_repeated_failed_fix_attempts():
     assert deep.escalation_required({"failed_fix_attempts": 2}) is True
     assert deep.escalation_required({"failed_fix_attempts": 1}) is False
+
+
+def test_escalation_when_ci_fails():
+    assert deep.escalation_required({"ci_failed": True}) is True
 
 
 def test_deep_review_plan_requires_runtime_evidence():
@@ -31,6 +36,34 @@ def test_deep_review_plan_requires_runtime_evidence():
     assert "identify_root_cause" in plan["review_order"]
     assert "runtime_validation_when_applicable" in plan["required_evidence"]
     assert plan["anti_duplication_sequence"] == ["verify", "reuse", "extend", "create_if_missing"]
+
+
+def test_ci_remediation_plan_is_feature_only_and_non_destructive():
+    plan = deep.build_ci_remediation_plan(
+        workflow_run=479,
+        failed_jobs=["pytest"],
+        feature_branch="feature/refinamento-24-prompt-mestre-compliance",
+        protected_release_branch="release/2.0.0-rc5-skills",
+    )
+    assert plan["status"] == "ready_for_safe_remediation"
+    assert "fetch_failed_job_logs" in plan["steps"]
+    assert "apply_minimal_fix_on_feature_branch_only" in plan["steps"]
+    assert "rerun_ci" in plan["steps"]
+    assert "merge_pull_request" in plan["forbidden"]
+    assert "modify_protected_release_branch" in plan["forbidden"]
+
+
+def test_ci_remediation_refuses_release_as_feature_branch():
+    try:
+        deep.build_ci_remediation_plan(
+            workflow_run=1,
+            feature_branch="release/2.0.0-rc5-skills",
+            protected_release_branch="release/2.0.0-rc5-skills",
+        )
+    except ValueError as exc:
+        assert "não pode" in str(exc)
+    else:
+        raise AssertionError("A autocorreção não pode escrever diretamente na release protegida")
 
 
 def test_finding_severity_prioritizes_security_and_main_flow():
