@@ -102,6 +102,71 @@ class TestCharacterUniverse(unittest.TestCase):
                 cu.validar_exclusao_permanente('p1', confirmacao_explicita=False)
             self.assertTrue(cu.validar_exclusao_permanente('p1', confirmacao_explicita=True))
 
+    def test_move_teo_para_colecao_correta_preserva_id_referencias_masters_e_historico(self):
+        personagem = {
+            'id': 'teo-1', 'nome': 'Téo', 'colecao': 'Histórias que florescem da Vida', 'status': 'oficial',
+            'dna': {'descricao_master': 'Passarinho azul'},
+            'color_master': 'fb://teo-master.png', 'line_art_master': 'fb://teo-line.png',
+            'reference_pack': [{'asset': 'fb://teo-1.png'}, {'asset': 'fb://teo-2.png'}, {'asset': 'fb://teo-3.png'}],
+            'metadata': {'master_history': [{'asset_id': 'teo-master'}]},
+            'variacoes': [{'id': 'v1'}], 'versoes': [],
+        }
+        initial = {
+            cu.INDEX: [{'id': 'teo-1', 'nome': 'Téo', 'colecao': 'Histórias que florescem da Vida', 'status': 'oficial'}],
+            'character_universe/teo-1.json': personagem,
+        }
+        store, patches = self._storage_patches(initial)
+        with patches:
+            moved = cu.mover_personagem_para_colecao(
+                'teo-1', cu.MEL_CANONICAL_COLLECTION, confirmacao_explicita=True,
+            )
+        self.assertEqual('teo-1', moved['id'])
+        self.assertEqual(cu.MEL_CANONICAL_COLLECTION, moved['colecao'])
+        self.assertEqual(3, len(moved['reference_pack']))
+        self.assertEqual('fb://teo-master.png', moved['color_master'])
+        self.assertEqual('fb://teo-line.png', moved['line_art_master'])
+        self.assertEqual(1, len(moved['variacoes']))
+        self.assertTrue(moved['metadata']['collection_history'])
+        self.assertEqual('Histórias que florescem da Vida', moved['metadata']['collection_history'][-1]['de'])
+        self.assertEqual(cu.MEL_CANONICAL_COLLECTION, moved['metadata']['collection_history'][-1]['para'])
+        self.assertEqual(cu.MEL_CANONICAL_COLLECTION, store[cu.INDEX][0]['colecao'])
+
+    def test_move_de_colecao_exige_confirmacao_explicita(self):
+        personagem = {
+            'id': 'teo-1', 'nome': 'Téo', 'colecao': 'Errada', 'status': 'oficial',
+            'dna': {}, 'reference_pack': [], 'metadata': {}, 'variacoes': [], 'versoes': [],
+        }
+        initial = {
+            cu.INDEX: [{'id': 'teo-1', 'nome': 'Téo', 'colecao': 'Errada', 'status': 'oficial'}],
+            'character_universe/teo-1.json': personagem,
+        }
+        _, patches = self._storage_patches(initial)
+        with patches:
+            with self.assertRaises(PermissionError):
+                cu.mover_personagem_para_colecao('teo-1', 'Correta', confirmacao_explicita=False)
+
+    def test_move_bloqueia_colisao_de_nome_na_colecao_destino(self):
+        teo_errado = {
+            'id': 'teo-old', 'nome': 'Téo', 'colecao': 'Errada', 'status': 'oficial',
+            'dna': {}, 'reference_pack': [], 'metadata': {}, 'variacoes': [], 'versoes': [],
+        }
+        teo_existente = {
+            'id': 'teo-right', 'nome': 'Téo', 'colecao': 'Correta', 'status': 'oficial',
+            'dna': {}, 'reference_pack': [], 'metadata': {}, 'variacoes': [], 'versoes': [],
+        }
+        initial = {
+            cu.INDEX: [
+                {'id': 'teo-old', 'nome': 'Téo', 'colecao': 'Errada', 'status': 'oficial'},
+                {'id': 'teo-right', 'nome': 'Téo', 'colecao': 'Correta', 'status': 'oficial'},
+            ],
+            'character_universe/teo-old.json': teo_errado,
+            'character_universe/teo-right.json': teo_existente,
+        }
+        _, patches = self._storage_patches(initial)
+        with patches:
+            with self.assertRaises(ValueError):
+                cu.mover_personagem_para_colecao('teo-old', 'Correta', confirmacao_explicita=True)
+
 
 if __name__ == '__main__':
     unittest.main()
