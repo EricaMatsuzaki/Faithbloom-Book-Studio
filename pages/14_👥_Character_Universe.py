@@ -6,7 +6,11 @@ from character_universe import (
     criar_personagem_oficial, listar_personagens_oficiais, carregar_personagem_oficial,
     adicionar_variacao, salvar_preset, personagem_para_prompt, VARIAVEIS_PADRAO,
     adicionar_referencia, detectar_personagens_mesmo_nome, arquivar_personagem,
-    restaurar_personagem, mel_canonica_protegida,
+    restaurar_personagem, mel_canonica_protegida, MEL_CANONICAL_COLLECTION,
+)
+from collection_management import (
+    archive_collection, collection_summary, filter_active_collection_names,
+    list_archived_collections, restore_collection,
 )
 from asset_library import get_asset, get_thumbnail, list_assets
 from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
@@ -32,7 +36,50 @@ if selected_asset_path and os.path.exists(selected_asset_path):
 colecoes_salvas = [str(c).strip() for c in listar_colecoes() if str(c).strip()]
 indice_personagens = listar_personagens_oficiais(incluir_arquivados=True)
 colecoes_com_personagens = [str(i.get('colecao') or '').strip() for i in indice_personagens if str(i.get('colecao') or '').strip()]
-colecoes = sorted(set(colecoes_salvas + colecoes_com_personagens), key=str.casefold)
+colecoes = filter_active_collection_names(colecoes_salvas + colecoes_com_personagens)
+
+with st.expander('🧹 Gerenciar coleções de teste', expanded=False):
+    st.caption('Arquivar é não destrutivo: remove a coleção desta lista e arquiva os Character Masters ativos, preservando livros, assets, DNA, Masters, referências, versões e histórico.')
+    candidatas = [c for c in colecoes if c != MEL_CANONICAL_COLLECTION]
+    if candidatas:
+        alvo_colecao = st.selectbox('Coleção a arquivar/ocultar', candidatas, key='collection_manager_archive_target')
+        resumo_colecao = collection_summary(alvo_colecao)
+        st.caption(
+            f"{resumo_colecao['characters_active']} personagem(ns) ativo(s) · "
+            f"{resumo_colecao['characters_total']} personagem(ns) no histórico"
+        )
+        confirmar_colecao = st.checkbox(
+            f'Confirmo que desejo arquivar/ocultar a coleção “{alvo_colecao}” sem apagar seus dados',
+            key='collection_manager_archive_confirm',
+        )
+        if st.button('🗄️ Arquivar/ocultar coleção', disabled=not confirmar_colecao, key='collection_manager_archive_button'):
+            try:
+                archive_collection(alvo_colecao, confirmed=confirmar_colecao)
+            except (ValueError, PermissionError, KeyError) as exc:
+                st.error(str(exc))
+            else:
+                st.session_state.pop('character_universe_collection_selector', None)
+                st.success(f'Coleção “{alvo_colecao}” arquivada sem exclusão de livros ou assets.')
+                st.rerun()
+    else:
+        st.info('Não há coleções de teste disponíveis para arquivar. A coleção canônica está protegida.')
+
+    arquivadas = list_archived_collections()
+    if arquivadas:
+        st.divider()
+        restaurar_nome = st.selectbox('Coleções arquivadas', sorted(arquivadas, key=str.casefold), key='collection_manager_restore_target')
+        confirmar_restore = st.checkbox(
+            f'Confirmo que desejo restaurar a coleção “{restaurar_nome}”',
+            key='collection_manager_restore_confirm',
+        )
+        if st.button('♻️ Restaurar coleção', disabled=not confirmar_restore, key='collection_manager_restore_button'):
+            try:
+                restore_collection(restaurar_nome, confirmed=confirmar_restore)
+            except (ValueError, PermissionError, KeyError) as exc:
+                st.error(str(exc))
+            else:
+                st.success(f'Coleção “{restaurar_nome}” restaurada.')
+                st.rerun()
 
 colecao_opcao = st.selectbox(
     'Coleção',
@@ -50,13 +97,14 @@ st.caption(f'📚 Coleção ativa: **{colecao}**')
 render_character_handoff_inbox(colecao)
 mostrar_arquivados = st.checkbox('Mostrar personagens arquivados', value=False)
 
-duplicados = detectar_personagens_mesmo_nome(incluir_arquivados=True)
+# Alerta operacional considera somente duplicidades ativas; registros arquivados permanecem no histórico.
+duplicados = detectar_personagens_mesmo_nome(incluir_arquivados=False)
 for grupo in duplicados.values():
     relacionados = [x for x in grupo if x.get('colecao') == colecao]
     if relacionados:
         nome_dup = relacionados[0].get('nome', 'Personagem')
         resumo = ' · '.join(
-            f"{x.get('colecao') or 'Sem coleção'} — {'🗄️ arquivado' if x.get('status') == 'arquivado' else '⭐ oficial/ativo'}"
+            f"{x.get('colecao') or 'Sem coleção'} — ⭐ oficial/ativo"
             for x in grupo
         )
         st.warning(f"⚠️ Nome duplicado detectado: {nome_dup}. {resumo}")
