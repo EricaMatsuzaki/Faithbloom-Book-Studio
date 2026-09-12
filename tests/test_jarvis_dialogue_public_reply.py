@@ -45,3 +45,42 @@ def test_route_fallback_uses_human_next_step_without_internal_metadata():
     assert safe == "Entendi o pedido do projeto Téo. O próximo passo é revisar e aprovar o DNA visual."
     assert "pagina" not in safe.casefold()
     assert "route" not in safe.casefold()
+
+
+def test_character_completion_status_question_never_claims_unverified_success(monkeypatch):
+    monkeypatch.setattr(jd, "_post_com_retry", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network should not run")))
+    reply = jd.build_natural_reply(
+        "Você já criou o DNA do Téo?",
+        history=[],
+        route_result={"project_type": "children_story"},
+    )
+
+    lower = reply.casefold()
+    assert "não posso afirmar" in lower
+    assert "character universe" in lower
+    assert "quais campos do dna já estão preenchidos" in lower
+    assert "história infantil" not in lower
+
+
+def test_short_status_follow_up_inherits_recent_character_context(monkeypatch):
+    monkeypatch.setattr(jd, "_post_com_retry", lambda *a, **k: (_ for _ in ()).throw(AssertionError("network should not run")))
+    history = [
+        {
+            "role": "user",
+            "text": "Complete o DNA visual do Téo usando o Color Master e as referências já cadastradas.",
+        },
+        {
+            "role": "assistant",
+            "text": "Entendi. Vou preservar o personagem existente.",
+        },
+    ]
+    reply = jd.build_natural_reply(
+        "Já terminou?",
+        history=history,
+        route_result={"project_type": "children_story"},
+    )
+
+    lower = reply.casefold()
+    assert "dna do téo" in lower
+    assert "não posso afirmar" in lower
+    assert "história infantil" not in lower
