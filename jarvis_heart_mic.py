@@ -31,18 +31,47 @@ CSS = r"""
 
 JS = r"""
 export default function(component){
- const {parentElement,setStateValue,data}=component;const root=parentElement.querySelector('#jh-shell');if(!root)return;
+ const {parentElement,setStateValue,data}=component;
+ const root=parentElement.querySelector('#jh-shell');if(!root)return;
  const heart=root.querySelector('#jh-heart'),robot=root.querySelector('#jh-robot'),status=root.querySelector('#jh-status');
  const stage=(data&&data.stage)||'idle';
  const setVisual=(mode,text)=>{['listening','thinking','speaking'].forEach(c=>{heart?.classList.remove(c);robot?.classList.remove(c)});if(mode&&mode!=='idle'){heart?.classList.add(mode);robot?.classList.add(mode)}if(status&&text)status.textContent=text;};
- if(stage==='thinking')setVisual('thinking','Pensando…');
- else if(stage==='speaking')setVisual('idle','Toque no coração para falar');
- else setVisual('idle','Toque no coração para falar');
- if(root.dataset.bound==='1')return;root.dataset.bound='1';let rec=null,stream=null,chunks=[],started=0;
- const cleanup=()=>{if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}rec=null};
- const stop=()=>{if(rec&&rec.state==='recording'){setVisual('thinking','Enviando e preparando resposta…');rec.stop()}};
- const start=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];const types=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];const mime=types.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported?.(t));rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};rec.onerror=()=>{setVisual('idle','Microfone indisponível');cleanup()};rec.onstop=()=>{const duration=Date.now()-started,mt=rec?.mimeType||chunks[0]?.type||'audio/webm',blob=new Blob(chunks,{type:mt});if(!blob.size||duration<350){setVisual('idle','Fale um pouco mais e tente novamente');cleanup();return}const reader=new FileReader();reader.onloadend=()=>{const s=String(reader.result||''),encoded=s.includes(',')?s.split(',',2)[1]:'';if(encoded){setStateValue('recording',{id:`heart-${Date.now()}-${blob.size}`,data:encoded,mime_type:mt,duration_ms:duration});setVisual('thinking','Pensando…')}else setVisual('idle','Não consegui preparar o áudio');cleanup()};reader.readAsDataURL(blob)};rec.start(120);started=Date.now();setVisual('listening','Ouvindo… toque novamente para terminar')}catch(e){cleanup();setVisual('idle',String(e?.name||'').includes('NotAllowed')?'Permita o microfone no navegador':'Não consegui acessar o microfone')}};
- heart?.addEventListener('click',()=>{if(rec&&rec.state==='recording')stop();else start()});return()=>{try{if(rec&&rec.state==='recording')rec.stop()}catch(_){}cleanup()};
+ if(stage==='thinking')setVisual('thinking','Pensando…');else setVisual('idle','Toque no coração para falar');
+
+ const state=root._fbHeartState||(root._fbHeartState={rec:null,stream:null,chunks:[],started:0});
+ const cleanup=()=>{try{if(state.stream){state.stream.getTracks().forEach(t=>t.stop())}}catch(_){}state.stream=null;state.rec=null;state.chunks=[];state.started=0;};
+ const stop=()=>{if(state.rec&&state.rec.state==='recording'){setVisual('thinking','Enviando e preparando resposta…');state.rec.stop();}};
+ const start=async()=>{
+   try{
+     state.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+     state.chunks=[];
+     const types=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg;codecs=opus'];
+     const mime=types.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported?.(t));
+     const recorder=mime?new MediaRecorder(state.stream,{mimeType:mime}):new MediaRecorder(state.stream);
+     state.rec=recorder;state.started=Date.now();
+     recorder.ondataavailable=e=>{if(e.data&&e.data.size)state.chunks.push(e.data)};
+     recorder.onerror=()=>{setVisual('idle','Microfone indisponível');cleanup()};
+     recorder.onstop=()=>{
+       const duration=Date.now()-state.started;
+       const mt=recorder.mimeType||state.chunks[0]?.type||'audio/webm';
+       const chunks=[...state.chunks];
+       const blob=new Blob(chunks,{type:mt});
+       if(!blob.size||duration<350){setVisual('idle','Fale um pouco mais e tente novamente');cleanup();return;}
+       const reader=new FileReader();
+       reader.onloadend=()=>{
+         const s=String(reader.result||''),encoded=s.includes(',')?s.split(',',2)[1]:'';
+         if(encoded){setStateValue('recording',{id:`heart-${Date.now()}-${blob.size}`,data:encoded,mime_type:mt,duration_ms:duration});setVisual('thinking','Pensando…');}
+         else setVisual('idle','Não consegui preparar o áudio');
+         cleanup();
+       };
+       reader.readAsDataURL(blob);
+     };
+     recorder.start(120);
+     setVisual('listening','Ouvindo… toque novamente para terminar');
+   }catch(e){cleanup();setVisual('idle',String(e?.name||'').includes('NotAllowed')?'Permita o microfone no navegador':'Não consegui acessar o microfone');}
+ };
+ heart.onclick=()=>{if(state.rec&&state.rec.state==='recording')stop();else start();};
+ return()=>{if(!document.body.contains(root))cleanup();};
 }
 """
 
