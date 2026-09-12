@@ -4,14 +4,13 @@ This is a thin dialogue layer over the existing OpenRouter transport. It does no
 replace the editorial orchestrator, tools, approvals, STT or TTS, and it never
 claims an action was completed unless the caller provides an explicit result.
 
-The canonical Jarvis is latency-sensitive. It therefore uses a dedicated fast
-chat model instead of the heavier editorial model, with a short context window and
-small output budget. The editorial agents continue using their stronger models.
+The canonical Jarvis is latency-sensitive. Model selection is delegated to the
+FaithBloom cost mode so simple dialogue can stay free/cheap while stronger modes
+remain available when the user explicitly chooses them.
 """
 from __future__ import annotations
 
 import json
-import os
 import time
 from typing import Any
 
@@ -22,13 +21,8 @@ from controle_geracao import (
     liberar_requisicao,
     sanitizar_texto,
 )
+from faithbloom_cost_mode import model_for
 from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_retry
-
-DEFAULT_JARVIS_DIALOGUE_MODEL = "google/gemini-2.5-flash-lite:nitro"
-JARVIS_DIALOGUE_MODEL = (
-    os.environ.get("OPENROUTER_MODELO_JARVIS", DEFAULT_JARVIS_DIALOGUE_MODEL).strip()
-    or DEFAULT_JARVIS_DIALOGUE_MODEL
-)
 
 SYSTEM_PROMPT = """Você é o Jarvis do FaithBloom Book Studio, um assistente central de voz.
 Converse de forma natural, curta, clara e útil em português do Brasil.
@@ -61,11 +55,12 @@ def build_natural_reply(
     route_result: dict[str, Any] | None = None,
     project_progress: dict[str, Any] | None = None,
 ) -> str:
-    """Generate one concise low-latency reply while preserving guardrails."""
+    """Generate one concise reply using the model selected by the current cost mode."""
     text = (user_text or "").strip()
     if not text:
         raise ValueError("A mensagem para o Jarvis está vazia.")
 
+    dialogue_model = model_for("dialogue")
     context: dict[str, Any] = {}
     if route_result:
         plan = route_result.get("route_plan") or {}
@@ -89,7 +84,7 @@ def build_natural_reply(
 
     signature = json.dumps({"text": text, "context": context}, ensure_ascii=False, sort_keys=True)
     req_id, request_sig, estimate, started = iniciar_requisicao(
-        "texto", JARVIS_DIALOGUE_MODEL, "jarvis-dialogue|" + signature
+        "texto", dialogue_model, "jarvis-dialogue|" + signature
     )
     t0 = time.perf_counter()
     try:
@@ -105,7 +100,7 @@ def build_natural_reply(
             )
         messages.append({"role": "user", "content": text})
         payload = {
-            "model": JARVIS_DIALOGUE_MODEL,
+            "model": dialogue_model,
             "messages": messages,
             "temperature": 0.25,
             "max_tokens": 120,
@@ -119,7 +114,7 @@ def build_natural_reply(
             req_id,
             request_sig,
             "texto",
-            JARVIS_DIALOGUE_MODEL,
+            dialogue_model,
             estimate,
             started,
             "sucesso",
@@ -127,7 +122,7 @@ def build_natural_reply(
         )
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
         print(
-            f"[FaithBloom Jarvis Latency] dialogue_ms={elapsed_ms} model={JARVIS_DIALOGUE_MODEL}",
+            f"[FaithBloom Jarvis Latency] dialogue_ms={elapsed_ms} model={dialogue_model}",
             flush=True,
         )
         return answer
@@ -136,7 +131,7 @@ def build_natural_reply(
             req_id,
             request_sig,
             "texto",
-            JARVIS_DIALOGUE_MODEL,
+            dialogue_model,
             estimate,
             started,
             "erro",
