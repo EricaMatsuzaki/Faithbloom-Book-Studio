@@ -279,23 +279,9 @@ CSS = f"""
             linear-gradient(180deg, rgba(246,251,250,.98) 0%, rgba(250,248,255,.98) 100%);
         border-right: 1px solid rgba(31,87,105,.08);
     }}
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
-        border-radius: 11px;
-        margin: 2px 8px;
-    }}
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
-        background: rgba(34,168,153,.07);
-    }}
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[href$="Prompt_Mestre_Studio"]::before {{
-        content: "🪄";
-        margin-right: .38rem;
-        line-height: 1;
-    }}
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a[href$="Historia_4_Estilos"]::before {{
-        content: "✍️";
-        margin-right: .38rem;
-        line-height: 1;
-    }}
+    /* Esconde a lista automática de dezenas de páginas; o menu FaithBloom abaixo
+       mantém apenas rotas de usuário e coloca ferramentas técnicas recolhidas. */
+    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] {{ display:none !important; }}
     section[data-testid="stSidebar"] .stMarkdown h3 {{ color: {TEAL_ESCURO}; }}
 
     /* ALERTS */
@@ -316,8 +302,50 @@ CSS = f"""
 """
 
 
+def _sidebar_link(path: str, label: str) -> None:
+    st.page_link(path, label=label, use_container_width=True)
+
+
+def render_sidebar_navigation() -> None:
+    """Menu de usuário enxuto; módulos técnicos continuam acessíveis sem poluir."""
+    with st.sidebar:
+        st.markdown("### 🌸 FaithBloom")
+        _sidebar_link("app.py", "🏠 Início")
+        _sidebar_link("pages/00_🤖_Jarvis.py", "🤖 Jarvis")
+        _sidebar_link("pages/27_🚀_Project_Hub.py", "🚀 Project Hub")
+
+        with st.expander("📚 Criar & transformar", expanded=True):
+            _sidebar_link("pages/39_✍️_Historia_4_Estilos.py", "✍️ Criar história")
+            _sidebar_link("pages/2_📚_Retomar_Livro.py", "📚 Retomar livro")
+            _sidebar_link("pages/3_🖍️_Livros_de_Colorir.py", "🖍️ Livro de colorir")
+            _sidebar_link("pages/23_🧩_Activity_Book_Studio.py", "🧩 Livro de atividades")
+            _sidebar_link("pages/24_🎧_Audiobook_Studio.py", "🎧 Audiobook")
+            _sidebar_link("pages/21_Translation_Localization_Studio.py", "🌍 Traduzir / localizar")
+
+        with st.expander("👥 Universo & biblioteca", expanded=False):
+            _sidebar_link("pages/14_👥_Character_Universe.py", "👥 Character Universe")
+            _sidebar_link("pages/15_📚_Biblioteca_Editorial.py", "📚 Biblioteca Editorial")
+            _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🖼️ Assets & Masters")
+
+        with st.expander("✅ Qualidade & publicação", expanded=False):
+            _sidebar_link("pages/25_🛡️_Quality_Guardian.py", "🛡️ Quality Guardian")
+            _sidebar_link("pages/26_🌐_Publishing_Distribution_Center.py", "🌐 Distribuição")
+            _sidebar_link("pages/13_✅_QA_Final_e_Release.py", "✅ QA final")
+
+        with st.expander("🧰 Ferramentas avançadas", expanded=False):
+            _sidebar_link("pages/16_🩺_Book_Doctor.py", "🩺 Book Doctor")
+            _sidebar_link("pages/17_🎭_Emotional_Color_Director.py", "🎭 Emotional Color")
+            _sidebar_link("pages/18_🎨_Style_DNA_Lab.py", "🎨 Style DNA")
+            _sidebar_link("pages/19_✨_Restoration_Studio.py", "✨ Restoration Studio")
+            _sidebar_link("pages/20_🖍️_Coloring_Book_Doctor.py", "🖍️ Coloring Book Doctor")
+            _sidebar_link("pages/11_🛡️_Custos_e_Seguranca.py", "🛡️ Custos & Segurança")
+            _sidebar_link("pages/12_🏭_Fila_de_Producao.py", "🏭 Fila de Produção")
+            _sidebar_link("pages/33_🧭_Integration_UX_Center.py", "🧭 Integration UX")
+
+
 def aplicar_estilo():
     st.markdown(CSS, unsafe_allow_html=True)
+    render_sidebar_navigation()
 
 
 def hero(titulo: str, subtitulo: str = "", eyebrow: str = "FaithBloom AI · Editorial Studio"):
