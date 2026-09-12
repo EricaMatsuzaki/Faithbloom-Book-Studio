@@ -53,16 +53,23 @@ def _norm(text: str) -> str:
 
 
 def is_character_universe_request(text: str) -> bool:
-    """Prefer an explicit Character Universe request over generic editorial inference."""
+    """Prefer an explicit Character Universe request over generic editorial inference.
+
+    Named DNA requests (for example, ``DNA do Téo``) must not fall through to the
+    default children-story route just because they do not contain the literal
+    phrase ``DNA do personagem``.
+    """
     value = _norm(text)
     if not value:
         return False
     identity_terms = (
-        "dna visual", "dna do personagem", "character dna", "color master",
+        "dna visual", "dna do personagem", "dna da personagem", "character dna", "color master",
         "reference pack", "character master", "personagem já cadastrado",
         "personagem ja cadastrado", "não crie outro personagem", "nao crie outro personagem",
     )
-    return any(term in value for term in identity_terms)
+    if any(term in value for term in identity_terms):
+        return True
+    return bool(re.search(r"\bdna(?:\s+visual)?\s+d(?:o|a|e)\s+[\wÀ-ÿ-]+", value, flags=re.UNICODE))
 
 
 def _character_universe_result(text: str) -> dict:
