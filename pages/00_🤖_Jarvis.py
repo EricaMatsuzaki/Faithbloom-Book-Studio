@@ -1,13 +1,13 @@
-"""Jarvis canônico — coração interativo, voz automática e roteamento FaithBloom.
+"""Jarvis canônico — voz, Daily Intelligence e roteamento FaithBloom.
 
 O coração do robô é o controle principal: toque uma vez para falar e novamente
-para terminar. Depois o fluxo segue automaticamente: STT -> entendimento ->
-resposta -> TTS -> reprodução de voz. Um áudio nativo permanece como fallback.
+para terminar. O Jarvis abre com briefing automático diário e mantém rotas
+instantâneas para data/hora, clima e agenda antes de recorrer ao diálogo de IA.
 """
 from __future__ import annotations
 
-import base64
 import os
+import time
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -25,6 +25,14 @@ from jarvis_conversation import (
     looks_like_echo,
     strip_wake_word,
     thanks_reply,
+)
+from jarvis_daily_intelligence import (
+    DEFAULT_LOCATION,
+    DEFAULT_TIMEZONE,
+    build_daily_intelligence,
+    format_date_pt,
+    greeting_for,
+    local_now,
 )
 from jarvis_heart_mic import decode_recording, heart_mic
 from jarvis_voice import build_spoken_reply, synthesize_reply, transcribe_audio
@@ -45,14 +53,13 @@ NAV_PAGES = {
 }
 
 
+def _now() -> datetime:
+    return local_now(os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE))
+
+
 def _greeting() -> str:
-    timezone_name = os.environ.get("JARVIS_TIMEZONE", "Asia/Tokyo")
-    try:
-        now = datetime.now(ZoneInfo(timezone_name))
-    except Exception:
-        now = datetime.now()
-    opening = "Bom dia" if now.hour < 12 else "Boa tarde" if now.hour < 18 else "Boa noite"
-    return f"{opening}, Erica. Estou online e pronto para ajudar."
+    now = _now()
+    return f"{greeting_for(now)}, Erica. Estou online e pronto para ajudar."
 
 
 def _set_stage(stage: str, message: str | None = None) -> None:
@@ -70,12 +77,20 @@ def _audio_mime(path: str) -> str:
     return "audio/mpeg"
 
 
+def _record_latency(name: str, seconds: float) -> None:
+    metrics = dict(st.session_state.get("jarvis_latency_metrics") or {})
+    metrics[name] = round(float(seconds), 3)
+    st.session_state["jarvis_latency_metrics"] = metrics
+
+
 def _synthesize(reply: str) -> bool:
+    started = time.perf_counter()
     token = f"jarvis_{uuid.uuid4().hex[:12]}"
     st.session_state["jarvis_audio_path"] = ""
     st.session_state["jarvis_audio_error"] = ""
     try:
         path = synthesize_reply(reply, name=token)
+        _record_latency("tts_s", time.perf_counter() - started)
         if path and os.path.exists(path) and os.path.getsize(path) > 0:
             st.session_state["jarvis_audio_path"] = path
             st.session_state["jarvis_reply_token"] = token
@@ -83,23 +98,59 @@ def _synthesize(reply: str) -> bool:
             return True
         st.session_state["jarvis_audio_error"] = "O TTS não gerou um arquivo de áudio válido."
     except Exception as exc:
+        _record_latency("tts_s", time.perf_counter() - started)
         st.session_state["jarvis_audio_error"] = str(exc)
     st.session_state["jarvis_reply_token"] = token
     _set_stage("idle", "Resposta pronta. A voz ficou indisponível nesta tentativa.")
     return False
 
 
-def _audio_b64(path: str) -> str:
-    if not path or not os.path.exists(path):
-        return ""
-    try:
-        with open(path,"rb") as fh:
-            return base64.b64encode(fh.read()).decode("ascii")
-    except OSError:
-        return ""
+def _is_datetime_request(text: str) -> bool:
+    value = (text or "").casefold()
+    return any(x in value for x in (
+        "que dia é hoje", "que dia e hoje", "qual a data", "data de hoje",
+        "que horas são", "que horas sao", "qual o horário", "qual o horario", "hora agora",
+    ))
+
+
+def _datetime_reply(text: str) -> str:
+    now = _now()
+    value = (text or "").casefold()
+    if any(x in value for x in ("horas", "horário", "horario", "hora agora")):
+        return f"Agora são {now.strftime('%H:%M')} no horário do Japão. Hoje é {format_date_pt(now)}."
+    return f"Hoje é {format_date_pt(now)}. Agora são {now.strftime('%H:%M')} no horário do Japão."
+
+
+def _is_calendar_request(text: str) -> bool:
+    value = (text or "").casefold()
+    return any(x in value for x in (
+        "agenda", "calendário", "calendario", "compromisso", "compromissos",
+        "o que tenho hoje", "próximo compromisso", "proximo compromisso",
+    ))
+
+
+def _calendar_reply() -> str:
+    daily = dict(st.session_state.get("jarvis_daily_intelligence") or {})
+    if not daily:
+        return "Ainda não carreguei sua agenda de hoje."
+    if not daily.get("calendar_connected"):
+        return "Seu Google Calendar ainda precisa ser conectado ao FaithBloom para eu ler sua agenda automaticamente."
+    events = daily.get("events") or []
+    if not events:
+        return "Você não tem compromissos no Google Calendar hoje."
+    nxt = daily.get("next_event") or {}
+    count = len(events)
+    reply = f"Você tem {count} compromisso{'s' if count != 1 else ''} hoje."
+    if nxt:
+        if nxt.get("all_day"):
+            reply += f" O próximo é {nxt.get('title', 'um compromisso')}, durante o dia todo."
+        elif nxt.get("start"):
+            reply += f" O próximo é {nxt.get('title', 'um compromisso')}, às {nxt['start'].strftime('%H:%M')}."
+    return reply
 
 
 def _process_request(text: str, *, project_progress: dict | None = None) -> str:
+    started = time.perf_counter()
     raw = (text or "").strip()
     if not raw:
         raise ValueError("Mensagem vazia")
@@ -109,7 +160,7 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
         _set_stage("idle", "Eco ignorado. Pode continuar falando.")
         return last_reply
 
-    default_weather_location = str(st.session_state.get("jarvis_last_weather_location") or "")
+    default_weather_location = str(st.session_state.get("jarvis_last_weather_location") or DEFAULT_LOCATION)
     clean = strip_wake_word(enrich_follow_up(raw, history, default_weather_location=default_weather_location)) or raw
     st.session_state["jarvis_request"] = clean
     _set_stage("thinking", "Analisando seu pedido…")
@@ -120,7 +171,11 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
     intent = "editorial"
     metadata: dict = {}
 
-    if general_intent == "help":
+    if _is_datetime_request(clean):
+        intent, reply = "datetime", _datetime_reply(clean)
+    elif _is_calendar_request(clean):
+        intent, reply = "calendar", _calendar_reply()
+    elif general_intent == "help":
         intent, reply = "help", help_reply()
     elif general_intent == "thanks":
         intent, reply = "thanks", thanks_reply()
@@ -134,9 +189,8 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
     elif weather:
         intent = "weather"
         location = extract_location(clean) or default_weather_location
-        if location:
-            metadata["location"] = location
-            st.session_state["jarvis_last_weather_location"] = location
+        metadata["location"] = location
+        st.session_state["jarvis_last_weather_location"] = location
         reply = build_spoken_reply(clean, project_progress=project_progress, weather_location=location, history=history, natural=False)
     else:
         result = interpret_request(clean)
@@ -150,33 +204,69 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
             natural=True,
         )
 
+    _record_latency("logic_s", time.perf_counter() - started)
     history = append_turn(history, "user", raw, intent=intent, metadata=metadata)
     history = append_turn(history, "assistant", reply, intent=intent, metadata=metadata)
     st.session_state["jarvis_conversation_history"] = history
     st.session_state["jarvis_reply"] = reply
     _set_stage("thinking", "Gerando resposta em voz…")
     _synthesize(reply)
+    _record_latency("request_total_s", time.perf_counter() - started)
     return reply
 
 
 def _handle_audio(audio_bytes: bytes, fmt: str, recording_id: str, project_progress: dict | None) -> None:
+    pipeline_started = time.perf_counter()
     if recording_id and recording_id == st.session_state.get("jarvis_last_heart_recording_id"):
         return
     st.session_state["jarvis_last_heart_recording_id"] = recording_id
     _set_stage("thinking", "Transcrevendo e preparando sua resposta…")
+    stt_started = time.perf_counter()
     transcript = transcribe_audio(audio_bytes, fmt=fmt, language="pt")
+    _record_latency("stt_s", time.perf_counter() - stt_started)
     text = str(transcript.get("text") or "").strip()
     st.session_state["jarvis_last_transcript"] = text
     _process_request(text, project_progress=project_progress)
+    _record_latency("voice_pipeline_total_s", time.perf_counter() - pipeline_started)
+
+
+def _run_automatic_daily_briefing() -> None:
+    now = _now()
+    today_key = now.strftime("%Y-%m-%d")
+    if st.session_state.get("jarvis_daily_briefing_date") == today_key:
+        return
+    st.session_state["jarvis_daily_briefing_date"] = today_key
+    _set_stage("thinking", "Preparando seu briefing diário…")
+    try:
+        daily = build_daily_intelligence(
+            location=os.environ.get("JARVIS_BRIEFING_LOCATION", DEFAULT_LOCATION),
+            timezone_name=os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE),
+            now=now,
+            include_calendar=True,
+        )
+        st.session_state["jarvis_daily_intelligence"] = daily
+        st.session_state["jarvis_reply"] = daily["spoken"]
+        for key, value in (daily.get("timings") or {}).items():
+            _record_latency(f"daily_{key}", value)
+        _set_stage("thinking", "Briefing pronto — preparando voz…")
+        _synthesize(daily["spoken"])
+    except Exception as exc:
+        st.session_state["jarvis_daily_intelligence"] = {"error": str(exc), "calendar_connected": False}
+        _set_stage("idle", "Jarvis online. O briefing automático ficou parcialmente indisponível.")
 
 
 st.session_state.setdefault("jarvis_stage", "idle")
 st.session_state.setdefault("jarvis_status_message", "Online")
 st.session_state.setdefault("jarvis_reply", "")
 st.session_state.setdefault("jarvis_autoplayed_token", "")
+st.session_state.setdefault("jarvis_latency_metrics", {})
 
 current_state = st.session_state.get("state")
 project_progress = inspect_project_state(current_state) if current_state else None
+
+# Automatic by design: once per local day in the current Streamlit session.
+_run_automatic_daily_briefing()
+
 stage = str(st.session_state.get("jarvis_stage") or "idle")
 reply = str(st.session_state.get("jarvis_reply") or "")
 audio_path = str(st.session_state.get("jarvis_audio_path") or "")
@@ -195,8 +285,8 @@ with st.container(key="jarvis_core"):
         st.html(
             f'<span class="j-kicker">FaithBloom Intelligence · Jarvis Core</span>'
             f'<div class="j-title">JARVIS</div>'
-            f'<div class="j-copy">{_greeting()} Toque no coração, fale normalmente e toque novamente quando terminar. Eu entendo o pedido e respondo por voz automaticamente.</div>'
-            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">🔊 Voz automática</span><span class="j-pill">🧠 Contexto</span><span class="j-pill">🔐 Security by Default</span></div>'
+            f'<div class="j-copy">{_greeting()} O briefing diário é automático. Depois, toque no coração e fale normalmente.</div>'
+            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">☀️ Daily Intelligence</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">🔐 Security by Default</span></div>'
             f'<div class="j-status">● {st.session_state.get("jarvis_status_message", "Online")}</div>'
             + (f'<div class="j-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
         )
@@ -213,6 +303,22 @@ if audio_path and os.path.exists(audio_path) and reply_token:
     if reply_token != st.session_state.get("jarvis_autoplayed_token"):
         st.audio(audio_path, format=_audio_mime(audio_path), autoplay=True)
         st.session_state["jarvis_autoplayed_token"] = reply_token
+
+# Daily Intelligence: voice is intentionally concise; screen keeps the details.
+daily = dict(st.session_state.get("jarvis_daily_intelligence") or {})
+if daily:
+    with st.expander("☀️ Briefing de hoje · detalhes", expanded=False):
+        if daily.get("error"):
+            st.warning("O briefing automático ficou parcialmente indisponível nesta abertura.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Data", daily.get("date", "—"))
+            c2.metric("Hora local", daily.get("local_time", "—"))
+            c3.metric("Calendário", "Conectado" if daily.get("calendar_connected") else "Aguardando conexão")
+            st.markdown("**Clima**")
+            st.write(daily.get("weather_detail") or "—")
+            st.markdown("**Agenda de hoje**")
+            st.text(daily.get("calendar_detail") or "Google Calendar ainda não conectado.")
 
 recording_payload = getattr(heart, "recording", None) if heart is not None else None
 decoded = None
@@ -249,7 +355,7 @@ if st.session_state.get("jarvis_last_transcript"):
 
 st.markdown("### Ou escreva para o Jarvis")
 with st.form("jarvis_text_form", clear_on_submit=True):
-    typed = st.text_area("Mensagem", height=100, placeholder="Ex.: Jarvis, me dê meu briefing diário…", label_visibility="collapsed")
+    typed = st.text_area("Mensagem", height=100, placeholder="Ex.: Jarvis, qual é meu próximo compromisso?", label_visibility="collapsed")
     submitted = st.form_submit_button("Enviar ao Jarvis", type="primary", use_container_width=True)
 if submitted and typed.strip():
     try:
@@ -265,6 +371,13 @@ elif st.session_state.get("jarvis_audio_error") and reply:
     st.error("A resposta textual está pronta, mas o TTS não gerou áudio nesta tentativa.")
     with st.expander("Diagnóstico da voz", expanded=False):
         st.code(str(st.session_state.get("jarvis_audio_error") or "Erro não informado."))
+
+with st.expander("⚡ Diagnóstico de velocidade", expanded=False):
+    metrics = dict(st.session_state.get("jarvis_latency_metrics") or {})
+    if metrics:
+        st.json(metrics)
+    else:
+        st.caption("As medições aparecem depois do primeiro briefing ou pedido.")
 
 destination = st.session_state.get("jarvis_suggested_destination") or {}
 page_key = destination.get("destination") or destination.get("id")
@@ -283,12 +396,13 @@ for col, (label, page) in zip(cols, [
 
 with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown("""
-- **Coração-microfone:** toque para começar e toque novamente para terminar.
-- **Resposta automática em voz** depois da fala, com replay manual disponível.
-- Conversa com memória curta e roteamento para módulos existentes.
-- **Clima**, briefing diário e notícias úteis para estrangeiros no Japão.
-- Continuidade de projeto, navegação segura e Orquestrador FaithBloom.
-- Anti-duplicação, aprovação humana e proteção de Masters.
+- **Briefing automático diário** com data/hora local e clima.
+- **Google Calendar somente leitura** quando OAuth estiver configurado no FaithBloom.
+- **Próximo compromisso** e resumo da agenda do dia.
+- **Rotas instantâneas** para data/hora, agenda e clima antes de usar IA pesada.
+- **Medição de latência** de STT, lógica, TTS e briefing.
+- Resposta curta por voz primeiro; detalhes ficam na tela.
+- Continuidade de projeto, navegação segura, anti-duplicação e aprovação humana.
 """)
 
-st.caption("Jarvis FaithBloom · voz original do FaithBloom, sem imitar ator ou personagem conhecido.")
+st.caption("Jarvis FaithBloom · voz original Charon aprovada · sem imitar ator ou personagem conhecido.")
