@@ -198,7 +198,7 @@ def analyze_character_images(
                 {"role": "user", "content": content},
             ],
         }
-        atualizar_etapa(req_signature, "analisando referencias do personagem")
+        atualizar_etapa(req_signature, "aguardando OpenRouter")
         response = _post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions", payload, 120)
         data = _json_resposta(response)
         message_content = data["choices"][0]["message"]["content"]
