@@ -111,8 +111,12 @@ def normalize_attachment(name: str, mime_type: str | None, data: bytes) -> dict[
 
 
 def _text_has(text: str, *terms: str) -> bool:
+    """Procura termos/frases completos para evitar colisões como Mel x melhore."""
     value = (text or "").casefold()
-    return any(term.casefold() in value for term in terms)
+    return any(
+        re.search(rf"(?<!\w){re.escape(term.casefold())}(?!\w)", value) is not None
+        for term in terms
+    )
 
 
 def choose_route(request: str, attachments: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
