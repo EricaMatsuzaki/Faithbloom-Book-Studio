@@ -34,8 +34,8 @@ from controle_geracao import (
     liberar_requisicao,
     sanitizar_texto,
 )
+from faithbloom_cost_mode import model_for
 from openrouter_client import (
-    MODELO_TEXTO,
     OPENROUTER_BASE_URL,
     _headers,
     _json_resposta,
@@ -43,7 +43,6 @@ from openrouter_client import (
 )
 from visual_master_manager import promote_reference_color_master, register_upload
 
-MODELO_CHARACTER_VISION = os.environ.get("OPENROUTER_MODELO_CHARACTER_VISION", MODELO_TEXTO)
 MAX_ANALYSIS_IMAGES = max(1, int(os.environ.get("JARVIS_CHARACTER_MAX_ANALYSIS_IMAGES", "8")))
 
 VISUAL_FIELDS = (
@@ -58,6 +57,11 @@ VISUAL_FIELDS = (
     "estilo_visual",
     "tracos_nao_mudar",
 )
+
+
+def current_vision_model() -> str:
+    """Modelo multimodal definido pelo modo Econômico/Balanceado/Premium."""
+    return model_for("character_vision")
 
 
 def infer_character_context(request: str, known_collections: list[str] | None = None) -> dict[str, str]:
@@ -95,7 +99,6 @@ def infer_character_context(request: str, known_collections: list[str] | None = 
         match = re.search(r"cole[cç][aã]o\s*[:=-]?\s*([^.;\n]+)", text, flags=re.I)
         if match:
             candidate = match.group(1).strip(" .,:;-\"“”'")
-            # corta instrucoes comuns apos o nome da colecao quando nao ha cadastro conhecido
             candidate = re.split(r"\s+(?:e\s+)?(?:crie|criar|use|salve|melhore|preencha|escolha)\b", candidate, maxsplit=1, flags=re.I)[0].strip()
             collection = candidate
 
@@ -145,6 +148,7 @@ def analyze_character_images(
     if not images:
         raise ValueError("Envie ao menos uma imagem do personagem para preencher o DNA visual automaticamente.")
 
+    vision_model = current_vision_model()
     system = (
         "Voce e o analista visual do Character Universe do FaithBloom. "
         "Analise SOMENTE caracteristicas visiveis das imagens. Nao invente idade exata, etnia, diagnosticos, historia pessoal ou atributos nao observaveis. "
@@ -185,10 +189,10 @@ def analyze_character_images(
         signature_parts.append(str(file.get("sha256") or f"{file.get('name')}:{len(raw)}"))
 
     signature = f"{character_name}|{collection}|" + "|".join(signature_parts)
-    req_id, req_signature, estimate, started = iniciar_requisicao("texto", MODELO_CHARACTER_VISION, signature)
+    req_id, req_signature, estimate, started = iniciar_requisicao("texto", vision_model, signature)
     try:
         payload = {
-            "model": MODELO_CHARACTER_VISION,
+            "model": vision_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": content},
@@ -206,10 +210,10 @@ def analyze_character_images(
         text = str(message_content or "").strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         parsed = json.loads(text)
         result = _clean_analysis(parsed, len(images))
-        finalizar_requisicao(req_id, req_signature, "texto", MODELO_CHARACTER_VISION, estimate, started, "sucesso", extrair_custo_reportado(data))
+        finalizar_requisicao(req_id, req_signature, "texto", vision_model, estimate, started, "sucesso", extrair_custo_reportado(data))
         return result
     except Exception as exc:
-        finalizar_requisicao(req_id, req_signature, "texto", MODELO_CHARACTER_VISION, estimate, started, "erro", detalhe=sanitizar_texto(str(exc)))
+        finalizar_requisicao(req_id, req_signature, "texto", vision_model, estimate, started, "erro", detalhe=sanitizar_texto(str(exc)))
         raise
     except BaseException:
         liberar_requisicao(req_signature)
@@ -235,7 +239,7 @@ def merge_visual_dna(existing: dict | str | None, analysis: dict[str, Any]) -> d
     current["auto_visual_analysis"] = {
         "source": "jarvis_character_auto_setup",
         "analyzed_at": int(time.time()),
-        "model": MODELO_CHARACTER_VISION,
+        "model": current_vision_model(),
     }
     return normalizar_dna(current)
 
@@ -338,7 +342,6 @@ def execute_auto_setup(plan: dict[str, Any], *, confirmed: bool = False) -> dict
         )
         pid = str(character.get("id") or "")
 
-    # Para personagem existente, preenche apenas lacunas do DNA; nunca apaga DNA bloqueado.
     current = carregar_personagem_oficial(pid)
     merged_dna = merge_visual_dna(current.get("dna"), plan.get("analysis") or {})
     metadata = deepcopy(current.get("metadata") or {})
@@ -351,7 +354,7 @@ def execute_auto_setup(plan: dict[str, Any], *, confirmed: bool = False) -> dict
         "handoff_id": handoff_id,
         "completed_at": int(time.time()),
         "reference_count": len(files),
-        "model": MODELO_CHARACTER_VISION,
+        "model": current_vision_model(),
     }
     atualizar_personagem_oficial(pid, {"dna": merged_dna, "metadata": metadata})
 
