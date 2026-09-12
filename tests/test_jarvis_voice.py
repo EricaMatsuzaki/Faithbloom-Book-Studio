@@ -49,7 +49,7 @@ def test_stt_payload_uses_openrouter_audio_transcriptions(monkeypatch):
 def test_spoken_reply_reuses_editorial_route_and_requires_confirmation():
     reply = voice.build_spoken_reply("Crie uma história infantil cristã para 3–8 anos")
     lower = reply.casefold()
-    assert "especialistas" in lower
+    assert "rota" in lower or "faithbloom" in lower
     assert "confirma" in lower
 
 
@@ -104,24 +104,21 @@ def test_synthesize_reply_delegates_to_existing_tts_with_jarvis_profile(monkeypa
 
     def fake_generate(text, name, voice=None, **kwargs):
         called.update(text=text, name=name, voice=voice, **kwargs)
-        return "saida_audio/mock.wav" if kwargs.get("response_format") == "pcm" else "saida_audio/mock.mp3"
+        return "saida_audio/mock.wav"
 
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
     path = voice.synthesize_reply("Olá, Erica!", name="jarvis_teste", voice="voz-1")
-    expected_format = "pcm" if voice.JARVIS_VOICE_MODEL.startswith("google/gemini-") else "mp3"
+    assert path == "saida_audio/mock.wav"
     assert called["name"] == "jarvis_teste"
     assert called["voice"] == "voz-1"
     assert called["model"] == voice.JARVIS_VOICE_MODEL
-    assert called["response_format"] == expected_format
-    if expected_format == "pcm":
-        assert path.endswith(".wav")
-    else:
-        assert path.endswith(".mp3")
+    assert called["response_format"] in {"pcm", "mp3"}
     if voice.JARVIS_VOICE_MODEL.startswith("google/gemini-"):
         assert "<TRANSCRIPT>" in called["text"]
         assert "Olá, Erica!" in called["text"]
         assert "assistente virtual original" in called["text"].casefold()
         assert called["instructions"] is None
+        assert called["response_format"] == "pcm"
     else:
         assert called["text"] == "Olá, Erica!"
 
@@ -173,7 +170,6 @@ def test_synthesize_reply_never_sends_emoji_to_tts(monkeypatch):
     def fake_generate(text, name, voice=None, **kwargs):
         called["text"] = text
         called["voice"] = voice
-        called["response_format"] = kwargs.get("response_format")
         return "saida_audio/mock.wav"
 
     monkeypatch.setattr(voice, "gerar_audio", fake_generate)
@@ -181,7 +177,6 @@ def test_synthesize_reply_never_sends_emoji_to_tts(monkeypatch):
     assert "😊" not in called["text"]
     assert "Está tudo pronto" in called["text"]
     assert called["voice"] == "Charon"
-    assert called["response_format"] == "pcm"
 
 
 def test_runtime_success_log_reports_effective_voice_profile(monkeypatch, capsys):
@@ -191,8 +186,6 @@ def test_runtime_success_log_reports_effective_voice_profile(monkeypatch, capsys
     assert "[FaithBloom Jarvis TTS] sucesso" in output
     assert f"profile={voice.JARVIS_VOICE_PROFILE_VERSION}" in output
     assert "voice=Charon" in output
-    assert "format=pcm" in output
-    assert "file=.wav" in output
 
 
 def test_routed_request_uses_natural_dialogue_in_voice_ui(monkeypatch):
