@@ -45,10 +45,46 @@ PROJECT_START_PAGES = {
     "comic": "pages/40_➕_Explorar_outros_estilos.py",
 }
 DEFAULT_START_PAGE = "pages/0_🤖_Orquestrador_FaithBloom.py"
+CHARACTER_UNIVERSE_PAGE = "pages/14_👥_Character_Universe.py"
 
 
 def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().casefold())
+
+
+def is_character_universe_request(text: str) -> bool:
+    """Prefer an explicit Character Universe request over generic editorial inference."""
+    value = _norm(text)
+    if not value:
+        return False
+    identity_terms = (
+        "dna visual", "dna do personagem", "character dna", "color master",
+        "reference pack", "character master", "personagem já cadastrado",
+        "personagem ja cadastrado", "não crie outro personagem", "nao crie outro personagem",
+    )
+    return any(term in value for term in identity_terms)
+
+
+def _character_universe_result(text: str) -> dict:
+    return {
+        "schema": SCHEMA,
+        "request": text.strip(),
+        "project_type": "character_universe",
+        "origin": "existing_character",
+        "audience": "",
+        "editorial_line": "",
+        "derived_outputs": [],
+        "route_plan": {
+            "project_label": "Character Universe",
+            "origin_label": "Personagem existente",
+            "audience_label": "Personagem cadastrado",
+            "editorial_line_label": "Identidade visual protegida",
+        },
+        "anti_duplication": {"ok": True},
+        "requires_author_approval": True,
+        "next_action": "review_and_complete_missing_character_dna",
+        "next_page": CHARACTER_UNIVERSE_PAGE,
+    }
 
 
 def infer_project_type(text: str) -> str:
@@ -121,6 +157,8 @@ def interpret_request(text: str) -> dict:
     """Turn one author sentence into an explicit, inspectable routing proposal."""
     if not (text or "").strip():
         raise ValueError("Conte sua ideia em uma frase para o Jarvis.")
+    if is_character_universe_request(text):
+        return _character_universe_result(text)
     project_type = infer_project_type(text)
     origin = infer_origin(text)
     audience = infer_audience(text)
