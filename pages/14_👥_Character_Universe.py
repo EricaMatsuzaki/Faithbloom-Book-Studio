@@ -10,6 +10,7 @@ from character_universe import (
 )
 from asset_library import get_asset, get_thumbnail, list_assets
 from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
+from jarvis_character_handoff_ui import render_character_handoff_inbox
 from openrouter_client import gerar_imagem, OpenRouterFaithBloomError
 from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
 from visual_master_manager import (
@@ -29,6 +30,7 @@ if selected_asset_path and os.path.exists(selected_asset_path):
 
 colecoes = listar_colecoes()
 colecao = st.text_input('Coleção', value=colecoes[0] if colecoes else 'Pequenas Histórias, Grandes Lições')
+render_character_handoff_inbox(colecao)
 mostrar_arquivados = st.checkbox('Mostrar personagens arquivados', value=False)
 
 duplicados = detectar_personagens_mesmo_nome(incluir_arquivados=True)
