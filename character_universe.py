@@ -4,6 +4,8 @@ Refinamento 03: separa identidade bloqueada de variáveis narrativas e mantém
 histórico/variações sem destruir versões anteriores.
 Refinamento 26: Duplicate & Archive Safety — duplicidades entre coleções,
 arquivamento não destrutivo e proteção de Character Masters com histórico.
+Refinamento 27: Collection Safety — mudança de coleção explícita, sem duplicar
+Character Masters e preservando DNA, Masters, referências, assets e histórico.
 """
 from __future__ import annotations
 import time, uuid
@@ -53,6 +55,27 @@ def _index():
     return x if isinstance(x, list) else []
 
 
+def _sync_index_record(personagem: dict) -> None:
+    """Mantém o índice alinhado quando nome, coleção ou status mudam."""
+    pid = str(personagem.get("id") or "")
+    if not pid:
+        return
+    idx = [dict(item) for item in _index()]
+    registro = {
+        "id": pid,
+        "colecao": personagem.get("colecao", ""),
+        "nome": personagem.get("nome", ""),
+        "status": personagem.get("status", "oficial"),
+    }
+    for pos, item in enumerate(idx):
+        if str(item.get("id") or "") == pid:
+            idx[pos] = registro
+            break
+    else:
+        idx.append(registro)
+    _save_json(INDEX, idx)
+
+
 def normalizar_dna(dna: dict | str | None) -> dict:
     if isinstance(dna, str):
         return {
@@ -88,9 +111,7 @@ def criar_personagem_oficial(colecao: str, nome: str, dna: dict, color_master: s
     }
     obj = persistir_assets_em_objeto(obj, f"assets/character_universe/{_slug(colecao)}/{_slug(nome)}")
     _save_json(f"character_universe/{pid}.json", obj)
-    idx = [i for i in _index() if i.get("id") != pid]
-    idx.append({"id": pid, "colecao": colecao, "nome": nome, "status": "oficial"})
-    _save_json(INDEX, idx)
+    _sync_index_record(obj)
     return materializar_assets_em_objeto(obj)
 
 
@@ -101,6 +122,17 @@ def listar_personagens_oficiais(colecao: str | None = None, incluir_arquivados: 
     if not incluir_arquivados:
         itens = [i for i in itens if i.get("status", "oficial") != "arquivado"]
     return sorted(itens, key=lambda x: (x.get("colecao", ""), x.get("nome", ""), x.get("status", "")))
+
+
+def buscar_personagens_por_nome(nome: str, incluir_arquivados: bool = False) -> list[dict]:
+    """Localiza o mesmo personagem em qualquer coleção sem criar duplicatas."""
+    wanted = str(nome or "").strip().casefold()
+    if not wanted:
+        return []
+    return [
+        item for item in listar_personagens_oficiais(incluir_arquivados=incluir_arquivados)
+        if str(item.get("nome") or "").strip().casefold() == wanted
+    ]
 
 
 def detectar_personagens_mesmo_nome(nome: str | None = None, incluir_arquivados: bool = True) -> dict[str, list[dict]]:
@@ -184,13 +216,7 @@ def arquivar_personagem(pid: str) -> dict:
         return p
     metadata = deepcopy(p.get("metadata") or {})
     metadata["arquivado_em"] = int(time.time())
-    atualizado = atualizar_personagem_oficial(pid, {"status": "arquivado", "metadata": metadata})
-    idx = _index()
-    for item in idx:
-        if item.get("id") == pid:
-            item["status"] = "arquivado"
-    _save_json(INDEX, idx)
-    return atualizado
+    return atualizar_personagem_oficial(pid, {"status": "arquivado", "metadata": metadata})
 
 
 def restaurar_personagem(pid: str) -> dict:
@@ -199,13 +225,7 @@ def restaurar_personagem(pid: str) -> dict:
         raise KeyError(pid)
     metadata = deepcopy(p.get("metadata") or {})
     metadata.pop("arquivado_em", None)
-    atualizado = atualizar_personagem_oficial(pid, {"status": "oficial", "metadata": metadata})
-    idx = _index()
-    for item in idx:
-        if item.get("id") == pid:
-            item["status"] = "oficial"
-    _save_json(INDEX, idx)
-    return atualizado
+    return atualizar_personagem_oficial(pid, {"status": "oficial", "metadata": metadata})
 
 
 def atualizar_personagem_oficial(pid: str, novos: dict) -> dict:
@@ -223,7 +243,48 @@ def atualizar_personagem_oficial(pid: str, novos: dict) -> dict:
     atual["atualizado_em"] = int(time.time())
     atual = persistir_assets_em_objeto(atual, f"assets/character_universe/{_slug(atual.get('colecao',''))}/{_slug(atual.get('nome',''))}")
     _save_json(f"character_universe/{pid}.json", atual)
+    _sync_index_record(atual)
     return materializar_assets_em_objeto(atual)
+
+
+def mover_personagem_para_colecao(pid: str, nova_colecao: str, *, confirmacao_explicita: bool = False, motivo: str = "correcao_manual") -> dict:
+    """Move o MESMO Character Master para outra coleção, preservando identidade e histórico.
+
+    Não duplica personagem. Exige confirmação explícita e bloqueia colisão de nome
+    na coleção de destino. A Mel canônica protegida não pode ser movida.
+    """
+    destino = str(nova_colecao or "").strip()
+    if not destino:
+        raise ValueError("Selecione uma coleção de destino.")
+    personagem = carregar_personagem_oficial(pid)
+    if not personagem:
+        raise KeyError(pid)
+    origem = str(personagem.get("colecao") or "").strip()
+    if origem == destino:
+        return personagem
+    if mel_canonica_protegida(personagem):
+        raise PermissionError("A Mel canônica protegida não pode ser movida para outra coleção.")
+    if not confirmacao_explicita:
+        raise PermissionError("Mover um Character Master entre coleções exige confirmação explícita.")
+    nome = str(personagem.get("nome") or "").strip()
+    colisao = [
+        item for item in buscar_personagens_por_nome(nome, incluir_arquivados=False)
+        if str(item.get("id") or "") != str(pid)
+        and str(item.get("colecao") or "").strip() == destino
+    ]
+    if colisao:
+        raise ValueError(f"Já existe um Character Master ativo chamado {nome} na coleção {destino}. Resolva a duplicidade antes de mover.")
+    metadata = deepcopy(personagem.get("metadata") or {})
+    history = list(metadata.get("collection_history") or [])
+    history.append({
+        "de": origem,
+        "para": destino,
+        "movido_em": int(time.time()),
+        "motivo": str(motivo or "correcao_manual"),
+    })
+    metadata["collection_history"] = history
+    metadata["colecao_corrigida_manualmente"] = True
+    return atualizar_personagem_oficial(pid, {"colecao": destino, "metadata": metadata})
 
 
 def adicionar_variacao(pid: str, tipo: str, instrucao: str, asset: str = "", metadata: dict | None = None, aprovada: bool = False) -> dict:
