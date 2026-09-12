@@ -20,7 +20,10 @@ SUPPORTED_UPLOAD_TYPES = (
     "mp3", "wav", "m4a", "aac", "ogg", "webm",
 )
 MAX_FILE_BYTES = int(os.environ.get("JARVIS_MAX_UPLOAD_MB", "20")) * 1024 * 1024
-MAX_PACKAGE_BYTES = int(os.environ.get("JARVIS_MAX_PACKAGE_MB", "50")) * 1024 * 1024
+# Lotes de personagens costumam conter várias referências em alta qualidade.
+# Mantemos o limite individual conservador, mas ampliamos o pacote padrão para
+# permitir 4-5 imagens grandes sem obrigar a usuária a fracionar o envio.
+MAX_PACKAGE_BYTES = int(os.environ.get("JARVIS_MAX_PACKAGE_MB", "100")) * 1024 * 1024
 
 ROUTES: dict[str, dict[str, Any]] = {
     "story_create": {
