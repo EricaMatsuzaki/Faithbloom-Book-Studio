@@ -56,6 +56,31 @@ _INTERNAL_PATTERNS = (
     _PAGE_PATH_PATTERN,
 )
 
+_CHARACTER_CONTEXT_MARKERS = (
+    "dna visual",
+    "dna do ",
+    "dna da ",
+    "color master",
+    "reference pack",
+    "character master",
+    "character universe",
+)
+
+_STATUS_QUESTION_MARKERS = (
+    "já criou",
+    "ja criou",
+    "já fez",
+    "ja fez",
+    "já salvou",
+    "ja salvou",
+    "já terminou",
+    "ja terminou",
+    "terminou",
+    "está pronto",
+    "esta pronto",
+    "ficou pronto",
+)
+
 
 def _history_messages(history: list[dict[str, Any]] | None) -> list[dict[str, str]]:
     """Keep only the minimum recent context needed for a voice turn."""
@@ -74,6 +99,52 @@ def _looks_like_internal_reasoning(answer: str) -> bool:
     if not text:
         return True
     return any(re.search(pattern, text, flags=re.I) for pattern in _INTERNAL_PATTERNS)
+
+
+def _has_character_context(text: str) -> bool:
+    value = str(text or "").casefold()
+    return any(marker in value for marker in _CHARACTER_CONTEXT_MARKERS)
+
+
+def _is_completion_status_question(text: str) -> bool:
+    value = " ".join(str(text or "").casefold().split())
+    return any(marker in value for marker in _STATUS_QUESTION_MARKERS)
+
+
+def _recent_character_context(user_text: str, history: list[dict[str, Any]] | None) -> str:
+    if _has_character_context(user_text):
+        return str(user_text or "").strip()
+    for item in reversed(history or []):
+        if item.get("role") != "user":
+            continue
+        text = str(item.get("text") or "").strip()
+        if _has_character_context(text):
+            return text
+    return ""
+
+
+def _character_name(text: str) -> str:
+    match = re.search(
+        r"\bdna(?:\s+visual)?\s+d[oa]\s+([A-Za-zÀ-ÖØ-öø-ÿ][\wÀ-ÖØ-öø-ÿ-]*)",
+        str(text or ""),
+        flags=re.I,
+    )
+    return match.group(1) if match else ""
+
+
+def _character_status_guard(user_text: str, history: list[dict[str, Any]] | None) -> str:
+    """Answer completion questions without inventing a persisted Character state."""
+    if not _is_completion_status_question(user_text):
+        return ""
+    context_text = _recent_character_context(user_text, history)
+    if not context_text:
+        return ""
+    name = _character_name(user_text) or _character_name(context_text)
+    subject = f" do {name}" if name else " desse personagem"
+    return (
+        f"Ainda não posso afirmar que o DNA{subject} foi concluído sem verificar o estado salvo no Character Universe. "
+        "Posso conferir o personagem existente e informar quais campos do DNA já estão preenchidos e quais ainda faltam."
+    )
 
 
 def _character_universe_reply(user_text: str) -> str:
@@ -118,6 +189,10 @@ def build_natural_reply(
     text = (user_text or "").strip()
     if not text:
         raise ValueError("A mensagem para o Jarvis está vazia.")
+
+    guarded_status = _character_status_guard(text, history)
+    if guarded_status:
+        return guarded_status
 
     if (route_result or {}).get("project_type") == "character_universe":
         return _character_universe_reply(text)
