@@ -1,8 +1,8 @@
 """Jarvis canônico — voz, Daily Intelligence e roteamento FaithBloom.
 
 O coração do robô é o controle principal: toque uma vez para falar e novamente
-para terminar. O Jarvis abre com briefing automático diário e mantém rotas
-instantâneas para data/hora, clima e agenda antes de recorrer ao diálogo de IA.
+para terminar. O Jarvis abre com briefing automático diário, recebe anexos e
+mantém rotas instantâneas antes de recorrer ao diálogo de IA.
 """
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import os
 import time
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -39,6 +38,12 @@ from jarvis_daily_intelligence import (
     prepare_calendar_action,
 )
 from jarvis_heart_mic import decode_recording, heart_mic
+from jarvis_multimodal import (
+    SUPPORTED_UPLOAD_TYPES,
+    build_handoff_package,
+    handoff_summary,
+    normalize_attachment,
+)
 from jarvis_voice import build_spoken_reply, synthesize_reply, transcribe_audio
 from jarvis_weather import extract_location, is_weather_request
 
@@ -51,7 +56,11 @@ NAV_PAGES = {
     "resume": "pages/2_📚_Retomar_Livro.py",
     "characters": "pages/14_👥_Character_Universe.py",
     "library": "pages/15_📚_Biblioteca_Editorial.py",
+    "book_doctor": "pages/16_🩺_Book_Doctor.py",
+    "restoration": "pages/19_✨_Restoration_Studio.py",
+    "audiobook": "pages/24_🎧_Audiobook_Studio.py",
     "project": "pages/27_🚀_Project_Hub.py",
+    "assets": "pages/31_🖼️_Asset_Library_Media_Manager.py",
     "gallery": "pages/8_🖼️_Galeria_e_Armazenamento.py",
     "review": "pages/5_🔍_Analisar_Livro.py",
 }
@@ -187,6 +196,30 @@ def _execute_pending_calendar_action() -> str:
     time_text = when.strftime("%d/%m às %H:%M") if when else "no horário solicitado"
     verb = "Adicionei" if plan.get("action") == "create" else "Atualizei"
     return f"{verb} {result.get('title', 'o compromisso')} no seu Google Calendar para {time_text}."
+
+
+def _prepare_multimodal_handoff(request: str, uploads: list[Any]) -> dict[str, Any]:
+    attachments = []
+    for uploaded in uploads:
+        data = uploaded.getvalue()
+        attachments.append(normalize_attachment(uploaded.name, getattr(uploaded, "type", ""), data))
+    package = build_handoff_package(request, attachments)
+    st.session_state["jarvis_pending_handoff"] = package
+    st.session_state["jarvis_reply"] = package["spoken"]
+    _set_stage("thinking", "Encaminhamento preparado — aguardando sua confirmação…")
+    _synthesize(package["spoken"])
+    return package
+
+
+def _confirm_handoff(package: dict[str, Any]) -> None:
+    st.session_state["jarvis_handoff_package"] = package
+    st.session_state.pop("jarvis_pending_handoff", None)
+    route = package.get("route") or {}
+    st.session_state["jarvis_reply"] = f"Certo. Encaminhando para {route.get('label', 'o especialista responsável')}."
+    _set_stage("idle", "Encaminhamento confirmado.")
+    page = str(route.get("page") or "")
+    if page:
+        st.switch_page(page)
 
 
 def _process_request(text: str, *, project_progress: dict | None = None) -> str:
@@ -350,8 +383,8 @@ with st.container(key="jarvis_core"):
         st.html(
             f'<span class="j-kicker">FaithBloom Intelligence · Jarvis Core</span>'
             f'<div class="j-title">JARVIS</div>'
-            f'<div class="j-copy">{_greeting()} O briefing diário é automático. Depois, toque no coração e fale normalmente.</div>'
-            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">☀️ Daily Intelligence</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">📅 Calendar seguro</span><span class="j-pill">🔐 Security by Default</span></div>'
+            f'<div class="j-copy">{_greeting()} O briefing diário é automático. Fale, escreva ou envie arquivos; eu preparo a rota para o especialista certo.</div>'
+            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">☀️ Daily Intelligence</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">📎 Multimodal</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">📅 Calendar seguro</span><span class="j-pill">🔐 Security by Default</span></div>'
             f'<div class="j-status">● {st.session_state.get("jarvis_status_message", "Online")}</div>'
             + (f'<div class="j-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
         )
@@ -406,6 +439,21 @@ if pending_calendar:
         _set_stage("idle", "Alteração cancelada.")
         st.rerun()
 
+pending_handoff = dict(st.session_state.get("jarvis_pending_handoff") or {})
+if pending_handoff:
+    route = pending_handoff.get("route") or {}
+    st.info(f"📦 Aguardando confirmação: {handoff_summary(pending_handoff)}")
+    if pending_handoff.get("files"):
+        st.caption("Arquivos: " + ", ".join(str(f.get("name") or "arquivo") for f in pending_handoff["files"]))
+    handoff_confirm, handoff_cancel = st.columns(2)
+    if handoff_confirm.button(f"✅ Encaminhar para {route.get('label', 'especialista')}", type="primary", use_container_width=True):
+        _confirm_handoff(pending_handoff)
+    if handoff_cancel.button("Cancelar encaminhamento", use_container_width=True):
+        st.session_state.pop("jarvis_pending_handoff", None)
+        st.session_state["jarvis_reply"] = "Certo. Cancelei o encaminhamento e preservei os arquivos sem promovê-los a Master."
+        _set_stage("idle", "Encaminhamento cancelado.")
+        st.rerun()
+
 recording_payload = getattr(heart, "recording", None) if heart is not None else None
 decoded = None
 try:
@@ -439,15 +487,35 @@ if heart is None:
 if st.session_state.get("jarvis_last_transcript"):
     st.caption(f"🎙️ Você disse: {st.session_state['jarvis_last_transcript']}")
 
-st.markdown("### Ou escreva para o Jarvis")
+st.markdown("### Converse ou envie arquivos para o Jarvis")
+uploads = st.file_uploader(
+    "📎 Anexar imagens, PDF, documentos ou áudio",
+    type=list(SUPPORTED_UPLOAD_TYPES),
+    accept_multiple_files=True,
+    key="jarvis_multimodal_uploads",
+    help="Os anexos ficam no contexto da sessão. Nenhum upload vira Master automaticamente.",
+)
+if uploads:
+    st.caption(f"{len(uploads)} arquivo{'s' if len(uploads) != 1 else ''} selecionado{'s' if len(uploads) != 1 else ''}.")
+
 with st.form("jarvis_text_form", clear_on_submit=True):
-    typed = st.text_area("Mensagem", height=100, placeholder="Ex.: Jarvis, agende compromisso dentista amanhã às 15h.", label_visibility="collapsed")
+    typed = st.text_area(
+        "Mensagem",
+        height=100,
+        placeholder="Ex.: revise este PDF; melhore esta capa; use esta imagem como referência; crie uma história sobre coragem e fé…",
+        label_visibility="collapsed",
+    )
     submitted = st.form_submit_button("Enviar ao Jarvis", type="primary", use_container_width=True)
-if submitted and typed.strip():
+if submitted and (typed.strip() or uploads):
     try:
-        _process_request(typed, project_progress=project_progress)
-    except Exception:
-        _set_stage("error", "Não consegui concluir esse pedido agora. Tente novamente.")
+        if uploads:
+            _prepare_multimodal_handoff(typed, list(uploads))
+        else:
+            # Pedidos sem arquivo continuam no roteamento conversacional existente.
+            _process_request(typed, project_progress=project_progress)
+    except Exception as exc:
+        st.session_state["jarvis_reply"] = f"Não consegui preparar esse pedido: {exc}"
+        _set_stage("error", "Não consegui processar os anexos ou o pedido.")
     st.rerun()
 
 if audio_path and os.path.exists(audio_path):
@@ -484,7 +552,9 @@ with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown("""
 - **Briefing automático diário** com data/hora local e clima.
 - **Google Calendar** para leitura da agenda e, quando OAuth de escrita estiver habilitado, criação/alteração mediante confirmação explícita.
-- **Próximo compromisso** e resumo da agenda do dia.
+- **Entrada multimodal:** imagens, PDF, documentos e áudio diretamente no Jarvis.
+- **Agent Handoff:** classifica pedido + anexos e encaminha para módulos já existentes, com confirmação.
+- **Proteção de Masters:** anexos nunca viram Character Master, Color Master ou outro Master sem aprovação humana.
 - **Rotas instantâneas** para data/hora, agenda e clima antes de usar IA pesada.
 - **Medição de latência** de STT, lógica, TTS e briefing.
 - Resposta curta por voz primeiro; detalhes ficam na tela.
