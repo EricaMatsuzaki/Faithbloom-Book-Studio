@@ -67,6 +67,98 @@ def approve_candidate(asset_id: str) -> dict:
     return update_asset(asset_id, approved=True, visual_status="APPROVED_VARIATION", metadata={"visual_status": "APPROVED_VARIATION", "approved_at": int(time.time()), "approval": "human"})
 
 
+def _reference_files_for_dna(character: dict, preferred_asset_id: str = "") -> list[dict]:
+    """Materializa Color Master + Reference Pack para analise visual do DNA."""
+    ordered_ids: list[str] = []
+    if preferred_asset_id:
+        ordered_ids.append(preferred_asset_id)
+    for ref in character.get("reference_pack", []) or []:
+        asset_id = str((ref.get("metadata") or {}).get("asset_library_id") or "")
+        if asset_id and asset_id not in ordered_ids:
+            ordered_ids.append(asset_id)
+
+    files: list[dict] = []
+    for asset_id in ordered_ids:
+        asset = get_asset(asset_id, materialize_file=True)
+        if not asset or asset.get("status") == "archived":
+            continue
+        path = str(asset.get("caminho_arquivo") or "")
+        if not path or not Path(path).is_file():
+            continue
+        try:
+            raw = Path(path).read_bytes()
+        except OSError:
+            continue
+        suffix = Path(path).suffix.lower() or ".png"
+        mime = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }.get(suffix, "image/png")
+        files.append({
+            "name": Path(path).name,
+            "mime_type": mime,
+            "kind": "image",
+            "data": raw,
+            "sha256": asset_id,
+        })
+    return files
+
+
+def autofill_visual_dna_from_saved_references(pid: str, *, preferred_asset_id: str = "") -> dict:
+    """Completa lacunas do DNA a partir do Color Master e referencias ja salvas.
+
+    Reutiliza o analisador visual do Jarvis Auto-Setup; nao substitui campos de DNA
+    ja preenchidos/aprovados e nao cria personagem, referencia ou Master novo.
+    """
+    character = carregar_personagem_oficial(pid)
+    if not character:
+        raise KeyError(pid)
+    files = _reference_files_for_dna(character, preferred_asset_id=preferred_asset_id)
+    if not files:
+        raise ValueError("Nao ha imagens materializaveis no Color Master/Reference Pack para preencher o DNA visual.")
+
+    # Import local evita dependencia circular no carregamento dos modulos.
+    from jarvis_character_auto_setup import analyze_character_images, merge_visual_dna
+
+    analysis = analyze_character_images(
+        str(character.get("nome") or ""),
+        str(character.get("colecao") or ""),
+        files,
+        "Complete automaticamente o DNA visual usando o Color Master atual e as referencias salvas, sem alterar a identidade do personagem.",
+    )
+    dna = merge_visual_dna(character.get("dna"), analysis)
+    metadata = dict(character.get("metadata") or {})
+    metadata["dna_auto_fill"] = {
+        "status": "completed",
+        "filled_at": int(time.time()),
+        "trigger": "color_master_approved",
+        "preferred_asset_id": preferred_asset_id,
+        "reference_count": len(files),
+    }
+    return atualizar_personagem_oficial(pid, {"dna": dna, "metadata": metadata})
+
+
+def _autofill_visual_dna_best_effort(pid: str, asset_id: str) -> None:
+    """Color Master nunca e desfeito se a IA do DNA falhar; registra o erro para retry."""
+    try:
+        autofill_visual_dna_from_saved_references(pid, preferred_asset_id=asset_id)
+    except Exception as exc:
+        try:
+            character = carregar_personagem_oficial(pid)
+            metadata = dict(character.get("metadata") or {})
+            metadata["dna_auto_fill"] = {
+                "status": "failed",
+                "failed_at": int(time.time()),
+                "trigger": "color_master_approved",
+                "preferred_asset_id": asset_id,
+                "error": str(exc)[:500],
+            }
+            atualizar_personagem_oficial(pid, {"metadata": metadata})
+        except Exception:
+            pass
+
+
 def promote_master(pid: str, asset_id: str, role: str, *, confirmed: bool = False) -> dict:
     if not confirmed:
         raise PermissionError("Confirmacao humana explicita e obrigatoria.")
@@ -95,7 +187,10 @@ def promote_master(pid: str, asset_id: str, role: str, *, confirmed: bool = Fals
     meta["current_master_asset_ids"] = current_ids
     atualizar_personagem_oficial(pid, {field: uri, "metadata": meta})
     set_master_role(asset_id, role, True)
-    return update_asset(asset_id, visual_status="COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", metadata={"visual_status": "COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", "master_approved_at": int(time.time())})
+    promoted = update_asset(asset_id, visual_status="COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", metadata={"visual_status": "COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", "master_approved_at": int(time.time())})
+    if role == "color_master":
+        _autofill_visual_dna_best_effort(pid, asset_id)
+    return promoted
 
 
 def promote_reference_color_master(pid: str, asset_id: str, *, confirmed: bool = False) -> dict:
@@ -111,6 +206,8 @@ def promote_reference_color_master(pid: str, asset_id: str, *, confirmed: bool =
     if not asset or asset.get("visual_status") not in {"REFERENCE", "AUDITED", "APPROVED_VARIATION", "COLOR_MASTER"} or asset.get("status") == "archived":
         raise ValueError("Esta referência não está disponível para aprovação como Color Master.")
     if (character.get("metadata") or {}).get("current_master_asset_ids", {}).get("color_master") == asset_id:
+        # Mesmo quando ja e o Master atual, permite completar DNA faltante automaticamente.
+        _autofill_visual_dna_best_effort(pid, asset_id)
         return asset
     if not asset.get("approved"):
         update_asset(asset_id, approved=True, metadata={"approved_at": int(time.time()), "approval": "human"})
