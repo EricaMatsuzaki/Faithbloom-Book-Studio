@@ -36,6 +36,16 @@ def test_character_reference_does_not_promote_master():
     assert package["route"]["id"] == "character_reference"
     assert package["master_promotion_allowed"] is False
     assert package["requires_confirmation"] is True
+    assert package["requires_target_collection"] is True
+    assert package["target_collection"] == ""
+    assert "confirme a coleção correta" in package["spoken"]
+
+
+def test_non_character_handoff_does_not_require_collection():
+    attachment = normalize_attachment("capa.png", "image/png", b"fake-image")
+    package = build_handoff_package("melhore esta capa", [attachment])
+    assert package["route"]["id"] == "image_restore"
+    assert package["requires_target_collection"] is False
 
 
 def test_audio_routes_to_existing_audiobook_studio():
