@@ -1,6 +1,7 @@
 import copy
 
 import jarvis_character_auto_setup as auto
+import visual_master_manager as visual
 
 
 def _file(name="teo.png", marker="a"):
@@ -160,3 +161,59 @@ def test_execute_auto_setup_requires_single_explicit_approval():
         assert "Aprovacao humana" in str(exc)
     else:
         raise AssertionError("Auto-Setup nao pode persistir sem aprovacao humana")
+
+
+def test_promote_color_master_triggers_dna_autofill(monkeypatch):
+    character = {
+        "id": "teo-1",
+        "nome": "Téo",
+        "colecao": "Pequenas Histórias, Grandes Lições",
+        "dna": {},
+        "metadata": {"current_master_asset_ids": {}, "master_history": []},
+        "color_master": "",
+        "reference_pack": [],
+    }
+    asset = {"id": "asset-1", "approved": True, "storage_uri": "fb://teo.png", "metadata": {}}
+    calls = []
+
+    monkeypatch.setattr(visual, "get_asset", lambda asset_id, materialize_file=False: copy.deepcopy(asset))
+    monkeypatch.setattr(visual, "get_asset_by_uri", lambda *args, **kwargs: None)
+    monkeypatch.setattr(visual, "carregar_personagem_oficial", lambda pid: copy.deepcopy(character))
+    monkeypatch.setattr(visual, "atualizar_personagem_oficial", lambda pid, values: {**copy.deepcopy(character), **copy.deepcopy(values)})
+    monkeypatch.setattr(visual, "set_master_role", lambda *args, **kwargs: None)
+    monkeypatch.setattr(visual, "update_asset", lambda asset_id, **kwargs: {**copy.deepcopy(asset), **kwargs})
+    monkeypatch.setattr(visual, "_autofill_visual_dna_best_effort", lambda pid, asset_id: calls.append((pid, asset_id)))
+
+    visual.promote_master("teo-1", "asset-1", "color_master", confirmed=True)
+
+    assert calls == [("teo-1", "asset-1")]
+
+
+def test_promote_line_art_does_not_trigger_dna_autofill(monkeypatch):
+    character = {
+        "id": "teo-1",
+        "nome": "Téo",
+        "colecao": "Pequenas Histórias, Grandes Lições",
+        "dna": {},
+        "metadata": {"current_master_asset_ids": {}, "master_history": []},
+        "line_art_master": "",
+    }
+    asset = {
+        "id": "asset-line",
+        "approved": True,
+        "storage_uri": "fb://teo-line.png",
+        "metadata": {"transformation": "line_art"},
+    }
+    calls = []
+
+    monkeypatch.setattr(visual, "get_asset", lambda asset_id, materialize_file=False: copy.deepcopy(asset))
+    monkeypatch.setattr(visual, "get_asset_by_uri", lambda *args, **kwargs: None)
+    monkeypatch.setattr(visual, "carregar_personagem_oficial", lambda pid: copy.deepcopy(character))
+    monkeypatch.setattr(visual, "atualizar_personagem_oficial", lambda pid, values: {**copy.deepcopy(character), **copy.deepcopy(values)})
+    monkeypatch.setattr(visual, "set_master_role", lambda *args, **kwargs: None)
+    monkeypatch.setattr(visual, "update_asset", lambda asset_id, **kwargs: {**copy.deepcopy(asset), **kwargs})
+    monkeypatch.setattr(visual, "_autofill_visual_dna_best_effort", lambda pid, asset_id: calls.append((pid, asset_id)))
+
+    visual.promote_master("teo-1", "asset-line", "line_art_master", confirmed=True)
+
+    assert calls == []
