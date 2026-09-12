@@ -168,6 +168,8 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
     )
     if files:
         spoken += f" Recebi {len(files)} arquivo{'s' if len(files) != 1 else ''}."
+    if route.get("id") == "character_reference":
+        spoken += " No Character Universe, confirme a coleção correta do personagem antes de importar as referências."
     spoken += " Vou manter os originais preservados e não promover nenhum arquivo a Master sem sua aprovação."
     return {
         "id": package_id,
@@ -177,6 +179,8 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
         "file_names": names,
         "total_bytes": total,
         "requires_confirmation": True,
+        "requires_target_collection": route.get("id") == "character_reference",
+        "target_collection": "",
         "master_promotion_allowed": False,
         "spoken": spoken,
     }
