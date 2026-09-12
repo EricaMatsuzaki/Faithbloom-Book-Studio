@@ -60,6 +60,7 @@ _CHARACTER_CONTEXT_MARKERS = (
     "dna visual",
     "dna do ",
     "dna da ",
+    "dna de ",
     "color master",
     "reference pack",
     "character master",
@@ -79,6 +80,14 @@ _STATUS_QUESTION_MARKERS = (
     "está pronto",
     "esta pronto",
     "ficou pronto",
+    "preencheu o dna",
+    "preencheu dna",
+    "ainda não preencheu",
+    "ainda nao preencheu",
+    "por que ainda não",
+    "por que ainda nao",
+    "porque ainda não",
+    "porque ainda nao",
 )
 
 
@@ -125,7 +134,7 @@ def _recent_character_context(user_text: str, history: list[dict[str, Any]] | No
 
 def _character_name(text: str) -> str:
     match = re.search(
-        r"\bdna(?:\s+visual)?\s+d[oa]\s+([A-Za-zÀ-ÖØ-öø-ÿ][\wÀ-ÖØ-öø-ÿ-]*)",
+        r"\bdna(?:\s+visual)?\s+d(?:o|a|e)\s+([A-Za-zÀ-ÖØ-öø-ÿ][\wÀ-ÖØ-öø-ÿ-]*)",
         str(text or ""),
         flags=re.I,
     )
@@ -140,7 +149,7 @@ def _character_status_guard(user_text: str, history: list[dict[str, Any]] | None
     if not context_text:
         return ""
     name = _character_name(user_text) or _character_name(context_text)
-    subject = f" do {name}" if name else " desse personagem"
+    subject = f" de {name}" if name else " desse personagem"
     return (
         f"Ainda não posso afirmar que o DNA{subject} foi concluído sem verificar o estado salvo no Character Universe. "
         "Posso conferir o personagem existente e informar quais campos do DNA já estão preenchidos e quais ainda faltam."
@@ -148,11 +157,10 @@ def _character_status_guard(user_text: str, history: list[dict[str, Any]] | None
 
 
 def _character_universe_reply(user_text: str) -> str:
-    folded = str(user_text or "").casefold()
-    name = "Téo" if "téo" in folded or re.search(r"\bteo\b", folded) else "o personagem"
+    name = _character_name(user_text) or "o personagem"
     return (
-        f"Entendi. Este é um pedido para completar o DNA visual de {name} usando o Color Master e as referências já cadastradas. "
-        "O próximo passo é preencher apenas os campos faltantes, sem criar outro personagem nem alterar características já aprovadas."
+        f"Entendi. Este é um pedido para trabalhar o DNA visual de {name} usando o Character Master, o Color Master e as referências já cadastradas. "
+        "O próximo passo é preservar tudo o que já está aprovado e preencher somente os campos faltantes, sem criar outro personagem."
     )
 
 
@@ -162,8 +170,7 @@ def _public_fallback(user_text: str, context: dict[str, Any]) -> str:
     next_step = str(route.get("proximo_passo") or "").strip()
     label = str(route.get("rotulo_projeto") or route.get("tipo") or "").strip()
 
-    text_folded = str(user_text or "").casefold()
-    if "dna" in text_folded and ("téo" in text_folded or re.search(r"\bteo\b", text_folded)):
+    if _has_character_context(user_text):
         return _character_universe_reply(user_text)
     if next_step:
         subject = f" do projeto {label}" if label else ""
