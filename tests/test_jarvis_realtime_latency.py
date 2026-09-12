@@ -16,10 +16,10 @@ def _route():
     }
 
 
-def test_jarvis_chat_uses_dedicated_low_latency_nitro_model():
-    assert dialogue.JARVIS_DIALOGUE_MODEL == "google/gemini-2.5-flash-lite:nitro"
-    assert "flash-lite" in dialogue.JARVIS_DIALOGUE_MODEL
-    assert dialogue.JARVIS_DIALOGUE_MODEL.endswith(":nitro")
+def test_jarvis_chat_uses_dynamic_cost_mode_model_routing():
+    assert dialogue.model_for("dialogue", "economico") == "openrouter/free"
+    assert dialogue.model_for("dialogue", "balanceado") == "google/gemini-2.5-flash-lite"
+    assert "flash-lite" in dialogue.model_for("dialogue", "balanceado")
 
 
 def test_date_time_request_is_local_and_never_calls_llm(monkeypatch):
