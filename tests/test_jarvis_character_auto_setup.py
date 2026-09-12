@@ -40,6 +40,27 @@ def test_infer_character_name_and_known_collection_from_natural_sentence():
     assert result["target_collection"] == "Pequenas Histórias, Grandes Lições"
 
 
+def test_character_visual_analysis_uses_canonical_generation_stage(monkeypatch):
+    stages = []
+    monkeypatch.setattr(auto, "current_vision_model", lambda: "openrouter/free")
+    monkeypatch.setattr(auto, "iniciar_requisicao", lambda *args, **kwargs: ("req", "sig", 0.0, 0.0))
+    monkeypatch.setattr(auto, "atualizar_etapa", lambda signature, stage: stages.append(stage))
+    monkeypatch.setattr(auto, "_post_com_retry", lambda *args, **kwargs: object())
+    monkeypatch.setattr(auto, "_json_resposta", lambda response: {
+        "choices": [{"message": {"content": '{"descricao_master":"Manu","campos_bloqueados":{"olhos":"verdes"},"melhor_referencia_indice":0}'}}]
+    })
+    monkeypatch.setattr(auto, "finalizar_requisicao", lambda *args, **kwargs: None)
+
+    result = auto.analyze_character_images(
+        "Manu",
+        "Pequenas Histórias, Grandes Lições",
+        [_file("manu.png", "m")],
+    )
+
+    assert stages == ["aguardando OpenRouter"]
+    assert result["campos_bloqueados"]["olhos"] == "verdes"
+
+
 def test_merge_visual_dna_fills_missing_without_overwriting_locked_traits():
     existing = {
         "descricao_master": "Identidade aprovada",
