@@ -18,7 +18,7 @@ import requests
 
 from jarvis_weather import fetch_weather, WMO_PT
 
-TOKEN_URL = "https://oauth2.googleapis.com/token"
+OAUTH_ENDPOINT = "https://oauth2.googleapis.com/token"
 CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
 DEFAULT_TIMEZONE = os.environ.get("JARVIS_TIMEZONE", "Asia/Tokyo")
 DEFAULT_LOCATION = os.environ.get("JARVIS_BRIEFING_LOCATION", "Toyohashi, Japan")
@@ -70,7 +70,7 @@ def _refresh_access_token(*, poster: Callable = requests.post) -> str:
         raise JarvisCalendarError("Google Calendar ainda não foi conectado ao FaithBloom.")
     try:
         response = poster(
-            TOKEN_URL,
+            OAUTH_ENDPOINT,
             data={
                 "client_id": creds["client_id"],
                 "client_secret": creds["client_secret"],
