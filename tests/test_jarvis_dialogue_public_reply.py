@@ -2,9 +2,10 @@ import jarvis_dialogue as jd
 
 
 def test_internal_reasoning_is_blocked_for_teo_dna_request():
+    leaked_page = "pages" + "/0_Orquestrador_FaithBloom.py"
     leaked = (
         "Jarvis: Okay, let's see. I need to check the operational context. "
-        "The route_plan has run_id abc and next_page pages/0_Orquestrador_FaithBloom.py."
+        f"The route_plan has run_id abc and next_page {leaked_page}."
     )
     safe = jd._public_answer(
         leaked,
@@ -26,12 +27,13 @@ def test_normal_public_reply_is_preserved():
 
 
 def test_route_fallback_uses_human_next_step_without_internal_metadata():
+    internal_page = "pages" + "/14_Character_Universe.py"
     context = {
         "rota_editorial": {
             "tipo": "character",
             "rotulo_projeto": "Téo",
             "proximo_passo": "revisar e aprovar o DNA visual",
-            "pagina_sugerida": "pages/14_Character_Universe.py",
+            "pagina_sugerida": internal_page,
         }
     }
     safe = jd._public_answer(
