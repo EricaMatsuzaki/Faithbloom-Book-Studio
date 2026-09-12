@@ -1,8 +1,9 @@
 """Jarvis canônico — voz, Daily Intelligence e roteamento FaithBloom.
 
 O coração do robô é o controle principal: toque uma vez para falar e novamente
-para terminar. O Jarvis abre com briefing automático diário, recebe anexos e
-mantém rotas instantâneas antes de recorrer ao diálogo de IA.
+para terminar. O Jarvis recebe anexos, mantém rotas instantâneas e agora usa
+modos de custo explícitos. Briefing e voz automática ficam desligados por padrão
+no modo Econômico para evitar repetição e consumo desnecessário de créditos.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from datetime import datetime
 import streamlit as st
 
 from estilo import aplicar_estilo
+from faithbloom_cost_mode import COST_MODES, mode_config, mode_rows, set_cost_mode
 from jarvis_assistant import inspect_project_state, interpret_request
 from jarvis_conversation import (
     append_turn,
@@ -96,7 +98,15 @@ def _record_latency(name: str, seconds: float) -> None:
     st.session_state["jarvis_latency_metrics"] = metrics
 
 
-def _synthesize(reply: str) -> bool:
+def _synthesize(reply: str, *, force: bool = False) -> bool:
+    """Gera voz só quando permitido; no Econômico, texto é o padrão."""
+    if not force and not bool(st.session_state.get("jarvis_auto_voice", False)):
+        st.session_state["jarvis_audio_path"] = ""
+        st.session_state["jarvis_audio_error"] = ""
+        _set_stage("idle", "Resposta pronta em texto · voz sob demanda.")
+        return False
+    if not (reply or "").strip():
+        return False
     started = time.perf_counter()
     token = f"jarvis_{uuid.uuid4().hex[:12]}"
     st.session_state["jarvis_audio_path"] = ""
@@ -155,7 +165,7 @@ def _is_cancel(text: str) -> bool:
 def _calendar_reply() -> str:
     daily = dict(st.session_state.get("jarvis_daily_intelligence") or {})
     if not daily:
-        return "Ainda não carreguei sua agenda de hoje."
+        return "Ainda não carreguei sua agenda de hoje. Use ‘Gerar briefing agora’ ou peça sua agenda."
     if not daily.get("calendar_connected"):
         return "Seu Google Calendar ainda precisa ser conectado ao FaithBloom para eu acessar sua agenda."
     events = daily.get("events") or []
@@ -198,7 +208,7 @@ def _execute_pending_calendar_action() -> str:
     return f"{verb} {result.get('title', 'o compromisso')} no seu Google Calendar para {time_text}."
 
 
-def _prepare_multimodal_handoff(request: str, uploads: list[Any]) -> dict[str, Any]:
+def _prepare_multimodal_handoff(request: str, uploads: list[object]) -> dict[str, object]:
     attachments = []
     for uploaded in uploads:
         data = uploaded.getvalue()
@@ -207,11 +217,11 @@ def _prepare_multimodal_handoff(request: str, uploads: list[Any]) -> dict[str, A
     st.session_state["jarvis_pending_handoff"] = package
     st.session_state["jarvis_reply"] = package["spoken"]
     _set_stage("thinking", "Encaminhamento preparado — aguardando sua confirmação…")
-    _synthesize(package["spoken"])
+    _synthesize(str(package["spoken"]))
     return package
 
 
-def _confirm_handoff(package: dict[str, Any]) -> None:
+def _confirm_handoff(package: dict[str, object]) -> None:
     st.session_state["jarvis_handoff_package"] = package
     st.session_state.pop("jarvis_pending_handoff", None)
     route = package.get("route") or {}
@@ -307,7 +317,7 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
     history = append_turn(history, "assistant", reply, intent=intent, metadata=metadata)
     st.session_state["jarvis_conversation_history"] = history
     st.session_state["jarvis_reply"] = reply
-    _set_stage("thinking", "Gerando resposta em voz…")
+    _set_stage("thinking", "Resposta pronta — verificando preferência de voz…")
     _synthesize(reply)
     _record_latency("request_total_s", time.perf_counter() - started)
     return reply
@@ -328,13 +338,10 @@ def _handle_audio(audio_bytes: bytes, fmt: str, recording_id: str, project_progr
     _record_latency("voice_pipeline_total_s", time.perf_counter() - pipeline_started)
 
 
-def _run_automatic_daily_briefing() -> None:
+def _run_daily_briefing() -> None:
+    """Briefing somente sob demanda; nunca dispara ao recarregar a página."""
     now = _now()
-    today_key = now.strftime("%Y-%m-%d")
-    if st.session_state.get("jarvis_daily_briefing_date") == today_key:
-        return
-    st.session_state["jarvis_daily_briefing_date"] = today_key
-    _set_stage("thinking", "Preparando seu briefing diário…")
+    _set_stage("thinking", "Preparando seu briefing…")
     try:
         daily = build_daily_intelligence(
             location=os.environ.get("JARVIS_BRIEFING_LOCATION", DEFAULT_LOCATION),
@@ -343,14 +350,15 @@ def _run_automatic_daily_briefing() -> None:
             include_calendar=True,
         )
         st.session_state["jarvis_daily_intelligence"] = daily
+        st.session_state["jarvis_daily_briefing_date"] = now.strftime("%Y-%m-%d")
         st.session_state["jarvis_reply"] = daily["spoken"]
         for key, value in (daily.get("timings") or {}).items():
             _record_latency(f"daily_{key}", value)
-        _set_stage("thinking", "Briefing pronto — preparando voz…")
+        _set_stage("idle", "Briefing pronto. A voz só toca se você pedir.")
         _synthesize(daily["spoken"])
     except Exception as exc:
         st.session_state["jarvis_daily_intelligence"] = {"error": str(exc), "calendar_connected": False}
-        _set_stage("idle", "Jarvis online. O briefing automático ficou parcialmente indisponível.")
+        _set_stage("idle", "Jarvis online. O briefing ficou parcialmente indisponível.")
 
 
 st.session_state.setdefault("jarvis_stage", "idle")
@@ -358,17 +366,61 @@ st.session_state.setdefault("jarvis_status_message", "Online")
 st.session_state.setdefault("jarvis_reply", "")
 st.session_state.setdefault("jarvis_autoplayed_token", "")
 st.session_state.setdefault("jarvis_latency_metrics", {})
+st.session_state.setdefault("faithbloom_cost_mode", "economico")
+st.session_state.setdefault("jarvis_auto_voice", False)
+set_cost_mode(str(st.session_state.get("faithbloom_cost_mode") or "economico"))
 
 current_state = st.session_state.get("state")
 project_progress = inspect_project_state(current_state) if current_state else None
 
-# Automatic by design: once per local day in the current Streamlit session.
-_run_automatic_daily_briefing()
+with st.expander("💸 Modo de IA e economia", expanded=True):
+    mode_keys = ["economico", "balanceado", "premium"]
+    current_mode = str(st.session_state.get("faithbloom_cost_mode") or "economico")
+    selected_mode = st.radio(
+        "Como o FaithBloom deve gastar IA?",
+        mode_keys,
+        index=mode_keys.index(current_mode) if current_mode in mode_keys else 0,
+        format_func=lambda key: str(COST_MODES[key]["label"]),
+        horizontal=True,
+        key="faithbloom_cost_mode_selector",
+    )
+    if selected_mode != current_mode:
+        st.session_state["faithbloom_cost_mode"] = set_cost_mode(selected_mode)
+        cfg = mode_config(selected_mode)
+        st.session_state["jarvis_auto_voice"] = bool(cfg.get("auto_voice", False))
+        st.rerun()
+    set_cost_mode(selected_mode)
+    cfg = mode_config(selected_mode)
+    st.success(f"Modo atual: {cfg['label']} — {cfg['description']}")
+    st.caption(f"Ideal para: {cfg['ideal_for']} | Atenção: {cfg['tradeoff']}")
+    st.markdown(
+        f"**Jarvis/texto:** `{cfg['dialogue_model']}`  ·  **DNA visual/análise de personagem:** `{cfg['vision_model']}`"
+    )
+    st.checkbox(
+        "🔊 Falar respostas automaticamente (TTS consome créditos)",
+        key="jarvis_auto_voice",
+        help="Desligado no modo Econômico. Você ainda pode gerar a voz manualmente para qualquer resposta.",
+    )
+    briefing_col, info_col = st.columns([1, 2])
+    if briefing_col.button("☀️ Gerar briefing agora", use_container_width=True):
+        _run_daily_briefing()
+        st.rerun()
+    info_col.caption("O briefing não roda mais ao atualizar/recarregar a página. Só é gerado quando você pedir.")
+    with st.expander("Quando usar cada modo", expanded=False):
+        for row in mode_rows():
+            st.markdown(
+                f"**{row['label']}**  \n"
+                f"• Jarvis: `{row['dialogue_model']}`  \n"
+                f"• Visão/DNA: `{row['vision_model']}`  \n"
+                f"• Melhor uso: {row['ideal_for']}  \n"
+                f"• Observação: {row['tradeoff']}"
+            )
 
 stage = str(st.session_state.get("jarvis_stage") or "idle")
 reply = str(st.session_state.get("jarvis_reply") or "")
 audio_path = str(st.session_state.get("jarvis_audio_path") or "")
 reply_token = str(st.session_state.get("jarvis_reply_token") or "")
+active_cfg = mode_config()
 
 st.html("""
 <style>
@@ -383,8 +435,8 @@ with st.container(key="jarvis_core"):
         st.html(
             f'<span class="j-kicker">FaithBloom Intelligence · Jarvis Core</span>'
             f'<div class="j-title">JARVIS</div>'
-            f'<div class="j-copy">{_greeting()} O briefing diário é automático. Fale, escreva ou envie arquivos; eu preparo a rota para o especialista certo.</div>'
-            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">☀️ Daily Intelligence</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">📎 Multimodal</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">📅 Calendar seguro</span><span class="j-pill">🔐 Security by Default</span></div>'
+            f'<div class="j-copy">{_greeting()} Briefing e voz automática ficam sob seu controle. Fale, escreva ou envie arquivos; eu preparo a rota para o especialista certo.</div>'
+            f'<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">{active_cfg["label"]}</span><span class="j-pill">☀️ Briefing sob demanda</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">📎 Multimodal</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">📅 Calendar seguro</span><span class="j-pill">🔐 Security by Default</span></div>'
             f'<div class="j-status">● {st.session_state.get("jarvis_status_message", "Online")}</div>'
             + (f'<div class="j-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
         )
@@ -402,12 +454,17 @@ if audio_path and os.path.exists(audio_path) and reply_token:
         st.audio(audio_path, format=_audio_mime(audio_path), autoplay=True)
         st.session_state["jarvis_autoplayed_token"] = reply_token
 
-# Daily Intelligence: voice is intentionally concise; screen keeps the details.
+if reply and not bool(st.session_state.get("jarvis_auto_voice", False)):
+    if st.button("🔊 Ouvir esta resposta com Charon", use_container_width=False):
+        _synthesize(reply, force=True)
+        st.rerun()
+
+# Daily Intelligence agora só existe depois de solicitação explícita.
 daily = dict(st.session_state.get("jarvis_daily_intelligence") or {})
 if daily:
     with st.expander("☀️ Briefing de hoje · detalhes", expanded=False):
         if daily.get("error"):
-            st.warning("O briefing automático ficou parcialmente indisponível nesta abertura.")
+            st.warning("O briefing ficou parcialmente indisponível nesta tentativa.")
         else:
             c1, c2, c3 = st.columns(3)
             c1.metric("Data", daily.get("date", "—"))
@@ -427,7 +484,7 @@ if pending_calendar:
         try:
             reply = _execute_pending_calendar_action()
             st.session_state["jarvis_reply"] = reply
-            _set_stage("thinking", "Alteração confirmada — preparando voz…")
+            _set_stage("thinking", "Alteração confirmada — resposta pronta.")
             _synthesize(reply)
         except Exception as exc:
             st.session_state["jarvis_reply"] = f"Não consegui concluir a alteração do calendário: {exc}"
@@ -502,7 +559,7 @@ with st.form("jarvis_text_form", clear_on_submit=True):
     typed = st.text_area(
         "Mensagem",
         height=100,
-        placeholder="Ex.: revise este PDF; melhore esta capa; use esta imagem como referência; crie uma história sobre coragem e fé…",
+        placeholder="Ex.: revise este PDF; use esta imagem como referência; complete o DNA do personagem; crie uma história sobre coragem e fé…",
         label_visibility="collapsed",
     )
     submitted = st.form_submit_button("Enviar ao Jarvis", type="primary", use_container_width=True)
@@ -511,7 +568,6 @@ if submitted and (typed.strip() or uploads):
         if uploads:
             _prepare_multimodal_handoff(typed, list(uploads))
         else:
-            # Pedidos sem arquivo continuam no roteamento conversacional existente.
             _process_request(typed, project_progress=project_progress)
     except Exception as exc:
         st.session_state["jarvis_reply"] = f"Não consegui preparar esse pedido: {exc}"
@@ -531,7 +587,7 @@ with st.expander("⚡ Diagnóstico de velocidade", expanded=False):
     if metrics:
         st.json(metrics)
     else:
-        st.caption("As medições aparecem depois do primeiro briefing ou pedido.")
+        st.caption("As medições aparecem depois do primeiro pedido ou briefing manual.")
 
 destination = st.session_state.get("jarvis_suggested_destination") or {}
 page_key = destination.get("destination") or destination.get("id")
@@ -550,15 +606,16 @@ for col, (label, page) in zip(cols, [
 
 with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown("""
-- **Briefing automático diário** com data/hora local e clima.
+- **Briefing sob demanda:** não repete automaticamente data, clima ou agenda ao atualizar a página.
+- **Modos de custo:** Econômico, Balanceado e Premium, com explicação de quando usar cada um.
+- **Voz sob controle:** no Econômico, TTS fica desligado por padrão e pode ser gerado manualmente.
 - **Google Calendar** para leitura da agenda e, quando OAuth de escrita estiver habilitado, criação/alteração mediante confirmação explícita.
 - **Entrada multimodal:** imagens, PDF, documentos e áudio diretamente no Jarvis.
 - **Agent Handoff:** classifica pedido + anexos e encaminha para módulos já existentes, com confirmação.
 - **Proteção de Masters:** anexos nunca viram Character Master, Color Master ou outro Master sem aprovação humana.
 - **Rotas instantâneas** para data/hora, agenda e clima antes de usar IA pesada.
 - **Medição de latência** de STT, lógica, TTS e briefing.
-- Resposta curta por voz primeiro; detalhes ficam na tela.
 - Continuidade de projeto, navegação segura, anti-duplicação e aprovação humana.
 """)
 
-st.caption("Jarvis FaithBloom · voz original Charon aprovada · sem imitar ator ou personagem conhecido.")
+st.caption("Jarvis FaithBloom · modo Econômico padrão · voz original Charon aprovada · sem imitar ator ou personagem conhecido.")
