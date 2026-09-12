@@ -159,6 +159,21 @@ def _autofill_visual_dna_best_effort(pid: str, asset_id: str) -> None:
             pass
 
 
+def _auto_setup_dna_already_prepared(character: dict) -> bool:
+    """Evita uma segunda chamada de visão no primeiro Color Master do Auto-Setup.
+
+    O Jarvis Auto-Setup já analisou as imagens e salvou o DNA antes de promover o
+    primeiro Color Master. A combinação abaixo é intencionalmente restrita ao
+    primeiro Master: em substituições futuras, o autofill normal continua ativo.
+    """
+    if character.get("color_master"):
+        return False
+    metadata = character.get("metadata") or {}
+    dna = character.get("dna") or {}
+    analysis_meta = dna.get("auto_visual_analysis") or {}
+    return bool(metadata.get("jarvis_auto_setup_last")) and analysis_meta.get("source") == "jarvis_character_auto_setup"
+
+
 def promote_master(pid: str, asset_id: str, role: str, *, confirmed: bool = False) -> dict:
     if not confirmed:
         raise PermissionError("Confirmacao humana explicita e obrigatoria.")
@@ -188,7 +203,7 @@ def promote_master(pid: str, asset_id: str, role: str, *, confirmed: bool = Fals
     atualizar_personagem_oficial(pid, {field: uri, "metadata": meta})
     set_master_role(asset_id, role, True)
     promoted = update_asset(asset_id, visual_status="COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", metadata={"visual_status": "COLOR_MASTER" if role == "color_master" else "LINEART_MASTER", "master_approved_at": int(time.time())})
-    if role == "color_master":
+    if role == "color_master" and not _auto_setup_dna_already_prepared(p):
         _autofill_visual_dna_best_effort(pid, asset_id)
     return promoted
 
