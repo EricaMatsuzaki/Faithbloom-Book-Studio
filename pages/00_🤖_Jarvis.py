@@ -30,9 +30,13 @@ from jarvis_daily_intelligence import (
     DEFAULT_LOCATION,
     DEFAULT_TIMEZONE,
     build_daily_intelligence,
+    calendar_is_configured,
+    calendar_write_is_enabled,
+    execute_calendar_action,
     format_date_pt,
     greeting_for,
     local_now,
+    prepare_calendar_action,
 )
 from jarvis_heart_mic import decode_recording, heart_mic
 from jarvis_voice import build_spoken_reply, synthesize_reply, transcribe_audio
@@ -125,8 +129,18 @@ def _is_calendar_request(text: str) -> bool:
     value = (text or "").casefold()
     return any(x in value for x in (
         "agenda", "calendário", "calendario", "compromisso", "compromissos",
-        "o que tenho hoje", "próximo compromisso", "proximo compromisso",
+        "evento", "eventos", "o que tenho hoje", "próximo compromisso", "proximo compromisso",
     ))
+
+
+def _is_confirmation(text: str) -> bool:
+    value = " ".join((text or "").casefold().split())
+    return value in {"sim", "sim pode", "sim pode fazer", "pode fazer", "confirma", "confirmo", "confirmar", "pode confirmar", "sim confirme"}
+
+
+def _is_cancel(text: str) -> bool:
+    value = " ".join((text or "").casefold().split())
+    return value in {"não", "nao", "cancela", "cancelar", "não faça", "nao faca", "deixa pra lá", "deixa pra la"}
 
 
 def _calendar_reply() -> str:
@@ -134,7 +148,7 @@ def _calendar_reply() -> str:
     if not daily:
         return "Ainda não carreguei sua agenda de hoje."
     if not daily.get("calendar_connected"):
-        return "Seu Google Calendar ainda precisa ser conectado ao FaithBloom para eu ler sua agenda automaticamente."
+        return "Seu Google Calendar ainda precisa ser conectado ao FaithBloom para eu acessar sua agenda."
     events = daily.get("events") or []
     if not events:
         return "Você não tem compromissos no Google Calendar hoje."
@@ -147,6 +161,32 @@ def _calendar_reply() -> str:
         elif nxt.get("start"):
             reply += f" O próximo é {nxt.get('title', 'um compromisso')}, às {nxt['start'].strftime('%H:%M')}."
     return reply
+
+
+def _refresh_daily_calendar() -> None:
+    try:
+        daily = build_daily_intelligence(
+            location=os.environ.get("JARVIS_BRIEFING_LOCATION", DEFAULT_LOCATION),
+            timezone_name=os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE),
+            now=_now(),
+            include_calendar=True,
+        )
+        st.session_state["jarvis_daily_intelligence"] = daily
+    except Exception:
+        pass
+
+
+def _execute_pending_calendar_action() -> str:
+    plan = dict(st.session_state.get("jarvis_pending_calendar_action") or {})
+    if not plan:
+        return "Não há nenhuma alteração de calendário aguardando confirmação."
+    result = execute_calendar_action(plan, timezone_name=os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE))
+    st.session_state.pop("jarvis_pending_calendar_action", None)
+    _refresh_daily_calendar()
+    when = result.get("start")
+    time_text = when.strftime("%d/%m às %H:%M") if when else "no horário solicitado"
+    verb = "Adicionei" if plan.get("action") == "create" else "Atualizei"
+    return f"{verb} {result.get('title', 'o compromisso')} no seu Google Calendar para {time_text}."
 
 
 def _process_request(text: str, *, project_progress: dict | None = None) -> str:
@@ -170,11 +210,36 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
     weather = is_weather_request(clean)
     intent = "editorial"
     metadata: dict = {}
+    pending = dict(st.session_state.get("jarvis_pending_calendar_action") or {})
 
-    if _is_datetime_request(clean):
+    if pending and _is_confirmation(clean):
+        intent = "calendar_write"
+        try:
+            reply = _execute_pending_calendar_action()
+        except Exception as exc:
+            reply = f"Não consegui concluir a alteração do calendário: {exc}"
+    elif pending and _is_cancel(clean):
+        intent = "calendar_write"
+        st.session_state.pop("jarvis_pending_calendar_action", None)
+        reply = "Certo. Cancelei essa alteração e não mexi no seu calendário."
+    elif _is_datetime_request(clean):
         intent, reply = "datetime", _datetime_reply(clean)
     elif _is_calendar_request(clean):
-        intent, reply = "calendar", _calendar_reply()
+        intent = "calendar"
+        plan = prepare_calendar_action(clean, now=_now(), timezone_name=os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE))
+        if plan is not None:
+            intent = "calendar_write"
+            if not calendar_is_configured():
+                reply = "Seu Google Calendar ainda precisa ser conectado ao FaithBloom antes que eu possa adicionar ou alterar compromissos."
+            elif not calendar_write_is_enabled():
+                reply = "Seu calendário está conectado para leitura, mas a permissão de escrita ainda precisa ser habilitada. Não vou alterar nada sem essa autorização."
+            elif not plan.get("ready"):
+                reply = str(plan.get("message") or "Preciso de mais detalhes antes de preparar essa alteração.")
+            else:
+                st.session_state["jarvis_pending_calendar_action"] = plan
+                reply = f"Entendi: {plan['summary']}. Quer que eu confirme essa alteração no Google Calendar?"
+        else:
+            reply = _calendar_reply()
     elif general_intent == "help":
         intent, reply = "help", help_reply()
     elif general_intent == "thanks":
@@ -286,7 +351,7 @@ with st.container(key="jarvis_core"):
             f'<span class="j-kicker">FaithBloom Intelligence · Jarvis Core</span>'
             f'<div class="j-title">JARVIS</div>'
             f'<div class="j-copy">{_greeting()} O briefing diário é automático. Depois, toque no coração e fale normalmente.</div>'
-            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">☀️ Daily Intelligence</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">🔐 Security by Default</span></div>'
+            '<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">☀️ Daily Intelligence</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">📅 Calendar seguro</span><span class="j-pill">🔐 Security by Default</span></div>'
             f'<div class="j-status">● {st.session_state.get("jarvis_status_message", "Online")}</div>'
             + (f'<div class="j-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
         )
@@ -314,11 +379,32 @@ if daily:
             c1, c2, c3 = st.columns(3)
             c1.metric("Data", daily.get("date", "—"))
             c2.metric("Hora local", daily.get("local_time", "—"))
-            c3.metric("Calendário", "Conectado" if daily.get("calendar_connected") else "Aguardando conexão")
+            calendar_label = "Leitura + escrita" if daily.get("calendar_write_enabled") else "Somente leitura" if daily.get("calendar_connected") else "Aguardando conexão"
+            c3.metric("Calendário", calendar_label)
             st.markdown("**Clima**")
             st.write(daily.get("weather_detail") or "—")
             st.markdown("**Agenda de hoje**")
             st.text(daily.get("calendar_detail") or "Google Calendar ainda não conectado.")
+
+pending_calendar = dict(st.session_state.get("jarvis_pending_calendar_action") or {})
+if pending_calendar:
+    st.info(f"📅 Aguardando sua confirmação: {pending_calendar.get('summary', 'alteração no calendário')}")
+    confirm_col, cancel_col = st.columns(2)
+    if confirm_col.button("✅ Confirmar no Google Calendar", type="primary", use_container_width=True):
+        try:
+            reply = _execute_pending_calendar_action()
+            st.session_state["jarvis_reply"] = reply
+            _set_stage("thinking", "Alteração confirmada — preparando voz…")
+            _synthesize(reply)
+        except Exception as exc:
+            st.session_state["jarvis_reply"] = f"Não consegui concluir a alteração do calendário: {exc}"
+            _set_stage("error", "Falha ao alterar o Google Calendar.")
+        st.rerun()
+    if cancel_col.button("Cancelar", use_container_width=True):
+        st.session_state.pop("jarvis_pending_calendar_action", None)
+        st.session_state["jarvis_reply"] = "Certo. Cancelei essa alteração e não mexi no seu calendário."
+        _set_stage("idle", "Alteração cancelada.")
+        st.rerun()
 
 recording_payload = getattr(heart, "recording", None) if heart is not None else None
 decoded = None
@@ -355,7 +441,7 @@ if st.session_state.get("jarvis_last_transcript"):
 
 st.markdown("### Ou escreva para o Jarvis")
 with st.form("jarvis_text_form", clear_on_submit=True):
-    typed = st.text_area("Mensagem", height=100, placeholder="Ex.: Jarvis, qual é meu próximo compromisso?", label_visibility="collapsed")
+    typed = st.text_area("Mensagem", height=100, placeholder="Ex.: Jarvis, agende compromisso dentista amanhã às 15h.", label_visibility="collapsed")
     submitted = st.form_submit_button("Enviar ao Jarvis", type="primary", use_container_width=True)
 if submitted and typed.strip():
     try:
@@ -397,7 +483,7 @@ for col, (label, page) in zip(cols, [
 with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown("""
 - **Briefing automático diário** com data/hora local e clima.
-- **Google Calendar somente leitura** quando OAuth estiver configurado no FaithBloom.
+- **Google Calendar** para leitura da agenda e, quando OAuth de escrita estiver habilitado, criação/alteração mediante confirmação explícita.
 - **Próximo compromisso** e resumo da agenda do dia.
 - **Rotas instantâneas** para data/hora, agenda e clima antes de usar IA pesada.
 - **Medição de latência** de STT, lógica, TTS e briefing.
