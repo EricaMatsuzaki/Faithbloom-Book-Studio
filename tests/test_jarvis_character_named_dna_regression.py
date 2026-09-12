@@ -30,6 +30,23 @@ def test_exact_runtime_question_never_falls_back_to_children_story_or_llm(monkey
     folded = reply.casefold()
 
     assert "téo" in folded
-    assert "dna visual" in folded
+    assert "não posso afirmar" in folded
+    assert "character universe" in folded
     assert "história infantil" not in folded
     assert "3–8" not in reply
+
+
+def test_named_character_reply_is_not_hardcoded_to_teo(monkeypatch):
+    text = "Complete o DNA da Manu sem alterar o que já estiver aprovado."
+    result = assistant.interpret_request(text)
+    monkeypatch.setattr(
+        dialogue,
+        "_post_com_retry",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("network should not run")),
+    )
+    reply = dialogue.build_natural_reply(text, history=[], route_result=result)
+    folded = reply.casefold()
+
+    assert "manu" in folded
+    assert "téo" not in folded
+    assert "sem criar outro personagem" in folded
