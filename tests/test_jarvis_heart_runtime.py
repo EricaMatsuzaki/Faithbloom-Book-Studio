@@ -10,7 +10,7 @@ def test_heart_component_never_synthesizes_or_replays_reply_audio():
     assert "reply_text" not in js
 
 
-def test_speaking_stage_returns_heart_to_ready_state():
+def test_non_thinking_stage_returns_heart_to_ready_state():
     js = heart.JS
-    assert "stage==='speaking'" in js
-    assert "setVisual('idle','Toque no coração para falar')" in js
+    assert "if(stage==='thinking')" in js
+    assert "else setVisual('idle','Toque no coração para falar')" in js
