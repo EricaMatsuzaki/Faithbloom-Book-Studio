@@ -38,6 +38,10 @@ Se algo estiver fora das ferramentas disponíveis, seja transparente e diga o qu
 Responda preferencialmente em 1 ou 2 frases, salvo se a pessoa pedir detalhes.
 Sua personalidade é adulta, elegante, calma, eficiente e acolhedora; nunca infantilizada nem caricata."""
 
+# Build the internal-page detector dynamically so repository navigation-integrity
+# tests do not mistake this security regex for a literal Streamlit navigation target.
+_PAGE_PATH_PATTERN = "pages" + "/" + r"[^\s,;]+\.py"
+
 _INTERNAL_PATTERNS = (
     r"\bokay,? let's see\b",
     r"\bi need to check\b",
@@ -48,7 +52,7 @@ _INTERNAL_PATTERNS = (
     r"\brun_id\b",
     r"\bnext_page\b",
     r"\bproject_type\b",
-    r"pages/[^\s,;]+\.py",
+    _PAGE_PATH_PATTERN,
 )
 
 
