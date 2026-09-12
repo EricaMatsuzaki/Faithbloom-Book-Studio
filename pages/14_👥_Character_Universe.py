@@ -28,8 +28,25 @@ selected_asset_id = st.session_state.get("faithbloom_selected_asset_id", "")
 if selected_asset_path and os.path.exists(selected_asset_path):
     st.success("🖼️ Asset selecionado na Asset Library: você pode adicioná-lo ao Reference Pack ou defini-lo como Master de um personagem abaixo.")
 
-colecoes = listar_colecoes()
-colecao = st.text_input('Coleção', value=colecoes[0] if colecoes else 'Pequenas Histórias, Grandes Lições')
+# Navegação segura: nunca assumir silenciosamente a primeira coleção salva.
+colecoes_salvas = [str(c).strip() for c in listar_colecoes() if str(c).strip()]
+indice_personagens = listar_personagens_oficiais(incluir_arquivados=True)
+colecoes_com_personagens = [str(i.get('colecao') or '').strip() for i in indice_personagens if str(i.get('colecao') or '').strip()]
+colecoes = sorted(set(colecoes_salvas + colecoes_com_personagens), key=str.casefold)
+
+colecao_opcao = st.selectbox(
+    'Coleção',
+    ['— Selecione uma coleção —', *colecoes],
+    key='character_universe_collection_selector',
+    help='Escolha uma coleção existente. A lista usa rolagem automaticamente quando houver muitas coleções.',
+)
+colecao = '' if colecao_opcao == '— Selecione uma coleção —' else colecao_opcao
+
+if not colecao:
+    st.info('Escolha uma coleção acima para ver os personagens. Nenhuma coleção é assumida automaticamente.')
+    st.stop()
+
+st.caption(f'📚 Coleção ativa: **{colecao}**')
 render_character_handoff_inbox(colecao)
 mostrar_arquivados = st.checkbox('Mostrar personagens arquivados', value=False)
 
@@ -67,6 +84,18 @@ with st.expander('➕ Criar Character Master oficial', expanded=False):
 itens = listar_personagens_oficiais(colecao, incluir_arquivados=mostrar_arquivados)
 if not itens:
     st.info('Ainda não há personagens oficiais nesta coleção.' if not mostrar_arquivados else 'Nenhum personagem encontrado nesta coleção.')
+else:
+    personagem_por_id = {str(item.get('id')): item for item in itens}
+    personagem_opcao = st.selectbox(
+        'Personagem',
+        ['__todos__', *personagem_por_id.keys()],
+        format_func=lambda pid: 'Todos os personagens' if pid == '__todos__' else str(personagem_por_id[pid].get('nome') or 'Personagem'),
+        key=f'character_universe_character_selector_{colecao}',
+        help='A lista mostra somente personagens da coleção escolhida e usa rolagem automaticamente quando necessário.',
+    )
+    if personagem_opcao != '__todos__':
+        itens = [personagem_por_id[personagem_opcao]]
+        st.caption(f"📚 {colecao} → ⭐ {personagem_por_id[personagem_opcao].get('nome', 'Personagem')}")
 
 for item in itens:
     p = carregar_personagem_oficial(item['id'])
