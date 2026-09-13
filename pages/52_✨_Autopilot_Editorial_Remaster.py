@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import streamlit as st
@@ -17,12 +18,12 @@ st.set_page_config(page_title="Autopilot Editorial Remaster", page_icon="✨", l
 aplicar_estilo()
 hero(
     "✨ Autopilot Editorial Remaster",
-    "Envie o livro uma vez, deixe a equipe editorial trabalhar por checkpoints e receba o pacote consolidado para sua decisão final.",
+    "Um clique para a equipe FaithBloom revisar, enriquecer, validar e preparar a obra inteira; você entra novamente apenas para a decisão final.",
     "FaithBloom · Full Editorial Review + Recovery",
 )
 st.info(
-    "🔒 O original nunca é sobrescrito. O Autopilot pode aplicar melhorias editoriais seguras somente na versão derivada. "
-    "Character/Color Masters, Style DNA e versões visuais não são promovidos silenciosamente."
+    "🔒 O original nunca é sobrescrito. O Autopilot trabalha somente em versão derivada, infere os dados editoriais que faltarem, "
+    "usa os especialistas internos e mantém publicação/Masters sob aprovação final da autora."
 )
 
 
@@ -49,8 +50,8 @@ report = carregar_relatorio(project)
 
 st.markdown("### Como o Autopilot trabalha")
 st.caption(
-    "Book Doctor → mapeamento da história → Revisor → Storyteller + Heart Arc → revisão final → Moral/Bíblia → "
-    "emoções + Psicologia das Cores → Style DNA + Character Masters → handoff visual → candidatas visuais autorizadas → QA → pacote final."
+    "Book Doctor → mapeamento da história → Revisor → Storyteller + Heart Arc → revisão final + auto-reparo → Moral/Bíblia → "
+    "emoções + Psicologia das Cores → Style DNA + Character Masters → handoff visual → candidatas visuais → QA → pacote final."
 )
 
 runs = list_runs(project)
@@ -69,49 +70,57 @@ if not active and runs:
         active = load_run(project, chosen_run)
 
 if not active:
-    st.markdown("### 1 · Autorize a revisão automática")
-    c1, c2 = st.columns(2)
-    faixa = c1.selectbox("Faixa etária", ["3-5", "3-8", "6-8", "9-12"], index=1)
-    versiculo = c2.text_input("Referência bíblica", value="Eclesiastes 3:1" if "Mel Aprendeu a Esperar" in str(project.get("titulo")) else "")
-    licao = st.text_area("Lição de moral / verdade central", height=80)
-    aprendizado = st.text_area("Aprendizado cristão", height=80)
-    emocao = st.text_input("Emoção central")
-    auto_safe = st.checkbox(
-        "Autorizar o Autopilot a aplicar melhorias editoriais seguras na versão derivada até a revisão final",
-        value=True,
-        help="Isso permite aplicar automaticamente uma candidata do Storyteller somente quando os guards confirmarem preservação da essência, moral e mensagem bíblica. O original e os Masters permanecem protegidos.",
+    st.markdown("### 1 · Iniciar")
+    st.write(
+        "Você não precisa preencher ficha. O FaithBloom vai inferir da própria obra a lição de moral, aprendizado cristão, "
+        "emoção central e demais metadados necessários, validar tudo com os especialistas e seguir sozinho até o pacote final."
     )
-    paid = st.checkbox(
-        "Autorizar geração visual paga durante este Autopilot quando Style DNA e Character Masters estiverem inequívocos",
-        value=False,
-        help="Pode consumir créditos da OpenRouter. As imagens são criadas como candidatas derivadas e só serão aprovadas se você aprovar o pacote final.",
-    )
-    consent = st.checkbox(
-        "Confirmo que quero iniciar a revisão completa automática e receber o resultado consolidado no final.",
-        value=False,
-    )
-    if st.button("✨ Iniciar Revisão Completa Automática", type="primary", disabled=not consent, use_container_width=True):
+    if os.environ.get("OPENROUTER_API_KEY"):
+        st.caption(
+            "Ao iniciar a revisão completa, você autoriza o uso dos modelos configurados — inclusive geração de candidatas visuais derivadas, "
+            "que pode consumir créditos. Nenhuma imagem vira Master e nada é publicado automaticamente."
+        )
+    else:
+        st.caption("A geração visual automática ficará pendente se não houver uma chave/modelo de imagem configurado no servidor.")
+
+    if st.button("✨ Iniciar Revisão Completa Automática", type="primary", use_container_width=True):
         active = new_run(
             project,
             report=report,
             settings={
-                "faixa_etaria": faixa,
-                "versiculo_referencia": versiculo.strip(),
-                "licao_final": licao.strip(),
-                "aprendizado_cristao": aprendizado.strip(),
-                "emocao_central": emocao.strip(),
-                "auto_apply_safe_editorial_changes": bool(auto_safe),
-                "allow_paid_image_generation": bool(paid),
+                "faixa_etaria": "3-8",
+                "versiculo_referencia": "",
+                "licao_final": "",
+                "aprendizado_cristao": "",
+                "emocao_central": "",
+                "auto_apply_safe_editorial_changes": True,
+                "allow_paid_image_generation": bool(os.environ.get("OPENROUTER_API_KEY")),
+                "infer_missing_editorial_metadata": True,
                 "final_human_approval_required": True,
             },
         )
         st.session_state["autopilot_run_id"] = active["run_id"]
-        with st.spinner("A equipe FaithBloom está trabalhando. Vou avançar automaticamente até um bloqueio real ou até o pacote final…"):
+        with st.spinner("A equipe FaithBloom está trabalhando. Vou avançar automaticamente até o pacote final ou até um bloqueio que realmente não possa ser resolvido internamente…"):
             active = _advance(project, active)
         st.session_state["autopilot_run_id"] = active["run_id"]
         st.rerun()
 
 if active:
+    status = active.get("status", "pending")
+    incidents = active.get("incidents") or []
+
+    # Um bloqueio editorial comum não deve virar tarefa para a autora. A primeira
+    # ocorrência é retomada automaticamente; o novo motor de revisão tenta inferir
+    # metadados faltantes e executar até 3 ciclos internos de reparo seguro.
+    editorial_incidents = [x for x in incidents if x.get("owner") == "editorial_specialist"]
+    auto_resume_key = f"autopilot_editorial_autoresume_{active.get('run_id')}"
+    if status == "blocked" and len(editorial_incidents) == 1 and not st.session_state.get(auto_resume_key):
+        st.session_state[auto_resume_key] = True
+        with st.spinner("O especialista editorial encontrou uma pendência e já está corrigindo automaticamente. Retomando do checkpoint…"):
+            active = _advance(project, active)
+        st.session_state["autopilot_run_id"] = active["run_id"]
+        st.rerun()
+
     st.markdown("### 2 · Progresso automático")
     status = active.get("status", "pending")
     status_label = {
@@ -151,8 +160,8 @@ if active:
                 if item.get("engineering_plan"):
                     st.caption("Plano técnico foi preparado e o checkpoint de retomada foi preservado.")
             st.caption(
-                "Falhas transitórias podem ser repetidas automaticamente. Defeitos de código são encaminhados e persistidos para retomada após a correção/deploy; "
-                "o aplicativo não modifica seu próprio código silenciosamente."
+                "Pendências editoriais revisáveis são tratadas internamente. Falhas transitórias são repetidas automaticamente. "
+                "Defeitos reais de código ficam registrados para Engenharia/Full Stack com o checkpoint preservado."
             )
 
     if status == "needs_author_review":
@@ -190,7 +199,7 @@ if active:
                     f"geradas: {generation.get('generated', 0)} · reutilizadas: {generation.get('reused', 0)}"
                 )
                 if generation.get("unresolved"):
-                    st.warning("Algumas cenas não tiveram Character Master inequívoco e foram mantidas como pendência segura no pacote final.")
+                    st.warning("Algumas cenas ficaram como pendência segura porque não foi possível resolver um Master visual sem ambiguidade.")
                     st.json(generation.get("unresolved"))
             candidates = package.get("visual_versions") or []
             if candidates:
