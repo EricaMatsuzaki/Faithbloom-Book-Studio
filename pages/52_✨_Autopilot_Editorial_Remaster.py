@@ -25,8 +25,10 @@ if not projects:
     st.page_link("pages/16_🩺_Book_Doctor.py", label="🩺 Importar no Book Doctor →", use_container_width=True)
     st.stop()
 
+preferred_project_id = str(st.session_state.get("autopilot_book_doctor_project_id") or "")
+default_idx = next((i for i, p in enumerate(projects) if str(p.get("id") or "") == preferred_project_id), 0)
 labels = [f"{p.get('titulo','Sem título')} · {p.get('colecao','')} · {p.get('id')}" for p in projects]
-idx = st.selectbox("Livro", range(len(projects)), format_func=lambda i: labels[i])
+idx = st.selectbox("Livro", range(len(projects)), index=default_idx, format_func=lambda i: labels[i])
 project = projects[idx]
 report = carregar_relatorio(project)
 
@@ -38,7 +40,10 @@ st.caption(
 
 runs = list_runs(project)
 active = None
-if runs:
+preferred_run_id = str(st.session_state.get("autopilot_run_id") or "")
+if preferred_run_id:
+    active = load_run(project, preferred_run_id)
+if not active and runs:
     run_options = [r.get("run_id") for r in runs]
     chosen_run = st.selectbox(
         "Execução existente — opcional",
@@ -86,6 +91,9 @@ if not active:
             },
         )
         st.session_state["autopilot_run_id"] = active["run_id"]
+        with st.spinner("A equipe FaithBloom está trabalhando. Vou avançar automaticamente até o próximo gate real ou até o pacote final…"):
+            active = run_autopilot(project, active, chamar_llm)
+        st.session_state["autopilot_run_id"] = active["run_id"]
         st.rerun()
 
 if active:
@@ -110,9 +118,9 @@ if active:
             cols[i % 5].caption(f"tentativas: {cp.get('attempts')}")
 
     if status in {"pending", "blocked", "failed", "running"}:
-        label = "▶️ Continuar do último checkpoint" if status in {"blocked", "failed"} else "🚀 Executar / continuar Autopilot"
+        label = "▶️ Retomar do último checkpoint" if status in {"blocked", "failed"} else "🚀 Continuar Autopilot"
         if st.button(label, type="primary", use_container_width=True):
-            with st.spinner("A equipe FaithBloom está trabalhando. Etapas concluídas serão reutilizadas automaticamente…"):
+            with st.spinner("Retomando exatamente do último checkpoint válido…"):
                 active = run_autopilot(project, active, chamar_llm)
             st.session_state["autopilot_run_id"] = active["run_id"]
             st.rerun()
