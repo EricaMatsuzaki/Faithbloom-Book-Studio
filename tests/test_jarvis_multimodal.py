@@ -32,6 +32,26 @@ def test_pdf_review_reuses_book_doctor_route():
     assert "Revisor" in route["agents"]
 
 
+def test_full_remaster_still_starts_in_book_doctor_but_carries_autopilot_intent():
+    attachment = normalize_attachment("historia.pdf", "application/pdf", b"%PDF-fake")
+    package = build_handoff_package(
+        "Jarvis, faça uma revisão completa e remasterize este livro pelo fluxo completo",
+        [attachment],
+    )
+    assert package["route"]["id"] == "story_review"
+    assert package["workflow_intent"] == "editorial_remaster_full"
+    assert "Full Editorial Remaster" in package["spoken"]
+    assert package["master_promotion_allowed"] is False
+    assert package["requires_confirmation"] is True
+
+
+def test_standard_pdf_review_does_not_force_full_remaster():
+    attachment = normalize_attachment("historia.pdf", "application/pdf", b"%PDF-fake")
+    package = build_handoff_package("Jarvis, apenas analise este manuscrito", [attachment])
+    assert package["route"]["id"] == "story_review"
+    assert package["workflow_intent"] == "standard"
+
+
 def test_image_improvement_reuses_restoration_studio():
     attachment = normalize_attachment("capa.png", "image/png", b"fake-image")
     route = choose_route("melhore esta capa", [attachment])
