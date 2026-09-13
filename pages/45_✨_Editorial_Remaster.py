@@ -6,6 +6,7 @@ from editorial_remaster import (
     criar_rascunho_remaster_editorial,
     confirmar_mapeamento_cenas,
     gate_revisao_editorial,
+    gerar_dossie_revisao,
 )
 
 st.set_page_config(page_title="Editorial Remaster", page_icon="✨", layout="wide")
@@ -16,7 +17,7 @@ hero(
 )
 
 st.info(
-    "🔒 O original do Book Doctor permanece imutável. Nesta etapa nenhuma IA reescreve o livro: primeiro o texto extraído é conferido e as páginas da história são confirmadas pela autora."
+    "🔒 O original do Book Doctor permanece imutável. O FaithBloom diagnostica primeiro; nenhuma cena é reescrita e nenhuma imagem é regenerada sem sua aprovação."
 )
 
 projetos = [
@@ -62,6 +63,7 @@ if st.button("✨ Preparar revisão editorial completa", type="primary"):
         )
         st.session_state["editorial_remaster_draft"] = draft
         st.session_state.pop("editorial_remaster_confirmed", None)
+        st.session_state.pop("editorial_remaster_dossier", None)
     except Exception as exc:
         st.error(f"Não foi possível preparar o remaster editorial: {exc}")
 
@@ -91,11 +93,10 @@ if state and state.get("projeto_book_doctor_id") == projeto_id:
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
     paginas_com_texto = [int(x["pagina"]) for x in paginas if x.get("tem_texto")]
-    default_pages = paginas_com_texto
     selecionadas = st.multiselect(
         "Quais páginas pertencem à história que será revisada?",
         paginas_com_texto,
-        default=default_pages,
+        default=paginas_com_texto,
         help="Desmarque capa, créditos, dedicatória, boas-vindas, ficha pedagógica ou outras páginas que não sejam cenas narrativas.",
     )
 
@@ -103,6 +104,7 @@ if state and state.get("projeto_book_doctor_id") == projeto_id:
         try:
             confirmed = confirmar_mapeamento_cenas(state, selecionadas)
             st.session_state["editorial_remaster_confirmed"] = confirmed
+            st.session_state.pop("editorial_remaster_dossier", None)
             state = confirmed
             st.success("Mapeamento confirmado. A obra está pronta para entrar na revisão editorial.")
         except Exception as exc:
@@ -117,7 +119,7 @@ if state and state.get("projeto_book_doctor_id") == projeto_id:
         for item in gate.get("bloqueios", []):
             st.write("• " + item)
 
-    with st.expander("🧭 Equipe/rota que será reutilizada", expanded=True):
+    with st.expander("🧭 Equipe/rota que será reutilizada", expanded=False):
         for idx, item in enumerate(state.get("rota_editorial") or [], 1):
             st.write(f"{idx}. {item}")
 
@@ -126,6 +128,52 @@ if state and state.get("projeto_book_doctor_id") == projeto_id:
     )
 
     if gate["ok"]:
-        st.info(
-            "Próximo refinamento: conectar este estado confirmado ao Revisor Editorial e gerar um Dossiê de Revisão antes de qualquer reescrita ou nova ilustração."
+        st.markdown("### 4 · Dossiê editorial — diagnóstico antes de corrigir")
+        st.write(
+            "O Revisor Editorial analisa a obra atual e o Prompt-Mestre Compliance confere os requisitos. Nesta etapa o Editor e o Roteirista ainda NÃO alteram nenhuma cena."
         )
+        if st.button("🩺 Gerar Dossiê de Revisão Editorial", type="primary"):
+            try:
+                from openrouter_client import chamar_llm
+                with st.spinner("Revisor Editorial analisando a obra…"):
+                    dossier = gerar_dossie_revisao(state, chamar_llm)
+                st.session_state["editorial_remaster_dossier"] = dossier
+            except Exception as exc:
+                st.error(f"Não foi possível gerar o dossiê: {exc}")
+
+        dossier = st.session_state.get("editorial_remaster_dossier")
+        if dossier and dossier.get("remaster_id") == state.get("remaster_id"):
+            status = dossier.get("revisor", {}).get("status", "—")
+            if status == "APROVADO":
+                st.success("Revisor Editorial: APROVADO. Ainda assim, os demais gates do Prompt-Mestre continuam sendo conferidos.")
+            else:
+                st.warning("Revisor Editorial: REVISAR. Nenhuma alteração foi aplicada automaticamente.")
+
+            notas = dossier.get("revisor", {}).get("notas") or []
+            if notas:
+                st.markdown("#### Notas do Revisor")
+                for nota in notas:
+                    if isinstance(nota, dict):
+                        cena = nota.get("cena") or nota.get("numero") or "—"
+                        problema = nota.get("problema") or nota.get("nota") or nota.get("mensagem") or str(nota)
+                        st.write(f"• Cena {cena}: {problema}")
+                    else:
+                        st.write("• " + str(nota))
+            else:
+                st.write("Nenhuma nota específica do Revisor.")
+
+            compliance = dossier.get("prompt_mestre") or {}
+            st.markdown("#### Prompt-Mestre Compliance")
+            ca, cb, cc = st.columns(3)
+            ca.metric("Bloqueios", len(compliance.get("bloqueios") or []))
+            cb.metric("Recomendações", len(compliance.get("recomendacoes") or []))
+            cc.metric("Itens aprovados", len(compliance.get("aprovados") or []))
+
+            for item in compliance.get("bloqueios") or []:
+                st.error(item.get("mensagem") or str(item))
+            for item in compliance.get("recomendacoes") or []:
+                st.warning(item.get("mensagem") or str(item))
+
+            st.info(
+                "Dossiê concluído sem reescrita. O próximo passo será você aprovar quais correções textuais podem seguir para o Editor de História e, somente quando necessário, para o Roteirista."
+            )
