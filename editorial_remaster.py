@@ -231,3 +231,85 @@ def gate_revisao_editorial(estado: dict) -> dict:
         "requires_human_approval": True,
         "next_step": "story_reviewer" if not bloqueios else "aguardar_confirmacao",
     }
+
+
+def gerar_dossie_revisao(estado: dict, chamar_llm) -> dict:
+    """Executa apenas o diagnóstico editorial inicial, sem reescrever a obra.
+
+    Ordem desta etapa:
+    1. valida o gate e o hash do original;
+    2. chama o Revisor Editorial independente;
+    3. roda o Prompt-Mestre Compliance determinístico;
+    4. devolve/salva um dossiê com problemas e próximos especialistas.
+
+    O Editor de História e o Roteirista NÃO são chamados aqui. Assim, a autora
+    vê o diagnóstico antes de aprovar qualquer alteração textual.
+    """
+    gate = gate_revisao_editorial(estado)
+    if not gate["ok"]:
+        raise ValueError("Revisão editorial bloqueada: " + ", ".join(gate["bloqueios"]))
+
+    original = estado.get("original") or {}
+    original_path = str(original.get("arquivo") or "")
+    before_hash = sha256(original_path)
+    cenas_antes = deepcopy(estado.get("cenas_texto") or [])
+
+    from agents.revisor import revisor_node
+    from prompt_master_compliance import avaliar_prompt_mestre
+
+    work = deepcopy(estado)
+    revisado = revisor_node(work, chamar_llm)
+
+    # O Revisor não tem autorização para reescrever a obra nesta fase.
+    if (revisado.get("cenas_texto") or []) != cenas_antes:
+        raise RuntimeError("O Revisor alterou cenas durante a fase de diagnóstico. Operação bloqueada.")
+
+    compliance = avaliar_prompt_mestre(dict(revisado))
+    after_hash = sha256(original_path)
+    if before_hash != after_hash or after_hash != str(original.get("sha256") or after_hash):
+        raise RuntimeError("O original foi alterado durante a revisão. Operação interrompida.")
+
+    notas = deepcopy(revisado.get("notas_revisor") or [])
+    precisa_revisao_textual = not bool(revisado.get("revisao_aprovada"))
+    proximos = []
+    if precisa_revisao_textual:
+        proximos.extend(["story_editor", "storyteller"])
+    proximos.extend([
+        "heart_arc",
+        "emotional_experience_engine",
+        "prompt_master_compliance",
+        "biblical_reference_validator",
+        "emotional_color_director",
+        "originality_guard",
+    ])
+
+    dossie = {
+        "schema": "faithbloom.editorial-remaster-dossier.v1",
+        "remaster_id": estado.get("remaster_id", ""),
+        "titulo": estado.get("titulo", ""),
+        "gerado_em": _now_iso(),
+        "original_sha256": before_hash,
+        "original_preservado": True,
+        "revisor": {
+            "status": "APROVADO" if revisado.get("revisao_aprovada") else "REVISAR",
+            "notas": notas,
+        },
+        "prompt_mestre": compliance,
+        "precisa_revisao_textual": precisa_revisao_textual,
+        "proximos_especialistas": proximos,
+        "alteracoes_aplicadas": False,
+        "aprovacao_humana_pendente": True,
+        "politica": (
+            "Diagnóstico primeiro. Nenhuma cena é reescrita e nenhuma ilustração é regenerada "
+            "até a autora revisar o dossiê e aprovar a próxima etapa."
+        ),
+    }
+
+    state_path = Path(str(estado.get("arquivo_estado") or ""))
+    if state_path:
+        pasta = state_path.parent if state_path.suffix else state_path
+        pasta.mkdir(parents=True, exist_ok=True)
+        dossier_path = pasta / "editorial_dossier.json"
+        dossier_path.write_text(json.dumps(dossie, ensure_ascii=False, indent=2), encoding="utf-8")
+        dossie["arquivo_dossie"] = str(dossier_path)
+    return dossie
