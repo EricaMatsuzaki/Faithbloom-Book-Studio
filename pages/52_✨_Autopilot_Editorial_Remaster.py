@@ -1,9 +1,15 @@
+from pathlib import Path
+
 import streamlit as st
 
 from estilo import aplicar_estilo, hero
 from book_doctor import listar_projetos, carregar_relatorio
 from editorial_remaster_autopilot import (
     STAGES, approve_final_remaster, list_runs, load_run, new_run, run_autopilot,
+)
+from editorial_remaster_visual_autopilot import (
+    approve_run_visual_candidates_and_quality,
+    run_visual_autopilot,
 )
 from openrouter_client import chamar_llm
 
@@ -18,6 +24,15 @@ st.info(
     "🔒 O original nunca é sobrescrito. O Autopilot pode aplicar melhorias editoriais seguras somente na versão derivada. "
     "Character/Color Masters, Style DNA e versões visuais não são promovidos silenciosamente."
 )
+
+
+def _advance(project: dict, run: dict) -> dict:
+    """Avança texto/emoção/identidade e, ao chegar ao final, prepara o visual."""
+    current = run_autopilot(project, run, chamar_llm)
+    if current.get("status") == "needs_author_review":
+        current = run_visual_autopilot(project, current)
+    return current
+
 
 projects = [p for p in listar_projetos() if p.get("tipo_projeto") == "story"]
 if not projects:
@@ -35,7 +50,7 @@ report = carregar_relatorio(project)
 st.markdown("### Como o Autopilot trabalha")
 st.caption(
     "Book Doctor → mapeamento da história → Revisor → Storyteller + Heart Arc → revisão final → Moral/Bíblia → "
-    "emoções + Psicologia das Cores → Style DNA + Character Masters → handoff visual → QA/preflight → pacote final."
+    "emoções + Psicologia das Cores → Style DNA + Character Masters → handoff visual → candidatas visuais autorizadas → QA → pacote final."
 )
 
 runs = list_runs(project)
@@ -67,9 +82,9 @@ if not active:
         help="Isso permite aplicar automaticamente uma candidata do Storyteller somente quando os guards confirmarem preservação da essência, moral e mensagem bíblica. O original e os Masters permanecem protegidos.",
     )
     paid = st.checkbox(
-        "Autorizar geração visual paga quando o pipeline visual estiver habilitado e todos os Masters estiverem inequívocos",
+        "Autorizar geração visual paga durante este Autopilot quando Style DNA e Character Masters estiverem inequívocos",
         value=False,
-        help="Nunca aprova automaticamente a imagem gerada. A candidata continua pendente para sua decisão final.",
+        help="Pode consumir créditos da OpenRouter. As imagens são criadas como candidatas derivadas e só serão aprovadas se você aprovar o pacote final.",
     )
     consent = st.checkbox(
         "Confirmo que quero iniciar a revisão completa automática e receber o resultado consolidado no final.",
@@ -91,8 +106,8 @@ if not active:
             },
         )
         st.session_state["autopilot_run_id"] = active["run_id"]
-        with st.spinner("A equipe FaithBloom está trabalhando. Vou avançar automaticamente até o próximo gate real ou até o pacote final…"):
-            active = run_autopilot(project, active, chamar_llm)
+        with st.spinner("A equipe FaithBloom está trabalhando. Vou avançar automaticamente até um bloqueio real ou até o pacote final…"):
+            active = _advance(project, active)
         st.session_state["autopilot_run_id"] = active["run_id"]
         st.rerun()
 
@@ -121,7 +136,7 @@ if active:
         label = "▶️ Retomar do último checkpoint" if status in {"blocked", "failed"} else "🚀 Continuar Autopilot"
         if st.button(label, type="primary", use_container_width=True):
             with st.spinner("Retomando exatamente do último checkpoint válido…"):
-                active = run_autopilot(project, active, chamar_llm)
+                active = _advance(project, active)
             st.session_state["autopilot_run_id"] = active["run_id"]
             st.rerun()
 
@@ -167,22 +182,52 @@ if active:
             st.write("**Style DNA utilizado:**", package.get("style_dna") or "—")
             st.write("**Character Masters vinculados:**")
             st.json(package.get("character_masters") or [])
+            visual_stage = ((active.get("stages") or {}).get("visual_preflight") or {}).get("result") or {}
+            generation = visual_stage.get("generation") or {}
+            if generation:
+                st.caption(
+                    f"Geração visual autorizada: {'sim' if generation.get('authorized') else 'não'} · "
+                    f"geradas: {generation.get('generated', 0)} · reutilizadas: {generation.get('reused', 0)}"
+                )
+                if generation.get("unresolved"):
+                    st.warning("Algumas cenas não tiveram Character Master inequívoco e foram mantidas como pendência segura no pacote final.")
+                    st.json(generation.get("unresolved"))
             candidates = package.get("visual_versions") or []
             if candidates:
-                st.warning("Há candidatas visuais derivadas aguardando sua decisão. Nenhuma foi promovida automaticamente.")
-                st.json(candidates)
+                st.warning("Candidatas visuais derivadas prontas para sua decisão final. Nenhuma foi promovida automaticamente.")
+                for i, candidate in enumerate(candidates, 1):
+                    path = str(candidate.get("derivado") or "")
+                    st.markdown(f"**Candidata {i} · {candidate.get('operacao','Remastered')}**")
+                    if path and Path(path).exists():
+                        st.image(path, use_container_width=True)
+                    else:
+                        st.caption("Preview não está acessível nesta sessão.")
+                    with st.expander("Detalhes técnicos"):
+                        st.json(candidate)
             else:
-                st.info("Nenhuma candidata visual automática foi promovida. O preflight visual está registrado no pacote.")
+                st.info("Nenhuma candidata visual foi gerada automaticamente. O preflight visual e os assets extraídos permanecem registrados.")
         with t4:
             st.json(package.get("quality_preflight") or {})
+            if package.get("quality_guardian_final"):
+                st.write("**Quality Guardian final:**")
+                st.json(package.get("quality_guardian_final"))
             st.write("**Histórico de recovery:**")
             st.json(package.get("incidents_and_recovery") or [])
 
         c1, c2 = st.columns(2)
         if c1.button("✅ Aprovar edição Remastered", type="primary", use_container_width=True):
-            active = approve_final_remaster(project, active, approved=True)
-            st.success("Edição Remastered aprovada pela autora. Nenhum Master foi promovido e nada foi publicado automaticamente.")
-            st.rerun()
+            prepared = approve_run_visual_candidates_and_quality(project, active)
+            visual_after = (
+                (((prepared.get("stages") or {}).get("quality_preflight") or {}).get("result") or {})
+                .get("visual_after_author_approval") or {}
+            )
+            if visual_after.get("ok"):
+                active = approve_final_remaster(project, prepared, approved=True)
+                st.success("Edição Remastered aprovada pela autora. QA final executado; nenhum Master foi promovido e nada foi publicado automaticamente.")
+                st.rerun()
+            else:
+                active = prepared
+                st.error("A aprovação final não foi concluída porque o Quality Gate ainda encontrou uma pendência visual segura. O progresso foi preservado para correção e retomada.")
         if c2.button("✏️ Manter para ajustes pontuais", use_container_width=True):
             active = approve_final_remaster(project, active, approved=False)
             st.info("Pacote mantido para ajustes. O original permanece preservado.")
