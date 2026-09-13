@@ -33,14 +33,30 @@ def test_character_request_ignores_incompatible_old_exam_context(monkeypatch):
         raise AssertionError("Character Universe explícito não deve depender do diálogo LLM com histórico antigo.")
 
     monkeypatch.setattr(dialogue, "_post_com_retry", should_not_call_model)
+    monkeypatch.setattr(
+        dialogue,
+        "execute_missing_dna_fill",
+        lambda text: {
+            "status": "completed",
+            "character_id": "teo-1",
+            "character_name": "Téo",
+            "collection": "Pequenas Histórias, Grandes Lições",
+            "filled_fields": ["olhos", "proporcoes"],
+            "remaining_missing_fields": [],
+            "reference_count": 4,
+            "color_master_preserved": True,
+            "references_preserved": True,
+            "character_preserved": True,
+        },
+    )
+
     reply = dialogue.build_natural_reply(REQUEST, history=history, route_result=result)
     folded = reply.casefold()
 
     assert "téo" in folded
     assert "dna visual" in folded
     assert "color master" in folded
-    assert "campos faltantes" in folded
-    assert "sem criar outro personagem" in folded
+    assert "4 referências" in folded
     assert "preparatório" not in folded
     assert "certifica" not in folded
     assert "3–8" not in reply
