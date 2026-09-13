@@ -24,6 +24,11 @@ from translation_localization import (
 from japanese_localization_bridge import localizar_livro_com_reading_guard
 
 
+def localizar_livro(state, chamar_llm, locale, **kwargs):
+    """Ponte compatível com o contrato legado, com Reading Guard em ja-JP."""
+    return localizar_livro_com_reading_guard(state, chamar_llm, locale, **kwargs)
+
+
 def _perfil_para_locale(state: dict, locale: str) -> dict:
     perfis = state.get("translation_profiles", {}) or {}
     p = dict(perfis.get(locale, {}) or {})
@@ -40,7 +45,6 @@ def _bible_record(state: dict, locale: str) -> dict:
     registros = state.get("bible_records", {}) or {}
     if locale in registros:
         return registros[locale]
-    # Sem texto aprovado: somente referência. Nunca inventar tradução bíblica.
     return criar_registro_biblico(state.get("versiculo_referencia", ""), locale)
 
 
@@ -78,7 +82,7 @@ def tradutor_node(state: LivroState, chamar_llm) -> LivroState:
         instrucoes += localization_excellence_contract(locale, perfil["faixa_etaria_label"])
         instrucoes += skill_contract("translator_localizer")
 
-        resultado = localizar_livro_com_reading_guard(
+        resultado = localizar_livro(
             dict(state),
             chamar_llm,
             locale,
@@ -104,5 +108,4 @@ def tradutor_node(state: LivroState, chamar_llm) -> LivroState:
     return state
 
 
-# Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
 SKILL_PROFILE_IDS = ('translator_localizer',)
