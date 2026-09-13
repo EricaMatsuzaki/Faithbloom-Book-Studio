@@ -153,12 +153,23 @@ if rel:
     st.subheader("👀 Revisões visuais/editoriais encaminhadas aos Studios especializados")
     for x in rel['revisoes_pendentes']: st.write("• "+x)
 
-    st.markdown("### ✨ Próxima etapa: Restoration Studio")
+    if rel.get('tipo_projeto') == 'story' and projeto:
+        st.markdown("### ✨ Full Editorial Remaster — Autopilot")
+        st.write(
+            "Para Story Books, você não precisa abrir cada Studio manualmente. O Autopilot usa checkpoints para passar por "
+            "Revisor, Storyteller + Heart Arc, Moral/Bíblia, emoções, Psicologia das Cores, Style DNA, Character Masters, visual e QA; "
+            "depois entrega um pacote consolidado para sua decisão final."
+        )
+        if st.button("✨ Iniciar Revisão Completa Automática", type="primary", use_container_width=True):
+            st.session_state['autopilot_book_doctor_project_id'] = projeto.get('id')
+            st.switch_page("pages/52_✨_Autopilot_Editorial_Remaster.py")
+
+    st.markdown("### ✨ Próxima etapa manual: Restoration Studio")
     if rel.get("miolo", {}).get("modo_auditoria") == "rapida":
-        st.write("A triagem rápida serve para decidir onde investigar. Para levar imagens extraídas ao Restoration Studio, rode a auditoria completa depois — sem alterar o original preservado.")
+        st.write("A triagem rápida serve para decidir onde investigar. Para levar imagens extraídas ao Restoration Studio manualmente, rode a auditoria completa depois — sem alterar o original preservado.")
     else:
-        st.write("Agora você pode escolher uma imagem/página, vincular Character Master e Style DNA, decidir **Manter / Melhorar tecnicamente / Limpar line art / Corrigir personagem / Reilustrar / Criar variação** e comparar Antes × Depois.")
-        st.page_link("pages/19_✨_Restoration_Studio.py",label="✨ Abrir Restoration Studio →",use_container_width=True)
+        st.write("No modo manual, você pode escolher uma imagem/página, vincular Character Master e Style DNA, decidir **Manter / Melhorar tecnicamente / Limpar line art / Corrigir personagem / Reilustrar / Criar variação** e comparar Antes × Depois.")
+        st.page_link("pages/19_✨_Restoration_Studio.py",label="✨ Abrir Restoration Studio manualmente →",use_container_width=True)
     if rel.get('tipo_projeto') == 'coloring':
         st.page_link("pages/20_🖍️_Coloring_Book_Doctor.py",label="🖍️ Abrir Coloring Book Doctor — Age/Complexity + Cover Master →",use_container_width=True)
     if projeto:
