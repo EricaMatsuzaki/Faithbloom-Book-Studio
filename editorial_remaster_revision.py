@@ -144,7 +144,6 @@ def aplicar_proposta_edicao(state: dict, proposta: dict, *, aprovado: bool) -> d
         if atual != esperado:
             raise ValueError("A cena mudou desde que a proposta foi gerada. Gere uma nova proposta antes de aplicar.")
         nova_cena = deepcopy(proposta.get("depois") or {})
-        # Metadados de origem pertencem à edição importada e devem sobreviver.
         nova_cena["numero"] = atual.get("numero", registro["numero_cena"])
         nova_cena["pagina_origem"] = atual.get("pagina_origem")
         nova_cena["origem"] = "editorial_remaster_aprovado"
@@ -157,27 +156,30 @@ def aplicar_proposta_edicao(state: dict, proposta: dict, *, aprovado: bool) -> d
 
 
 def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
-    """Revisor reavalia o texto; quando aprovado, gera mapa emocional e compliance.
+    """Revisor + especialista emocional + Psicologia das Cores, em fluxo automático.
 
-    Não chama Roteirista automaticamente. Se o Revisor continuar reprovando após
-    edições pontuais, o retorno sinaliza que uma intervenção estrutural pode ser
-    necessária e deve ser autorizada separadamente.
+    Quando o texto passa no Revisor, o FaithBloom analisa automaticamente o arco
+    emocional de todas as cenas em uma única chamada e o motor canônico escolhe
+    cor/atmosfera/luz conforme a Psicologia das Cores. A autora não precisa
+    preencher fichas; overrides manuais permanecem possíveis e protegidos.
     """
     _verify_original(state)
     if not state.get("dossie_editorial_aprovado_para_edicao"):
         raise ValueError("Dossiê Editorial ainda não foi aprovado para edição.")
 
     from agents.revisor import revisor_node
-    from emotional_color_director import construir_mapa_emocional
+    from editorial_remaster_emotional import analisar_emocoes_automaticamente
     from prompt_master_compliance import avaliar_prompt_mestre
     from biblical_reference_validator import reference_gate
 
     work = deepcopy(state)
     revisado = revisor_node(work, chamar_llm)
     aprovado = bool(revisado.get("revisao_aprovada"))
-    mapa = construir_mapa_emocional(revisado.get("cenas_texto") or []) if aprovado else []
+
     if aprovado:
-        revisado["mapa_emocional"] = mapa
+        revisado = analisar_emocoes_automaticamente(revisado, chamar_llm)
+    mapa = deepcopy(revisado.get("mapa_emocional") or []) if aprovado else []
+
     compliance = avaliar_prompt_mestre(dict(revisado))
     bible = reference_gate(dict(revisado))
 
@@ -185,7 +187,11 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
     novo["revisao_aprovada"] = aprovado
     novo["notas_revisor"] = deepcopy(revisado.get("notas_revisor") or [])
     if aprovado:
+        novo["cenas_texto"] = deepcopy(revisado.get("cenas_texto") or [])
         novo["mapa_emocional"] = mapa
+        novo["metadata_emocional_confirmada"] = True
+        novo["metadata_emocional_modo"] = revisado.get("metadata_emocional_modo", "automatico_com_override_humano")
+        novo["analise_emocional_automatica"] = deepcopy(revisado.get("analise_emocional_automatica") or {})
     novo["prompt_master_compliance_remaster"] = compliance
     novo["bible_reference_gate_remaster"] = bible
     novo["necessita_intervencao_estrutural_roteirista"] = not aprovado
@@ -196,6 +202,7 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
         "aprovado": aprovado,
         "notas": deepcopy(novo.get("notas_revisor") or []),
         "mapa_emocional": deepcopy(novo.get("mapa_emocional") or []),
+        "analise_emocional_automatica": deepcopy(novo.get("analise_emocional_automatica") or {}),
         "prompt_mestre": compliance,
         "bible_reference": bible,
         "necessita_roteirista": not aprovado,
