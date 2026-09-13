@@ -18,10 +18,10 @@ from localization_excellence import (
 )
 from translation_localization import (
     normalize_locale,
-    localizar_livro,
     criar_registro_biblico,
     revisar_localizacao_estrutural,
 )
+from japanese_localization_bridge import localizar_livro_com_reading_guard
 
 
 def _perfil_para_locale(state: dict, locale: str) -> dict:
@@ -78,7 +78,7 @@ def tradutor_node(state: LivroState, chamar_llm) -> LivroState:
         instrucoes += localization_excellence_contract(locale, perfil["faixa_etaria_label"])
         instrucoes += skill_contract("translator_localizer")
 
-        resultado = localizar_livro(
+        resultado = localizar_livro_com_reading_guard(
             dict(state),
             chamar_llm,
             locale,
