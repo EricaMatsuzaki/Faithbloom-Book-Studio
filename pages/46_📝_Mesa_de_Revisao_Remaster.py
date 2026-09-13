@@ -153,8 +153,8 @@ if state.get("dossie_editorial_aprovado_para_edicao"):
     result = st.session_state.get(f"final_review_{state.get('remaster_id')}")
     if result:
         if result.get("pronto_para_visual"):
-            st.success("✅ Texto aprovado e Prompt-Mestre liberado. A obra está pronta para seguir ao Restoration Studio com os Masters oficiais.")
-            st.page_link("pages/19_✨_Restoration_Studio.py", label="✨ Abrir Restoration Studio →", use_container_width=True)
+            st.success("✅ Texto aprovado e Prompt-Mestre liberado. A obra está pronta para preparar o handoff visual com os Masters oficiais.")
+            st.page_link("pages/47_🎨_Handoff_Visual_Remaster.py", label="🎨 Preparar Handoff Visual →", use_container_width=True)
         else:
             st.warning("A obra ainda precisa de revisão textual ou de resolver um bloqueio do Prompt-Mestre.")
             if result.get("necessita_roteirista"):
