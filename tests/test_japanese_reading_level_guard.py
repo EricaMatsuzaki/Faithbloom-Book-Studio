@@ -1,8 +1,13 @@
 from japanese_reading_level import (
     MEXT_ELEMENTARY_KANJI_COUNTS,
     MEXT_ELEMENTARY_TOTAL,
+    MEXT_KANJI_BY_GRADE,
+    audit_kanji_for_grade,
+    cumulative_kanji_through_grade,
+    grade_for_kanji,
     japanese_reading_contract,
     japanese_reading_profile,
+    validate_exact_mext_allocations,
 )
 from japanese_localization_bridge import (
     localizar_livro_com_reading_guard,
@@ -13,6 +18,36 @@ from japanese_localization_bridge import (
 def test_mext_counts_match_elementary_total():
     assert MEXT_ELEMENTARY_KANJI_COUNTS == {1: 80, 2: 160, 3: 200, 4: 202, 5: 193, 6: 191}
     assert MEXT_ELEMENTARY_TOTAL == 1026
+    assert {grade: len(chars) for grade, chars in MEXT_KANJI_BY_GRADE.items()} == MEXT_ELEMENTARY_KANJI_COUNTS
+    assert validate_exact_mext_allocations() is True
+
+
+def test_current_mext_reallocation_is_present():
+    # Current 平成29年告示 allocation, not the older 1006-character table.
+    assert grade_for_kanji("茨") == 4
+    assert grade_for_kanji("媛") == 4
+    assert grade_for_kanji("城") == 4
+    assert grade_for_kanji("囲") == 5
+    assert grade_for_kanji("胃") == 6
+    assert grade_for_kanji("恩") == 6
+
+
+def test_cumulative_counts_follow_school_reading_progression():
+    assert len(cumulative_kanji_through_grade(1)) == 80
+    assert len(cumulative_kanji_through_grade(2)) == 240
+    assert len(cumulative_kanji_through_grade(3)) == 440
+    assert len(cumulative_kanji_through_grade(4)) == 642
+    assert len(cumulative_kanji_through_grade(5)) == 835
+    assert len(cumulative_kanji_through_grade(6)) == 1026
+
+
+def test_character_audit_flags_advanced_kanji_without_deleting_it():
+    # 花 is grade 1; 種 is grade 4. Grade-1 text may keep 種, but it needs support.
+    audit = audit_kanji_for_grade("花の種", 1)
+    assert {x["kanji"] for x in audit["within_target"]} == {"花"}
+    assert {x["kanji"] for x in audit["above_target"]} == {"種"}
+    assert audit["needs_reading_support"]
+    assert audit["ok_without_support"] is False
 
 
 def test_6_8_preserves_good_word_and_uses_furigana_support():
@@ -20,10 +55,12 @@ def test_6_8_preserves_good_word_and_uses_furigana_support():
     assert profile["school_grade_reference"] == "grade-1-to-grade-2"
     assert profile["furigana_policy"]["prefer_natural_word"] is True
     assert profile["furigana_policy"]["support_advanced_kanji"] is True
+    assert profile["exact_grade_lists_loaded"] is True
     contract = japanese_reading_contract("6–8")
     assert "ふりがな" in contract
     assert "furigana_annotations" in contract
     assert "weaker expression" in contract
+    assert "character-by-character" in contract
 
 
 def test_broad_9_12_is_adaptive_not_fake_exact_grade():
