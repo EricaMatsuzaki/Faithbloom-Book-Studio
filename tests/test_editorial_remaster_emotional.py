@@ -45,7 +45,7 @@ def test_emotional_metadata_stays_pending_until_every_scene_is_confirmed(tmp_pat
     )
     assert state["metadata_emocional_confirmada"] is True
     assert len(state["mapa_emocional"]) == 2
-    assert state["mapa_emocional"][0]["emocao_narrativa"] == "curiosidade"
+    assert state["mapa_emocional"][0]["direcao"]["emocao_narrativa"] == "curiosidade"
 
 
 def test_invalid_emotion_is_rejected(tmp_path):
