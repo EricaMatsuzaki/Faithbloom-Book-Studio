@@ -112,3 +112,69 @@ def test_confirmed_mapping_builds_only_explicitly_selected_pages():
     assert [x["pagina_origem"] for x in confirmed["cenas_texto"]] == [2, 3]
     assert confirmed["cenas_texto"][0]["texto"] == "Mel olhou para a semente."
     assert all(x["origem"] == "book_doctor_pdf" for x in confirmed["cenas_texto"])
+
+
+def _confirmed_state(tmp_path: Path) -> dict:
+    project = _project(tmp_path)
+    draft = editorial_remaster.criar_rascunho_remaster_editorial(
+        project,
+        faixa_etaria="3-8",
+        versiculo_referencia="Eclesiastes 3:1",
+        licao_final="Há um tempo certo para cada coisa.",
+        aprendizado_cristao="aprender a esperar com confiança em Deus",
+        emocao_central="impaciência",
+    )
+    draft["paginas_texto_extraido"] = [
+        {"pagina": 4, "texto_extraido": "Mel olhou para o vaso e quis ver a semente crescer logo.", "tem_texto": True},
+        {"pagina": 5, "texto_extraido": "Ela esperou, observou e percebeu que algumas coisas precisam de tempo.", "tem_texto": True},
+    ]
+    return editorial_remaster.confirmar_mapeamento_cenas(draft, [4, 5])
+
+
+def test_dossier_runs_reviewer_first_without_rewriting_story(tmp_path):
+    state = _confirmed_state(tmp_path)
+    original_hash = state["original"]["sha256"]
+    scenes_before = json.loads(json.dumps(state["cenas_texto"], ensure_ascii=False))
+    calls = []
+
+    def fake_llm(*, sistema, instrucao):
+        calls.append((sistema, instrucao))
+        return {
+            "status": "REVISAR",
+            "notas": [
+                {"cena": 1, "problema": "Mostrar a impaciência mais pela ação e menos pela explicação."}
+            ],
+        }
+
+    dossier = editorial_remaster.gerar_dossie_revisao(state, fake_llm)
+
+    assert len(calls) == 1
+    assert "Revisor/Editor independente" in calls[0][0]
+    assert dossier["revisor"]["status"] == "REVISAR"
+    assert dossier["precisa_revisao_textual"] is True
+    assert dossier["alteracoes_aplicadas"] is False
+    assert dossier["aprovacao_humana_pendente"] is True
+    assert "story_editor" in dossier["proximos_especialistas"]
+    assert "storyteller" in dossier["proximos_especialistas"]
+    assert state["cenas_texto"] == scenes_before
+    assert book_doctor.sha256(state["original"]["arquivo"]) == original_hash
+    assert dossier["prompt_mestre"]["faixa_etaria"] == "3-8"
+    assert "Lição de Moral" in dossier["prompt_mestre"]["aprovados"]
+
+
+def test_dossier_does_not_call_editor_or_storyteller_when_reviewer_approves(tmp_path):
+    state = _confirmed_state(tmp_path)
+    calls = []
+
+    def fake_llm(*, sistema, instrucao):
+        calls.append((sistema, instrucao))
+        return {"status": "APROVADO", "notas": []}
+
+    dossier = editorial_remaster.gerar_dossie_revisao(state, fake_llm)
+
+    assert len(calls) == 1
+    assert dossier["revisor"]["status"] == "APROVADO"
+    assert dossier["precisa_revisao_textual"] is False
+    assert "story_editor" not in dossier["proximos_especialistas"]
+    assert "storyteller" not in dossier["proximos_especialistas"]
+    assert dossier["alteracoes_aplicadas"] is False
