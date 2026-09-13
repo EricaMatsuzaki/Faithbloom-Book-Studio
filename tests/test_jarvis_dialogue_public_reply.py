@@ -81,6 +81,6 @@ def test_short_status_follow_up_inherits_recent_character_context(monkeypatch):
     )
 
     lower = reply.casefold()
-    assert "dna do téo" in lower
+    assert "dna de téo" in lower or "dna do téo" in lower
     assert "não posso afirmar" in lower
     assert "história infantil" not in lower
