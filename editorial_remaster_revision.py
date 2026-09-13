@@ -158,17 +158,17 @@ def aplicar_proposta_edicao(state: dict, proposta: dict, *, aprovado: bool) -> d
 def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
     """Revisor + especialista emocional + Psicologia das Cores, em fluxo automático.
 
-    Quando o texto passa no Revisor, o FaithBloom analisa automaticamente o arco
-    emocional de todas as cenas em uma única chamada e o motor canônico escolhe
-    cor/atmosfera/luz conforme a Psicologia das Cores. A autora não precisa
-    preencher fichas; overrides manuais permanecem possíveis e protegidos.
+    Se o Revisor já devolveu metadados emocionais válidos, eles são reutilizados
+    diretamente. Só quando faltam emoção/intensidade o especialista emocional é
+    chamado. Em ambos os casos, as cores vêm do motor canônico determinístico.
     """
     _verify_original(state)
     if not state.get("dossie_editorial_aprovado_para_edicao"):
         raise ValueError("Dossiê Editorial ainda não foi aprovado para edição.")
 
     from agents.revisor import revisor_node
-    from editorial_remaster_emotional import analisar_emocoes_automaticamente
+    from editorial_remaster_emotional import analisar_emocoes_automaticamente, metadata_emocional_completa
+    from emotional_color_director import construir_mapa_emocional
     from prompt_master_compliance import avaliar_prompt_mestre
     from biblical_reference_validator import reference_gate
 
@@ -177,7 +177,14 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
     aprovado = bool(revisado.get("revisao_aprovada"))
 
     if aprovado:
-        revisado = analisar_emocoes_automaticamente(revisado, chamar_llm)
+        emocional = metadata_emocional_completa(revisado)
+        if emocional.get("ok"):
+            revisado = deepcopy(revisado)
+            revisado["mapa_emocional"] = construir_mapa_emocional(revisado.get("cenas_texto") or [])
+            revisado["metadata_emocional_confirmada"] = True
+            revisado.setdefault("metadata_emocional_modo", "reutilizado_do_revisor")
+        else:
+            revisado = analisar_emocoes_automaticamente(revisado, chamar_llm)
     mapa = deepcopy(revisado.get("mapa_emocional") or []) if aprovado else []
 
     compliance = avaliar_prompt_mestre(dict(revisado))
