@@ -12,7 +12,7 @@ from editorial_remaster_visual_autopilot import (
     approve_run_visual_candidates_and_quality,
     run_visual_autopilot,
 )
-from openrouter_client import chamar_llm
+from ai_provider_router import chamar_llm, provider_status
 
 st.set_page_config(page_title="Autopilot Editorial Remaster", page_icon="✨", layout="wide")
 aplicar_estilo()
@@ -54,6 +54,14 @@ st.caption(
     "emoções + Psicologia das Cores → Style DNA + Character Masters → handoff visual → candidatas visuais → QA → pacote final."
 )
 
+provider = provider_status()
+if provider.get("gemini"):
+    st.caption("🧠 Texto do Autopilot: Gemini API direto (principal). Groq/OpenRouter ficam apenas como fallbacks quando configurados.")
+elif provider.get("groq"):
+    st.warning("Gemini ainda não está configurado; o Autopilot usará Groq como provedor de texto. Adicione GEMINI_API_KEY para usar Gemini como principal.")
+else:
+    st.warning("Configure GEMINI_API_KEY no Streamlit Secrets para o Autopilot usar a Gemini API diretamente e deixar de depender do saldo da OpenRouter para texto.")
+
 runs = list_runs(project)
 active = None
 preferred_run_id = str(st.session_state.get("autopilot_run_id") or "")
@@ -77,8 +85,8 @@ if not active:
     )
     if os.environ.get("OPENROUTER_API_KEY"):
         st.caption(
-            "Ao iniciar a revisão completa, você autoriza o uso dos modelos configurados — inclusive geração de candidatas visuais derivadas, "
-            "que pode consumir créditos. Nenhuma imagem vira Master e nada é publicado automaticamente."
+            "A OpenRouter fica restrita aos recursos que ainda dependem dela, como a geração visual configurada atualmente. "
+            "As tarefas editoriais de texto usam o AI Provider Router e priorizam Gemini."
         )
     else:
         st.caption("A geração visual automática ficará pendente se não houver uma chave/modelo de imagem configurado no servidor.")
@@ -109,9 +117,6 @@ if active:
     status = active.get("status", "pending")
     incidents = active.get("incidents") or []
 
-    # Um bloqueio editorial comum não deve virar tarefa para a autora. A primeira
-    # ocorrência é retomada automaticamente; o novo motor de revisão tenta inferir
-    # metadados faltantes e executar até 3 ciclos internos de reparo seguro.
     editorial_incidents = [x for x in incidents if x.get("owner") == "editorial_specialist"]
     auto_resume_key = f"autopilot_editorial_autoresume_{active.get('run_id')}"
     if status == "blocked" and len(editorial_incidents) == 1 and not st.session_state.get(auto_resume_key):
