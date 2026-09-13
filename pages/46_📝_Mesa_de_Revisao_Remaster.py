@@ -11,14 +11,20 @@ from editorial_remaster_revision import (
     aplicar_proposta_edicao,
     rodar_revisao_final_textual,
 )
+from editorial_remaster_storyteller import (
+    gerar_proposta_enriquecimento_roteirista,
+    aplicar_proposta_enriquecimento_roteirista,
+)
 
 st.set_page_config(page_title="Mesa de Revisão Remaster", page_icon="📝", layout="wide")
 aplicar_estilo()
 hero(
     "📝 Mesa de Revisão — Full Editorial Remaster",
-    "Compare original × proposta, aprove cena por cena e só então libere a obra para a remasterização visual.",
+    "Revise a obra inteira com Editor, Storyteller, Heart Arc, experiência, moral, Bíblia, emoções e cores antes do handoff visual.",
 )
-st.info("🔒 Nenhuma proposta altera o PDF original. Alterações entram somente na versão Remastered e exigem aprovação explícita.")
+st.info(
+    "🔒 O PDF original permanece imutável. O fluxo trabalha somente em versões derivadas e exige sua aprovação nos pontos editoriais decisivos."
+)
 
 
 def _states_for_project(project: dict) -> list[dict]:
@@ -84,13 +90,14 @@ else:
         try:
             state = aprovar_dossie_para_edicao(state, dossier, aprovado=True)
             st.session_state[key] = state
-            st.success("Dossiê aprovado. O Editor de História pode gerar propostas, mas nada será aplicado sem nova aprovação.")
+            st.success("Dossiê aprovado. O Editor e o Storyteller podem trabalhar na versão derivada; o original continua protegido.")
             st.rerun()
         except Exception as exc:
             st.error(str(exc))
 
 if state.get("dossie_editorial_aprovado_para_edicao"):
-    st.markdown("### 2 · Editor de História — proposta cena por cena")
+    st.markdown("### 2 · Editor de História — ajustes pontuais opcionais")
+    st.caption("Use esta etapa quando quiser corrigir uma cena específica antes da revisão estrutural completa. O Storyteller avaliará o livro inteiro na etapa seguinte.")
     scenes = state.get("cenas_texto") or []
     scene_numbers = [int(x.get("numero") or i + 1) for i, x in enumerate(scenes)]
     selected = st.selectbox("Cena", scene_numbers)
@@ -123,6 +130,7 @@ if state.get("dossie_editorial_aprovado_para_edicao"):
                 state = aplicar_proposta_edicao(state, proposal, aprovado=True)
                 st.session_state[key] = state
                 st.session_state.pop(f"proposal_{state.get('remaster_id')}_{selected}", None)
+                st.session_state.pop(f"storyteller_enrichment_{state.get('remaster_id')}", None)
                 st.success("Proposta aplicada apenas na versão Remastered. Original preservado.")
                 st.rerun()
             except Exception as exc:
@@ -137,12 +145,80 @@ if state.get("dossie_editorial_aprovado_para_edicao"):
             except Exception as exc:
                 st.error(str(exc))
 
-    st.markdown("### 3 · Revisor final do texto + motores compartilhados")
-    st.caption("Depois das correções que desejar, rode novamente o Revisor. Se aprovado, o FaithBloom gera o mapa emocional/psicologia das cores e confere o Prompt-Mestre.")
-    if st.button("🛡️ Rodar revisão final textual"):
+    st.markdown("### 3 · Storyteller + Heart Arc — revisão completa da experiência")
+    st.caption(
+        "Etapa obrigatória do Full Editorial Review. O Storyteller avalia a obra inteira e pode enriquecer cenas ou acrescentar novas experiências quando houver ganho real — sempre preservando essência, personagens, lição de moral, mensagem bíblica e faixa etária."
+    )
+    storyteller_key = f"storyteller_enrichment_{state.get('remaster_id')}"
+    if st.button("✨ Analisar e enriquecer a obra completa", type="primary"):
         try:
             from openrouter_client import chamar_llm
-            with st.spinner("Revisor e motores compartilhados avaliando a nova versão…"):
+            with st.spinner("Storyteller avaliando Heart Arc, experiência, emoção, descoberta, transformação, moral e fé…"):
+                enriched = gerar_proposta_enriquecimento_roteirista(state, chamar_llm)
+            st.session_state[storyteller_key] = enriched
+        except Exception as exc:
+            st.error(f"Storyteller não concluiu a análise: {exc}")
+
+    enriched = st.session_state.get(storyteller_key)
+    if enriched:
+        analysis = enriched.get("analise") or {}
+        gain = bool(enriched.get("ganho_editorial"))
+        if gain:
+            st.success("O Storyteller encontrou ganho editorial real e criou uma candidata enriquecida.")
+        else:
+            st.info("O Storyteller analisou a obra e não encontrou ganho suficiente para justificar mudanças estruturais.")
+        if analysis.get("diagnostico_geral"):
+            st.write("**Diagnóstico:**", analysis.get("diagnostico_geral"))
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Cenas atuais", len(enriched.get("antes") or []))
+        col2.metric("Cenas propostas", len(enriched.get("depois") or []))
+        col3.metric("Novas experiências/cenas", len(analysis.get("novas_cenas_adicionadas") or []))
+        with st.expander("💗 Heart Arc, experiência e transformação", expanded=True):
+            st.write("**Heart Arc:**", analysis.get("heart_arc") or "—")
+            st.write("**Experiência:**", analysis.get("experiencia") or "—")
+            st.write("**Descoberta/transformação:**", analysis.get("descoberta_transformacao") or "—")
+            st.write("**Lição de moral preservada:**", "Sim" if analysis.get("licao_moral_preservada") else "Não")
+            st.write("**Mensagem bíblica preservada:**", "Sim" if analysis.get("mensagem_biblica_preservada") else "Não")
+            st.write("**Risco de desvio:**", analysis.get("risco_de_desvio") or "—")
+        if gain:
+            with st.expander("📖 Ver candidata enriquecida", expanded=False):
+                for cena in enriched.get("depois") or []:
+                    st.markdown(f"**Cena {cena.get('numero')}**")
+                    st.write(cena.get("texto", ""))
+        a1, a2 = st.columns(2)
+        if a1.button("✅ Aprovar etapa Storyteller", use_container_width=True):
+            try:
+                state = aplicar_proposta_enriquecimento_roteirista(state, enriched, aprovado=True)
+                st.session_state[key] = state
+                st.session_state.pop(storyteller_key, None)
+                st.session_state.pop(f"final_review_{state.get('remaster_id')}", None)
+                st.success("Etapa Storyteller aprovada na versão Remastered. Agora o Revisor final, emoções e cores podem validar o resultado.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+        if a2.button("❌ Rejeitar candidata e manter texto atual", use_container_width=True):
+            try:
+                state = aplicar_proposta_enriquecimento_roteirista(state, enriched, aprovado=False)
+                st.session_state[key] = state
+                st.session_state.pop(storyteller_key, None)
+                st.info("Candidata rejeitada. O texto derivado anterior foi preservado.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+    storyteller_done = state.get("storyteller_enrichment_aprovado") is True
+    st.markdown("### 4 · Revisor final + Moral/Bíblia Guard + Emoções + Psicologia das Cores")
+    if storyteller_done:
+        st.caption(
+            "O Storyteller já passou pela obra. Agora o Revisor final valida o texto; o Prompt-Mestre e Bible Guard conferem os requisitos; depois o FaithBloom gera/reutiliza emoções e deriva a Psicologia das Cores automaticamente."
+        )
+    else:
+        st.warning("Conclua e aprove a etapa Storyteller acima antes da revisão final. Assim o livro realmente passa pelo fluxo editorial completo.")
+
+    if st.button("🛡️ Rodar revisão final completa", disabled=not storyteller_done):
+        try:
+            from openrouter_client import chamar_llm
+            with st.spinner("Revisor, Prompt-Mestre, Bible Guard, emoções e Psicologia das Cores avaliando a nova versão…"):
                 result = rodar_revisao_final_textual(state, chamar_llm)
             state = result["estado"]
             st.session_state[key] = state
@@ -153,22 +229,22 @@ if state.get("dossie_editorial_aprovado_para_edicao"):
     result = st.session_state.get(f"final_review_{state.get('remaster_id')}")
     if result:
         if result.get("pronto_para_visual"):
-            st.success("✅ Texto aprovado e Prompt-Mestre liberado. A obra está pronta para preparar o handoff visual com os Masters oficiais.")
+            st.success("✅ Revisão editorial completa aprovada: texto, Prompt-Mestre, Bíblia, emoções e cores liberados. A obra está pronta para o handoff visual.")
             st.page_link("pages/47_🎨_Handoff_Visual_Remaster.py", label="🎨 Preparar Handoff Visual →", use_container_width=True)
         else:
-            st.warning("A obra ainda precisa de revisão textual ou de resolver um bloqueio do Prompt-Mestre.")
-            if result.get("necessita_roteirista"):
-                st.info("O Revisor ainda encontrou problemas após as edições pontuais. Neste ponto o Roteirista deve entrar somente com autorização específica para intervenção estrutural.")
+            st.warning("A obra ainda precisa resolver uma pendência textual ou um bloqueio do Prompt-Mestre/Bible Guard antes do visual.")
             for note in result.get("notas") or []:
                 st.write("• " + (note.get("mensagem") or note.get("problema") or str(note) if isinstance(note, dict) else str(note)))
             for block in (result.get("prompt_mestre") or {}).get("bloqueios") or []:
                 st.error(block.get("mensagem") or str(block))
 
     st.markdown("### Histórico")
-    history = state.get("historico_revisao_textual") or []
-    if not history:
-        st.caption("Nenhuma proposta aplicada/rejeitada ainda.")
-    else:
+    text_history = state.get("historico_revisao_textual") or []
+    storyteller_history = state.get("historico_storyteller") or []
+    if not text_history and not storyteller_history:
+        st.caption("Nenhuma decisão editorial registrada ainda.")
+    if text_history:
+        st.markdown("#### Editor de História")
         st.dataframe([
             {
                 "Cena": x.get("numero_cena"),
@@ -176,5 +252,16 @@ if state.get("dossie_editorial_aprovado_para_edicao"):
                 "Quando": x.get("decidido_em"),
                 "Pedido": x.get("instrucao"),
             }
-            for x in history
+            for x in text_history
+        ], use_container_width=True, hide_index=True)
+    if storyteller_history:
+        st.markdown("#### Storyteller")
+        st.dataframe([
+            {
+                "Decisão": "APROVADA" if x.get("aprovado") else "REJEITADA",
+                "Ganho editorial": "Sim" if x.get("ganho_editorial") else "Não",
+                "Quando": x.get("decidido_em"),
+                "Risco de desvio": (x.get("analise") or {}).get("risco_de_desvio", "—"),
+            }
+            for x in storyteller_history
         ], use_container_width=True, hide_index=True)
