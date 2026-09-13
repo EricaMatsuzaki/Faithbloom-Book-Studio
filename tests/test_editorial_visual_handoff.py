@@ -40,6 +40,7 @@ def _fixture(tmp_path: Path):
         "original": {"arquivo": original, "sha256": manifest[-1]["sha256"], "imutavel": True},
         "revisao_aprovada": True,
         "prompt_master_compliance_remaster": {"ok_para_finalizar": True},
+        "metadata_emocional_confirmada": True,
         "cenas_texto": [
             {"numero": 1, "pagina_origem": 4, "texto": "Mel esperou perto do vaso.", "emocao": "esperanca", "intensidade_emocional": 3},
         ],
@@ -59,6 +60,17 @@ def test_handoff_requires_approved_text(tmp_path):
         assert "Revisor Editorial" in str(exc)
     else:
         raise AssertionError("handoff visual deveria bloquear texto ainda não aprovado")
+
+
+def test_handoff_requires_human_confirmed_emotional_map(tmp_path):
+    project, state = _fixture(tmp_path)
+    state["metadata_emocional_confirmada"] = False
+    try:
+        handoff.preparar_handoff_visual(state, project)
+    except ValueError as exc:
+        assert "mapa emocional" in str(exc).lower()
+    else:
+        raise AssertionError("handoff visual deveria bloquear mapa emocional não confirmado")
 
 
 def test_handoff_preserves_existing_restoration_history(tmp_path):
