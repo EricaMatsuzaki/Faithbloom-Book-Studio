@@ -1,8 +1,9 @@
 """Natural conversational replies for the FaithBloom Jarvis.
 
 This is a thin dialogue layer over the existing OpenRouter transport. It does not
-replace the editorial orchestrator, tools, approvals, STT or TTS, and it never
-claims an action was completed unless the caller provides an explicit result.
+replace the editorial orchestrator, tools, approvals, STT or TTS. Explicit,
+non-destructive Character Universe DNA-fill commands may delegate to the canonical
+character action service and only report success from its persisted result.
 
 The canonical Jarvis is latency-sensitive. Model selection is delegated to the
 FaithBloom cost mode so simple dialogue can stay free/cheap while stronger modes
@@ -23,6 +24,11 @@ from controle_geracao import (
     sanitizar_texto,
 )
 from faithbloom_cost_mode import model_for
+from jarvis_character_actions import (
+    execute_missing_dna_fill,
+    format_dna_fill_reply,
+    is_missing_dna_fill_command,
+)
 from openrouter_client import OPENROUTER_BASE_URL, _json_resposta, _post_com_retry
 
 SYSTEM_PROMPT = """Você é o Jarvis do FaithBloom Book Studio, um assistente central de voz.
@@ -202,6 +208,13 @@ def build_natural_reply(
         return guarded_status
 
     if (route_result or {}).get("project_type") == "character_universe":
+        if is_missing_dna_fill_command(text):
+            try:
+                return format_dna_fill_reply(execute_missing_dna_fill(text))
+            except (LookupError, ValueError) as exc:
+                return str(exc)
+            except Exception as exc:
+                return f"Não consegui concluir o preenchimento do DNA visual com segurança: {sanitizar_texto(str(exc))}"
         return _character_universe_reply(text)
 
     dialogue_model = model_for("dialogue")
