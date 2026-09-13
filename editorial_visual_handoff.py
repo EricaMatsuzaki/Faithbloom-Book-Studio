@@ -25,7 +25,7 @@ def _fingerprint(payload: dict) -> str:
 
 
 def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
-    """Prepara contexto visual somente quando a revisão textual está aprovada."""
+    """Prepara contexto visual somente quando texto e mapa emocional foram aprovados."""
     original = state.get("original") or {}
     caminho = str(original.get("arquivo") or "")
     esperado = str(original.get("sha256") or "")
@@ -36,6 +36,8 @@ def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
     compliance = state.get("prompt_master_compliance_remaster") or {}
     if not compliance.get("ok_para_finalizar"):
         raise ValueError("Prompt-Mestre ainda possui bloqueio para a versão revisada.")
+    if not state.get("metadata_emocional_confirmada"):
+        raise ValueError("O mapa emocional ainda não foi confirmado cena por cena pela autora.")
 
     cenas = [deepcopy(x) for x in (state.get("cenas_texto") or []) if isinstance(x, dict)]
     mapa = [deepcopy(x) for x in (state.get("mapa_emocional") or []) if isinstance(x, dict)]
@@ -80,6 +82,7 @@ def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
             "preserve_original_asset": True,
             "create_derived_versions_only": True,
             "human_approval_each_visual_version": True,
+            "emotional_map_human_confirmed": True,
         },
     }
     snapshot["fingerprint"] = _fingerprint(snapshot)
