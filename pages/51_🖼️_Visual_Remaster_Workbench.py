@@ -5,7 +5,7 @@ import streamlit as st
 from estilo import aplicar_estilo, hero
 from book_doctor import listar_projetos
 from character_universe import listar_personagens_oficiais, carregar_personagem_oficial
-from style_dna import listar_styles
+from style_dna import listar_styles, carregar_style
 from restoration_studio import (
     carregar_plano_restauracao,
     vincular_character,
@@ -79,15 +79,45 @@ with right:
 
 collection = project.get("colecao") or plan.get("colecao") or ""
 characters = listar_personagens_oficiais(collection or None)
-styles = listar_styles(collection or None)
+style_cards = listar_styles(collection or None)
+styles = []
+inactive_styles = []
+for card in style_cards:
+    style = carregar_style(card.get("id", ""))
+    if not style:
+        continue
+    usos = style.get("usos_permitidos") or []
+    if not usos or "story" in usos:
+        styles.append(style)
+    else:
+        inactive_styles.append(style)
 
 st.markdown("### 1 · Identidade oficial")
 char_options = ["— selecione —"] + [f"{x.get('nome')} · {x.get('id')}" for x in characters]
 char_idx = st.selectbox("Character Master principal desta intervenção", range(len(char_options)), format_func=lambda i: char_options[i])
 character_id = "" if char_idx == 0 else characters[char_idx - 1]["id"]
-style_options = ["— nenhum —"] + [f"{x.get('nome')} · {x.get('id')}" for x in styles]
-style_idx = st.selectbox("Style DNA", range(len(style_options)), format_func=lambda i: style_options[i])
-style_id = "" if style_idx == 0 else styles[style_idx - 1]["id"]
+
+if not styles:
+    if inactive_styles:
+        st.warning(
+            "🎨 Existe Style DNA nesta coleção, mas ele está **inativo para Story / Remaster**. "
+            "Ative o uso `story` no Style DNA Lab antes de gerar novas ilustrações para que a linguagem visual da coleção entre no prompt protegido."
+        )
+    else:
+        st.warning(
+            "🎨 Esta coleção ainda não possui Style DNA ativo para Story / Remaster. "
+            "Crie ou vincule um Style DNA oficial antes da geração visual para preservar a linguagem da coleção."
+        )
+    st.page_link("pages/18_🎨_Style_DNA_Lab.py", label="🎨 Abrir Style DNA Lab →", use_container_width=True)
+    style_id = ""
+elif len(styles) == 1:
+    style_id = styles[0]["id"]
+    st.success(f"🎨 Style DNA ativo detectado automaticamente: **{styles[0].get('nome','')}**")
+    st.caption("Ele será usado no contexto Story/Remaster. O Style DNA não substitui Character DNA nem Color Master.")
+else:
+    style_options = [f"{x.get('nome')} · {x.get('id')}" for x in styles]
+    style_idx = st.selectbox("Style DNA ativo para Story / Remaster", range(len(style_options)), format_func=lambda i: style_options[i])
+    style_id = styles[style_idx]["id"]
 
 if character_id and st.button("🔗 Vincular Character Master ao projeto"):
     plan = vincular_character(plan, character_id)
@@ -96,7 +126,7 @@ if character_id and st.button("🔗 Vincular Character Master ao projeto"):
 if style_id and st.button("🔗 Vincular Style DNA ao projeto"):
     plan = vincular_style(plan, style_id)
     plan = salvar_vinculos(project, plan)
-    st.success("Style DNA vinculado.")
+    st.success("Style DNA ativo para Story/Remaster vinculado ao projeto.")
 
 st.markdown("### 2 · Intervenção")
 action = st.radio(
@@ -121,6 +151,8 @@ else:
         st.stop()
     if not character_id:
         st.warning("Selecione o Character Master oficial antes de gerar a intervenção visual.")
+    if not style_id:
+        st.error("Style DNA ativo para Story / Remaster é obrigatório para gerar nova arte neste fluxo. Ative-o no Style DNA Lab.")
 
     author_instruction = st.text_area(
         "Instrução adicional — opcional",
@@ -172,7 +204,7 @@ else:
         registrar_decisao(project, asset["id"], action, character_id, style_id, scene_instruction, {"prompt": prompt, "editorial_remaster": True})
         st.success("Plano registrado sem consumo de créditos.")
 
-    can_generate = bool(os.environ.get("OPENROUTER_API_KEY")) and bool(character_id) and bool(refs)
+    can_generate = bool(os.environ.get("OPENROUTER_API_KEY")) and bool(character_id) and bool(refs) and bool(style_id)
     if can_generate:
         st.warning("A próxima ação chama o modelo de imagem e pode consumir créditos. A candidata não será aprovada automaticamente.")
         if st.button("✨ Gerar candidata Remastered", type="primary"):
@@ -184,7 +216,7 @@ else:
             st.success("Candidata gerada. Compare e aprove somente se estiver correta.")
             st.rerun()
     else:
-        st.caption("Geração disponível somente com OpenRouter configurado e Character Master visual válido.")
+        st.caption("Geração disponível somente com OpenRouter configurado, Character Master visual válido e Style DNA ativo para Story/Remaster.")
 
 plan = carregar_plano_restauracao(project)
 derivatives = [v for v in plan.get("versoes_assets") or [] if v.get("origem") == origin and Path(v.get("derivado", "")).exists()]
