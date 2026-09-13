@@ -1,6 +1,8 @@
 import pytest
 
 from jarvis_multimodal import (
+    MAX_FILE_BYTES,
+    MAX_PACKAGE_BYTES,
     build_handoff_package,
     choose_route,
     classify_attachment,
@@ -13,6 +15,13 @@ def test_classifies_supported_attachment_types():
     assert classify_attachment("capa.png", "image/png") == "image"
     assert classify_attachment("roteiro.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document") == "document"
     assert classify_attachment("narracao.m4a", "audio/mp4") == "audio"
+
+
+def test_default_limits_accept_large_published_book_pdf():
+    # Regressão real: o PDF publicado da Mel tem 108,443,373 bytes.
+    published_book_bytes = 108_443_373
+    assert MAX_FILE_BYTES >= published_book_bytes
+    assert MAX_PACKAGE_BYTES >= published_book_bytes
 
 
 def test_pdf_review_reuses_book_doctor_route():
