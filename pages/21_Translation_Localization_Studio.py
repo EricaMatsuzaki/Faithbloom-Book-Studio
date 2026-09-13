@@ -10,7 +10,7 @@ import streamlit as st
 from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import listar_livros, carregar_livro
 from openrouter_client import chamar_llm
-from age_profiles import opcoes_faixa_etaria
+from age_profiles import normalizar_faixa_etaria, opcoes_faixa_etaria
 from translation_localization import (
     LOCALIZACOES, MODOS, INTENSIDADE_SONS, SOUND_LIBRARY,
     criar_registro_biblico, validar_registro_biblico, texto_biblico_para_exportacao,
@@ -53,13 +53,14 @@ with c2:
     modo=st.selectbox("Modo",list(MODOS),format_func=lambda x:{"fiel":"Fiel","natural_infantil":"Natural Infantil ⭐","localizacao_cultural":"Localização Cultural"}[x],index=1)
 with c3:
     age_options=opcoes_faixa_etaria()
-    default_age_index=next((i for i,opt in enumerate(age_options) if opt.profile_id=="3-8"),0)
+    master_age=normalizar_faixa_etaria(master.get("faixa_etaria"))
+    default_age_index=next((i for i,opt in enumerate(age_options) if opt.profile_id==master_age),0)
     idade_opt=st.selectbox(
         "Faixa de leitura",
         age_options,
         index=default_age_index,
         format_func=lambda x:x.label,
-        help="Usa os mesmos perfis etários oficiais do Story Book Studio para manter tradução, ritmo e onomatopeias sincronizados com o Master.",
+        help="Usa os mesmos perfis etários oficiais do Story Book Studio e parte automaticamente da faixa do Book Master.",
     )
     idade=idade_opt.profile_id
 with c4:
