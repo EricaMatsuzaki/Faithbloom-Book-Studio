@@ -123,15 +123,26 @@ def _text_has(text: str, *terms: str) -> bool:
     )
 
 
+def _full_remaster_intent(text: str) -> bool:
+    return _text_has(
+        text,
+        "remaster", "remasterizar", "remasterização", "remasterizacao",
+        "revisão completa", "revisao completa", "full editorial remaster",
+        "full editorial review", "fluxo completo", "revisar completamente",
+        "edição revisada", "edicao revisada", "edição remasterizada", "edicao remasterizada",
+    )
+
+
 def choose_route(request: str, attachments: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
     files = list(attachments or [])
     kinds = {str(f.get("kind") or "") for f in files}
     text = (request or "").strip()
 
-    # Intenção explícita tem prioridade sobre o tipo do arquivo.
+    # Intenção explícita tem prioridade sobre o tipo do arquivo. Full Remaster
+    # continua entrando pelo Book Doctor; o workflow_intent carrega a orquestração.
     if _text_has(text, "crie uma história", "criar uma história", "nova história", "escreva uma história", "crie história"):
         route_id = "story_create"
-    elif _text_has(text, "revise", "revisar", "analise", "analisar", "corrija o texto", "book doctor") and kinds & {"pdf", "document"}:
+    elif (_full_remaster_intent(text) or _text_has(text, "revise", "revisar", "analise", "analisar", "corrija o texto", "book doctor")) and kinds & {"pdf", "document"}:
         route_id = "story_review"
     elif _text_has(text, "personagem", "referência", "referencia", "character", "mel") and "image" in kinds:
         route_id = "character_reference"
@@ -163,6 +174,8 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
     if total > MAX_PACKAGE_BYTES:
         raise ValueError(f"O conjunto de anexos excede o limite de {MAX_PACKAGE_BYTES // (1024 * 1024)} MB.")
     route = choose_route(request, files)
+    full_remaster = route.get("id") == "story_review" and _full_remaster_intent(request)
+    workflow_intent = "editorial_remaster_full" if full_remaster else "standard"
     package_id = f"handoff-{uuid.uuid4().hex[:12]}"
     names = ", ".join(f.get("name", "arquivo") for f in files) or "nenhum anexo"
     agents = ", ".join(route.get("agents") or [])
@@ -172,6 +185,11 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
     )
     if files:
         spoken += f" Recebi {len(files)} arquivo{'s' if len(files) != 1 else ''}."
+    if full_remaster:
+        spoken += (
+            " Depois do diagnóstico do Book Doctor, o pedido seguirá como Full Editorial Remaster pelo Autopilot, "
+            "com checkpoints e pacote consolidado para sua decisão final."
+        )
     if route.get("id") == "character_reference":
         spoken += " No Character Universe, confirme a coleção correta do personagem antes de importar as referências."
     spoken += " Vou manter os originais preservados e não promover nenhum arquivo a Master sem sua aprovação."
@@ -179,6 +197,7 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
         "id": package_id,
         "request": (request or "").strip(),
         "route": route,
+        "workflow_intent": workflow_intent,
         "files": files,
         "file_names": names,
         "total_bytes": total,
