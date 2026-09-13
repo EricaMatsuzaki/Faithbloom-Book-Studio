@@ -44,9 +44,27 @@ def test_named_character_reply_is_not_hardcoded_to_teo(monkeypatch):
         "_post_com_retry",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("network should not run")),
     )
+    monkeypatch.setattr(
+        dialogue,
+        "execute_missing_dna_fill",
+        lambda request: {
+            "status": "completed",
+            "character_id": "manu-1",
+            "character_name": "Manu",
+            "collection": "Pequenas Histórias, Grandes Lições",
+            "filled_fields": ["olhos"],
+            "remaining_missing_fields": [],
+            "reference_count": 4,
+            "color_master_preserved": True,
+            "references_preserved": True,
+            "character_preserved": True,
+        },
+    )
     reply = dialogue.build_natural_reply(text, history=[], route_result=result)
     folded = reply.casefold()
 
     assert "manu" in folded
     assert "téo" not in folded
-    assert "sem criar outro personagem" in folded
+    assert "dna visual" in folded
+    assert "color master" in folded
+    assert "4 referências" in folded
