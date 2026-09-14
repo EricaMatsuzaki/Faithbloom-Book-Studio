@@ -1,11 +1,10 @@
 """Storyteller layer for FaithBloom Full Editorial Remaster.
 
 Keeps the legacy structural-review path for compatibility and adds a safe
-"enrich without deviating" flow for already-published books. The Storyteller may
-propose richer experience, Heart Arc, discovery, emotion, humor, interaction and
-new scenes when there is real editorial gain, but proposals are always derived,
-versioned and require explicit human approval before replacing the active
-Remastered text. The preserved original is never mutated.
+"enrich without deviating" flow for already-published books. In Remaster mode,
+canonical scenes are protected: the Storyteller may enrich text and add scenes,
+but cannot silently merge, remove or reorder canonical beats. Heart Arc must be
+mapped to real scene numbers and pass the Autopilot Compliance Core.
 """
 from __future__ import annotations
 
@@ -17,6 +16,7 @@ from typing import Callable
 
 from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria
 from agent_skills import skill_contract
+from autopilot_compliance_core import validate_storyteller_candidate
 from book_doctor import sha256
 
 
@@ -74,7 +74,7 @@ def _normalize_proposed_scenes(raw_scenes: object, original_scenes: list[dict]) 
         original = by_original_number.get(original_number_int) if original_number_int else None
         scene["numero"] = idx
         scene["numero_origem"] = original_number_int if original else None
-        scene["pagina_origem"] = original.get("pagina_origem") if original else None
+        scene["pagina_origem"] = original.get("pagina_origem") if original else scene.get("pagina_origem")
         scene["origem"] = "storyteller_enrichment_candidate"
         normalized.append(scene)
     return normalized
@@ -146,13 +146,7 @@ Referência bíblica: {state.get('versiculo_referencia','')}
 
 
 def gerar_proposta_enriquecimento_roteirista(state: dict, chamar_llm: Callable) -> dict:
-    """Create a full-book Storyteller enrichment candidate without mutating active text.
-
-    The Storyteller is allowed to revise, expand, reorder and add scenes only when
-    that creates concrete editorial gain. Core purpose, Christian learning,
-    moral, Bible reference, protected characters, age profile and story soul are
-    explicit invariants. The candidate remains pending until human approval.
-    """
+    """Cria candidata enriquecida preservando obrigatoriamente a estrutura canônica."""
     path, expected = _verify_original(state)
     if not state.get("dossie_editorial_aprovado_para_edicao"):
         raise ValueError("Dossiê Editorial ainda não foi aprovado para edição.")
@@ -171,10 +165,19 @@ A regra editorial central é: ENRIQUECER SEM DESVIAR.
 OBJETIVO:
 - avaliar a obra inteira, não apenas falhas locais;
 - fortalecer História → Experiência → Emoção → Descoberta → Transformação → Lição → Verdade bíblica;
-- fortalecer o Heart Arc: encantamento → emoção → experiência → descoberta → transformação → fé;
-- quando houver ganho real, você PODE revisar, expandir, reorganizar e acrescentar cenas;
-- novas cenas podem trazer aventura, interação, humor, descoberta, tentativa, consequência, vínculo, emoção ou transformação;
-- se a obra já estiver forte, não invente mudanças só para parecer diferente.
+- EXECUTAR o Heart Arc: encantamento → emoção → experiência → descoberta → transformação → fé;
+- cada fase do Heart Arc deve estar dramatizada em cenas reais, não apenas citada no diagnóstico;
+- se houver ganho real, você pode REFINAR cada cena e ACRESCENTAR cenas novas;
+- não invente mudanças só para parecer diferente.
+
+CANONICAL STORY LOCK — OBRIGATÓRIO:
+- as {len(scenes)} cenas recebidas são CANÔNICAS para este Remaster;
+- NÃO remover, fundir, condensar ou pular nenhuma cena canônica;
+- NÃO reordenar as cenas canônicas;
+- cada cena canônica deve aparecer exatamente uma vez na saída com numero_origem correspondente;
+- cenas novas são permitidas somente como expansão e devem ter numero_origem=null;
+- ritmo deve ser melhorado DENTRO das cenas, nunca apagando beats emocionais aprovados;
+- descoberta, transformação e fé precisam respirar na narrativa; não compacte as três em um único resumo se a base possui beats separados.
 
 INVARIANTES — NUNCA ALTERAR:
 - propósito central e alma da história;
@@ -207,15 +210,20 @@ Referência bíblica: {state.get('versiculo_referencia','')}
         "Analise e, somente se houver ganho editorial real, proponha uma versão enriquecida destas cenas: "
         + json.dumps(scenes, ensure_ascii=False)
         + "\nRetorne JSON com exatamente estes campos: "
-        "ganho_editorial (boolean), diagnostico_geral, motivos (lista), heart_arc, experiencia, "
-        "descoberta_transformacao, licao_moral_preservada (boolean), mensagem_biblica_preservada (boolean), "
+        "ganho_editorial (boolean), diagnostico_geral, motivos (lista), heart_arc, "
+        "heart_arc_scene_map (objeto com as chaves encantamento, emoção, experiência, descoberta, transformação e fé; "
+        "cada valor é lista de números das cenas propostas onde a fase é realmente vivida), experiencia, "
+        "descoberta_transformacao, estrutura_canonica_preservada (boolean), "
+        "licao_moral_preservada (boolean), mensagem_biblica_preservada (boolean), "
         "risco_de_desvio (baixo|medio|alto), novas_cenas_adicionadas (lista), cenas_texto_propostas (lista). "
-        "Em cenas_texto_propostas, cada cena deve ter texto e, quando derivar de cena antiga, numero_origem. "
-        "Se ganho_editorial=false, devolva as mesmas cenas sem alterações substanciais."
+        "Cada cena canônica deve conservar numero_origem; não reduza a quantidade de cenas canônicas. "
+        "Se ganho_editorial=false, devolva as mesmas cenas sem alterações substanciais e ainda forneça heart_arc_scene_map."
     )
     result = chamar_llm(sistema=system, instrucao=instruction)
     if not isinstance(result, dict):
         raise RuntimeError("Storyteller não retornou proposta estruturada em JSON.")
+    if result.get("estrutura_canonica_preservada") is not True:
+        raise RuntimeError("Proposta bloqueada: Storyteller não confirmou preservação da estrutura canônica.")
     if result.get("licao_moral_preservada") is not True:
         raise RuntimeError("Proposta bloqueada: Storyteller não confirmou preservação da lição de moral.")
     if result.get("mensagem_biblica_preservada") is not True:
@@ -228,8 +236,17 @@ Referência bíblica: {state.get('versiculo_referencia','')}
     if not ganho:
         proposed = deepcopy(scenes)
 
+    compliance = validate_storyteller_candidate(scenes, proposed, result.get("heart_arc_scene_map"))
+    if not compliance.get("ok"):
+        structure = compliance.get("canonical_structure") or {}
+        arc = compliance.get("heart_arc_execution") or {}
+        raise RuntimeError(
+            "Proposta bloqueada pelo Autopilot Compliance Core. "
+            f"Estrutura: {structure}. Heart Arc: {arc}."
+        )
+
     proposal = {
-        "schema": "faithbloom.editorial-remaster-storyteller-enrichment.v1",
+        "schema": "faithbloom.editorial-remaster-storyteller-enrichment.v2",
         "remaster_id": state.get("remaster_id", ""),
         "gerado_em": _now_iso(),
         "original_sha256": expected,
@@ -241,14 +258,17 @@ Referência bíblica: {state.get('versiculo_referencia','')}
             "diagnostico_geral": result.get("diagnostico_geral", ""),
             "motivos": deepcopy(result.get("motivos") or []),
             "heart_arc": deepcopy(result.get("heart_arc")),
+            "heart_arc_scene_map": deepcopy(result.get("heart_arc_scene_map") or {}),
             "experiencia": deepcopy(result.get("experiencia")),
             "descoberta_transformacao": deepcopy(result.get("descoberta_transformacao")),
             "novas_cenas_adicionadas": deepcopy(result.get("novas_cenas_adicionadas") or []),
             "risco_de_desvio": result.get("risco_de_desvio", "baixo"),
+            "estrutura_canonica_preservada": True,
             "licao_moral_preservada": True,
             "mensagem_biblica_preservada": True,
+            "autopilot_compliance": compliance,
         },
-        "politica": "Enriquecer sem desviar; original imutável; candidata derivada exige aprovação humana.",
+        "politica": "Canonical Story Lock + Heart Arc Execution Gate; original imutável; candidata derivada exige aprovação humana.",
         "aplicado": False,
     }
     folder = _state_path(state).parent / "propostas_storyteller"
@@ -272,6 +292,14 @@ def aplicar_proposta_enriquecimento_roteirista(state: dict, proposta: dict, *, a
     if deepcopy(state.get("cenas_texto") or []) != deepcopy(proposta.get("antes") or []):
         raise ValueError("O texto mudou desde a geração da proposta. Gere nova proposta do Storyteller.")
 
+    compliance = validate_storyteller_candidate(
+        proposta.get("antes") or [],
+        proposta.get("depois") or proposta.get("antes") or [],
+        (proposta.get("analise") or {}).get("heart_arc_scene_map") or {},
+    )
+    if aprovado and not compliance.get("ok"):
+        raise RuntimeError("Aplicação bloqueada: candidata não passou no Canonical Story Lock / Heart Arc Execution Gate.")
+
     novo = deepcopy(state)
     history = list(novo.get("historico_storyteller") or [])
     record = {
@@ -281,16 +309,21 @@ def aplicar_proposta_enriquecimento_roteirista(state: dict, proposta: dict, *, a
         "analise": deepcopy(proposta.get("analise") or {}),
         "antes": deepcopy(proposta.get("antes") or []),
         "depois": deepcopy(proposta.get("depois") or []),
+        "autopilot_compliance": compliance,
     }
     if aprovado and proposta.get("ganho_editorial"):
         novo["cenas_texto"] = deepcopy(proposta.get("depois") or [])
         novo["storyteller_enrichment_aprovado"] = True
+        novo["heart_arc_scene_map"] = deepcopy((proposta.get("analise") or {}).get("heart_arc_scene_map") or {})
+        novo["canonical_story_lock"] = deepcopy(compliance.get("canonical_structure") or {})
         novo["revisao_aprovada"] = False
         novo["metadata_emocional_confirmada"] = False
         novo["mapa_emocional"] = []
         novo["status"] = "texto_enriquecido_aguardando_revisao_final"
     elif aprovado:
         novo["storyteller_enrichment_aprovado"] = True
+        novo["heart_arc_scene_map"] = deepcopy((proposta.get("analise") or {}).get("heart_arc_scene_map") or {})
+        novo["canonical_story_lock"] = deepcopy(compliance.get("canonical_structure") or {})
         novo["status"] = "storyteller_sem_mudancas_aguardando_revisao_final"
     else:
         novo["storyteller_enrichment_aprovado"] = False
