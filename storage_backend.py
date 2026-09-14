@@ -19,9 +19,10 @@ import hashlib
 import json
 import mimetypes
 import os
+import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import requests
 
@@ -79,7 +80,6 @@ class LocalStorageBackend(StorageBackend):
     def put_bytes(self, path: str, data: bytes, content_type: str | None = None) -> str:
         p = self._p(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        # Escrita atômica: evita deixar JSON/asset parcialmente gravado se o processo cair.
         tmp = p.with_name(f".{p.name}.tmp-{os.getpid()}-{hashlib.sha256(data).hexdigest()[:8]}")
         try:
             tmp.write_bytes(data)
@@ -109,29 +109,67 @@ class LocalStorageBackend(StorageBackend):
             p.unlink()
 
 
+def _normalize_storage_path(value: str, *, allow_empty: bool = True) -> str:
+    """Normaliza prefixos/objetos sem permitir traversal ou segmentos inválidos."""
+    raw = str(value or "").replace("\\", "/").strip()
+    raw = re.sub(r"/+", "/", raw).strip("/")
+    if not raw:
+        if allow_empty:
+            return ""
+        raise StorageError("Caminho vazio no Supabase Storage.")
+    parts = []
+    for part in raw.split("/"):
+        clean = part.strip()
+        if not clean or clean in {".", ".."}:
+            if clean in {".", ".."}:
+                raise StorageError("Caminho inválido no Supabase Storage.")
+            continue
+        if any(ord(ch) < 32 for ch in clean):
+            raise StorageError("Caminho contém caracteres de controle inválidos.")
+        parts.append(clean)
+    return "/".join(parts)
+
+
+def _normalize_supabase_url(value: str) -> str:
+    raw = str(value or "").strip().rstrip("/")
+    if not raw:
+        return raw
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise StorageError("SUPABASE_URL inválida. Use a Project URL, por exemplo https://xxxx.supabase.co")
+    # O secret deve receber a Project URL, não uma rota /storage/v1 já anexada.
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 class SupabaseStorageBackend(StorageBackend):
     name = "supabase"
 
     def __init__(self, url: str, service_key: str, bucket: str = "faithbloom"):
-        self.url = url.rstrip("/")
-        self.key = service_key
-        self.bucket = bucket
-        self.key_kind = "secret" if service_key.startswith("sb_secret_") else "legacy_service_role"
-        # Novas sb_secret_* devem ser enviadas no header apikey, não como Bearer JWT.
-        # O Authorization Bearer é mantido somente para a chave service_role legada.
+        self.url = _normalize_supabase_url(url)
+        self.key = str(service_key or "").strip()
+        self.bucket = _normalize_storage_path(str(bucket or "faithbloom"), allow_empty=False)
+        if "/" in self.bucket:
+            raise StorageError("FAITHBLOOM_SUPABASE_BUCKET deve conter somente o nome do bucket, sem pastas ou URL.")
+        self.key_kind = "secret" if self.key.startswith("sb_secret_") else "legacy_service_role"
+        # sb_secret_* usa apikey. Authorization Bearer fica somente para service_role JWT legado.
         self.headers = {"apikey": self.key}
         if self.key_kind == "legacy_service_role":
             self.headers["Authorization"] = f"Bearer {self.key}"
 
     def _object_url(self, path: str) -> str:
-        return f"{self.url}/storage/v1/object/{quote(self.bucket, safe='')}/{quote(path.strip('/'), safe='/')}"
+        clean = _normalize_storage_path(path, allow_empty=False)
+        return f"{self.url}/storage/v1/object/{quote(self.bucket, safe='')}/{quote(clean, safe='/')}"
+
+    def _list_endpoint(self) -> str:
+        return f"{self.url}/storage/v1/object/list/{quote(self.bucket, safe='')}"
 
     def put_bytes(self, path: str, data: bytes, content_type: str | None = None) -> str:
+        clean = _normalize_storage_path(path, allow_empty=False)
         headers = {**self.headers, "x-upsert": "true", "Content-Type": content_type or "application/octet-stream"}
-        r = requests.post(self._object_url(path), headers=headers, data=data, timeout=120)
+        r = requests.post(self._object_url(clean), headers=headers, data=data, timeout=120)
         if r.status_code not in (200, 201):
             raise StorageError(f"Supabase upload falhou ({r.status_code}): {r.text[:300]}")
-        return path
+        return clean
 
     def get_bytes(self, path: str) -> bytes:
         r = requests.get(self._object_url(path), headers=self.headers, timeout=120)
@@ -139,45 +177,89 @@ class SupabaseStorageBackend(StorageBackend):
             raise StorageError(f"Supabase download falhou ({r.status_code})")
         return r.content
 
+    def _list_level(self, prefix: str) -> list[dict]:
+        current = _normalize_storage_path(prefix, allow_empty=True)
+        payload = {
+            "prefix": current,
+            "limit": 1000,
+            "offset": 0,
+            "sortBy": {"column": "name", "order": "asc"},
+        }
+        r = requests.post(
+            self._list_endpoint(),
+            headers={**self.headers, "Content-Type": "application/json"},
+            json=payload,
+            timeout=60,
+        )
+        if r.status_code != 200:
+            detail = r.text[:300]
+            raise StorageError(
+                f"Supabase list falhou ({r.status_code}) no bucket '{self.bucket}' "
+                f"prefixo '{current or '/'}': {detail}"
+            )
+        data = r.json() or []
+        return [x for x in data if isinstance(x, dict)]
+
+    @staticmethod
+    def _join_list_item(current: str, name: str) -> str:
+        """Aceita tanto nomes relativos quanto nomes completos retornados pelo Storage."""
+        current = _normalize_storage_path(current, allow_empty=True)
+        name = _normalize_storage_path(name, allow_empty=True)
+        if not name:
+            return current
+        if current and (name == current or name.startswith(current + "/")):
+            return name
+        return _normalize_storage_path(f"{current}/{name}" if current else name, allow_empty=True)
+
     def list(self, prefix: str = "") -> list[str]:
-        # A API lista apenas um nível por chamada; percorremos recursivamente.
+        """Lista recursivamente sem deixar um prefixo malformado derrubar o app.
+
+        O Storage passou a devolver formas diferentes de entradas de pasta entre
+        versões. Por isso usamos id/metadata para distinguir diretórios, evitamos
+        loops e aceitamos nomes relativos ou já prefixados.
+        """
+        start = _normalize_storage_path(prefix, allow_empty=True)
         out: list[str] = []
-        queue = [prefix.strip("/")]
+        queue = [start]
+        visited: set[str] = set()
         while queue:
             current = queue.pop(0)
-            endpoint = f"{self.url}/storage/v1/object/list/{quote(self.bucket, safe='')}"
-            payload = {
-                "prefix": current,
-                "limit": 1000,
-                "offset": 0,
-                "sortBy": {"column": "name", "order": "asc"},
-            }
-            r = requests.post(
-                endpoint,
-                headers={**self.headers, "Content-Type": "application/json"},
-                json=payload,
-                timeout=60,
-            )
-            if r.status_code != 200:
-                raise StorageError(f"Supabase list falhou ({r.status_code}): {r.text[:200]}")
-            for item in r.json() or []:
-                name = item.get("name", "")
-                if not name:
+            if current in visited:
+                continue
+            visited.add(current)
+            try:
+                items = self._list_level(current)
+            except StorageError as exc:
+                # Um único prefixo histórico/corrompido não deve impedir o app de
+                # listar os demais objetos. O prefixo inicial continua fail-closed.
+                if current != start:
                     continue
-                full = f"{current}/{name}".strip("/")
-                # pastas retornam metadata nula; objetos retornam metadata.
-                if item.get("metadata") is None:
-                    queue.append(full)
+                raise exc
+            for item in items:
+                raw_name = str(item.get("name") or "").strip()
+                if not raw_name:
+                    continue
+                try:
+                    full = self._join_list_item(current, raw_name)
+                except StorageError:
+                    continue
+                if not full or full == current:
+                    continue
+                is_folder = item.get("id") in {None, ""} and item.get("metadata") is None
+                if is_folder:
+                    if full not in visited:
+                        queue.append(full)
                 else:
                     out.append(full)
         return sorted(set(out))
 
     def delete(self, path: str) -> None:
+        clean = _normalize_storage_path(path, allow_empty=False)
         endpoint = f"{self.url}/storage/v1/object/{quote(self.bucket, safe='')}"
         r = requests.delete(
             endpoint,
             headers={**self.headers, "Content-Type": "application/json"},
-            json={"prefixes": [path.strip("/")]},
+            json={"prefixes": [clean]},
             timeout=60,
         )
         if r.status_code not in (200, 204):
@@ -187,7 +269,6 @@ class SupabaseStorageBackend(StorageBackend):
 def get_backend() -> StorageBackend:
     mode = os.environ.get("FAITHBLOOM_STORAGE_MODE", "auto").strip().lower()
     url = os.environ.get("SUPABASE_URL", "").strip()
-    # Preferir a nova chave secreta do Supabase; manter service_role apenas para compatibilidade.
     key = (
         os.environ.get("SUPABASE_SECRET_KEY", "").strip()
         or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -237,11 +318,7 @@ _ASSET_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp3", ".wav", ".pdf",
 
 
 def _local_asset_path(value: str) -> Path | None:
-    """Retorna Path apenas quando a string pode representar um asset local real.
-
-    DNA, prompts e descrições longas também são strings. Nunca devemos enviá-los a
-    Path.exists(), pois textos longos podem disparar OSError (file name too long).
-    """
+    """Retorna Path apenas quando a string pode representar um asset local real."""
     if not isinstance(value, str) or not value or is_storage_uri(value):
         return None
     try:
