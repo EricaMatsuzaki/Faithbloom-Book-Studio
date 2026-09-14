@@ -51,11 +51,16 @@ def _image_size(data: bytes) -> tuple[int, int]:
         return (0, 0)
 
 
+def _short_error(exc: BaseException) -> str:
+    return str(exc).strip()[:240] or type(exc).__name__
+
+
 def _dominant_page_image(page: Any) -> tuple[bytes, str, tuple[int, int]] | None:
     """Returns the largest decodable embedded image on the page.
 
     This is intentionally conservative: for a quick-audit PDF we extract only
     one dominant candidate per story page instead of decoding the entire book.
+    A corrupt embedded stream is skipped instead of aborting the whole Remaster.
     """
     candidates: list[tuple[int, bytes, str, tuple[int, int]]] = []
     try:
@@ -78,7 +83,12 @@ def _dominant_page_image(page: Any) -> tuple[bytes, str, tuple[int, int]] | None
 
 
 def ensure_story_visual_assets(project: dict, state: dict) -> dict:
-    """Selectively materializes dominant image assets for mapped story pages."""
+    """Selectively materializes dominant image assets for mapped story pages.
+
+    Visual extraction is best-effort. A malformed image stream must never throw
+    away an otherwise valid editorial run; the page is recorded as unresolved
+    and remains behind the final visual Quality Gate.
+    """
     plan = carregar_plano_restauracao(project)
     if not plan:
         raise RuntimeError("Restoration Plan ausente antes da preparação visual automática.")
@@ -86,7 +96,13 @@ def ensure_story_visual_assets(project: dict, state: dict) -> dict:
     scenes = handoff.get("cenas") or []
     pages = sorted({int(x.get("pagina_origem")) for x in scenes if x.get("pagina_origem") is not None})
     if not pages:
-        return {"extracted": 0, "already_available": 0, "unresolved_pages": [], "assets": []}
+        return {
+            "extracted": 0,
+            "already_available": 0,
+            "unresolved_pages": [],
+            "unresolved_details": [],
+            "assets": [],
+        }
 
     original = state.get("original") or {}
     pdf_path = str(original.get("arquivo") or "")
@@ -101,27 +117,70 @@ def ensure_story_visual_assets(project: dict, state: dict) -> dict:
     }
     out_dir = Path(project["pasta"]) / "extraidas" / "autopilot"
     out_dir.mkdir(parents=True, exist_ok=True)
-    reader = PdfReader(pdf_path)
     extracted: list[dict] = []
     unresolved: list[int] = []
+    unresolved_details: list[dict] = []
     already = 0
+
+    try:
+        reader = PdfReader(pdf_path, strict=False)
+        page_count = len(reader.pages)
+    except Exception as exc:
+        # The editorial text is already preserved. A damaged visual stream is a
+        # safe visual pending item, not a reason to lose the full editorial run.
+        unresolved = list(pages)
+        unresolved_details.append({"scope": "pdf_reader", "error": _short_error(exc)})
+        plan.setdefault("autopilot_visual", {})["selective_extraction"] = {
+            "pages_requested": pages,
+            "pages_unresolved": unresolved,
+            "unresolved_details": unresolved_details,
+            "assets_available": 0,
+        }
+        salvar_vinculos(project, plan)
+        return {
+            "extracted": 0,
+            "already_available": 0,
+            "unresolved_pages": unresolved,
+            "unresolved_details": unresolved_details,
+            "assets": [],
+        }
 
     for page_number in pages:
         if page_number in usable_by_page:
             already += 1
             extracted.append(deepcopy(usable_by_page[page_number]))
             continue
-        if page_number < 1 or page_number > len(reader.pages):
+        if page_number < 1 or page_number > page_count:
             unresolved.append(page_number)
+            unresolved_details.append({"pagina": page_number, "motivo": "pagina_fora_do_pdf"})
             continue
-        dominant = _dominant_page_image(reader.pages[page_number - 1])
+        try:
+            dominant = _dominant_page_image(reader.pages[page_number - 1])
+        except Exception as exc:
+            unresolved.append(page_number)
+            unresolved_details.append({
+                "pagina": page_number,
+                "motivo": "stream_visual_ilegivel",
+                "error": _short_error(exc),
+            })
+            continue
         if not dominant:
             unresolved.append(page_number)
+            unresolved_details.append({"pagina": page_number, "motivo": "imagem_embutida_nao_extraivel"})
             continue
         data, original_name, size = dominant
         ext = _safe_ext(original_name)
         destination = out_dir / f"pagina_{page_number:03d}_dominante{ext}"
-        destination.write_bytes(data)
+        try:
+            destination.write_bytes(data)
+        except Exception as exc:
+            unresolved.append(page_number)
+            unresolved_details.append({
+                "pagina": page_number,
+                "motivo": "falha_materializacao_visual",
+                "error": _short_error(exc),
+            })
+            continue
         asset = {
             "id": f"p{page_number:03d}-autopilot",
             "tipo": "miolo",
@@ -150,6 +209,7 @@ def ensure_story_visual_assets(project: dict, state: dict) -> dict:
     plan.setdefault("autopilot_visual", {})["selective_extraction"] = {
         "pages_requested": pages,
         "pages_unresolved": unresolved,
+        "unresolved_details": unresolved_details,
         "assets_available": len(extracted),
     }
     salvar_vinculos(project, plan)
@@ -157,6 +217,7 @@ def ensure_story_visual_assets(project: dict, state: dict) -> dict:
         "extracted": max(0, len(extracted) - already),
         "already_available": already,
         "unresolved_pages": unresolved,
+        "unresolved_details": unresolved_details,
         "assets": extracted,
     }
 
@@ -232,7 +293,12 @@ def _tag_version(project: dict, version_id: str, *, run_id: str, asset_id: str, 
 
 
 def generate_visual_candidates(project: dict, run: dict) -> dict:
-    """Generates unapproved visual candidates only after explicit paid consent."""
+    """Generates unapproved visual candidates only after explicit paid consent.
+
+    A single provider/stream failure is isolated to that asset. The candidate is
+    recorded as unresolved and the remaining scenes continue; final approval is
+    still protected by the visual Quality Gate.
+    """
     settings = run.get("settings") or {}
     if not settings.get("allow_paid_image_generation"):
         return {
@@ -243,10 +309,15 @@ def generate_visual_candidates(project: dict, run: dict) -> dict:
             "note": "Geração visual paga não foi autorizada no início do Autopilot.",
         }
     if not os.environ.get("OPENROUTER_API_KEY"):
-        raise RuntimeError("OPENROUTER_API_KEY não está configurada para geração visual automática.")
+        return {
+            "authorized": True,
+            "generated": 0,
+            "reused": 0,
+            "unresolved": [{"motivo": "openrouter_key_indisponivel"}],
+            "visual_candidates_auto_approved": False,
+        }
 
     plan = carregar_plano_restauracao(project)
-    handoff = plan.get("editorial_remaster_handoff") or {}
     style_id = str((plan.get("vinculos") or {}).get("style_id") or "")
     run_id = str(run.get("run_id") or "")
     assets = [a for a in (plan.get("assets_detectados") or []) if a.get("pagina") is not None and _existing_file(str(a.get("arquivo") or ""))]
@@ -314,14 +385,23 @@ def generate_visual_candidates(project: dict, run: dict) -> dict:
                 scene_instruction,
                 {"autopilot_run_id": run_id, "prompt": prompt, "editorial_remaster": True},
             )
-        output = gerar_variacao_ia(
-            project,
-            str(asset.get("arquivo") or ""),
-            prompt,
-            gerar_imagem,
-            "autopilot_remaster",
-            refs,
-        )
+        try:
+            output = gerar_variacao_ia(
+                project,
+                str(asset.get("arquivo") or ""),
+                prompt,
+                gerar_imagem,
+                "autopilot_remaster",
+                refs,
+            )
+        except Exception as exc:
+            unresolved.append({
+                "asset_id": asset_id,
+                "pagina": asset.get("pagina"),
+                "motivo": "geracao_visual_indisponivel",
+                "error": _short_error(exc),
+            })
+            continue
         version = output.get("versao") or {}
         _tag_version(
             project,
@@ -352,23 +432,30 @@ def run_visual_autopilot(project: dict, run: dict) -> dict:
         visual_gate = visual_completion_gate(project)
         stage = (current.get("stages") or {}).setdefault("visual_preflight", {})
         stage["status"] = "completed"
+        stage["error"] = ""
         stage["result"] = {
             "selective_extraction": extraction,
             "generation": generation,
             "visual_completion_before_final_author_approval": visual_gate,
             "visual_candidates_auto_approved": False,
+            "safe_visual_pending": bool(
+                extraction.get("unresolved_pages") or generation.get("unresolved") or not visual_gate.get("ok")
+            ),
         }
         current["status"] = "needs_author_review"
         current.setdefault("audit_trail", []).append({
             "event": "visual_autopilot_prepared",
             "generated": generation.get("generated", 0),
             "unresolved": len(generation.get("unresolved") or []),
+            "unresolved_extraction_pages": len(extraction.get("unresolved_pages") or []),
         })
         current["final_review_package"] = build_final_review_package(
             current, current.get("remaster_state") or {}, project
         )
         return save_run(project, current)
     except Exception as exc:
+        # Catastrophic structural/storage failures still block safely. Normal
+        # malformed image/provider stream failures are isolated above per page/asset.
         record_incident(project, current, "visual_preflight", exc)
         current = deepcopy(current)
         stage = (current.get("stages") or {}).setdefault("visual_preflight", {})
