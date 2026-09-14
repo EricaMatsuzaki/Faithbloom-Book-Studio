@@ -3,9 +3,13 @@
 Primary text provider: Google Gemini Developer API.
 Optional fallbacks: Groq, then the legacy OpenRouter client.
 
-The router is deliberately resilient: temporary rate limits are retried with
-backoff, alternate Gemini models may be tried, and permanent billing failures
-from a fallback do not trigger repeated paid calls in the same process.
+Reliability rules:
+- discover models actually exposed to the configured Gemini API key;
+- only call models that advertise generateContent support;
+- prefer configured/Flash text models, never image/embedding-only models;
+- cache discovery briefly and remember models that are invalid in this runtime;
+- retry temporary 429/5xx responses with backoff;
+- preserve Groq/OpenRouter as fallbacks without wasting calls on known 402 billing failures.
 """
 from __future__ import annotations
 
@@ -37,13 +41,15 @@ GEMINI_FALLBACK_MODELS = [
     if x.strip()
 ]
 GEMINI_MAX_ATTEMPTS = max(1, int(os.environ.get("GEMINI_MAX_ATTEMPTS", "3")))
+GEMINI_DISCOVERY_TTL_SECONDS = max(30, int(os.environ.get("GEMINI_DISCOVERY_TTL_SECONDS", "300")))
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 GROQ_TEXT_MODEL = os.environ.get("GROQ_TEXT_MODEL", "llama-3.3-70b-versatile").strip()
 GROQ_MAX_ATTEMPTS = max(1, int(os.environ.get("GROQ_MAX_ATTEMPTS", "2")))
 
-# A 402 from OpenRouter means retrying immediately cannot help. Cache that state
-# only for this Python process; a deploy/restart or restored balance clears it.
 _OPENROUTER_DISABLED_REASON = ""
+_GEMINI_MODEL_CACHE: dict[str, Any] = {"at": 0.0, "models": []}
+_GEMINI_INVALID_MODELS: set[str] = set()
+_GEMINI_LAST_SELECTED_MODEL = ""
 
 
 def _strip_json_fences(text: str) -> str:
@@ -74,7 +80,6 @@ def _retry_after_seconds(response: requests.Response, attempt: int) -> float:
             return min(60.0, max(1.0, float(raw)))
     except ValueError:
         pass
-    # Backoff curto o bastante para Streamlit, mas evita rajadas de 3 chamadas.
     return min(20.0, 2.0 ** max(0, attempt))
 
 
@@ -99,7 +104,98 @@ def _post_with_retry(
     )
 
 
+def _normalize_model_name(value: str) -> str:
+    name = str(value or "").strip()
+    if name.startswith("models/"):
+        name = name.split("/", 1)[1]
+    return name
+
+
+def _is_text_generation_model(item: dict[str, Any]) -> bool:
+    name = _normalize_model_name(str(item.get("name") or ""))
+    low = name.casefold()
+    methods = {str(x).casefold() for x in (item.get("supportedGenerationMethods") or [])}
+    if not name or "generatecontent" not in methods:
+        return False
+    excluded = ("embedding", "aqa", "imagen", "veo", "tts", "image-generation", "robotics")
+    return not any(token in low for token in excluded)
+
+
+def _discover_gemini_models(*, force: bool = False) -> list[str]:
+    """Return generateContent-capable Gemini models visible to this API key.
+
+    Discovery is best-effort. If the models endpoint is temporarily unavailable,
+    callers still retain their configured model list as a fallback.
+    """
+    if not GEMINI_API_KEY:
+        return []
+    now = time.time()
+    cached = list(_GEMINI_MODEL_CACHE.get("models") or [])
+    cached_at = float(_GEMINI_MODEL_CACHE.get("at") or 0.0)
+    if cached and not force and (now - cached_at) < GEMINI_DISCOVERY_TTL_SECONDS:
+        return cached
+
+    response = requests.get(
+        f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}",
+        timeout=30,
+    )
+    if response.status_code in {401, 403}:
+        raise AIProviderPermanentError("Gemini recusou a autenticação/permissão da API key ao listar modelos.")
+    if response.status_code in {429, 500, 502, 503, 504}:
+        return cached
+    try:
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError):
+        return cached
+
+    discovered = [
+        _normalize_model_name(str(item.get("name") or ""))
+        for item in (payload.get("models") or [])
+        if isinstance(item, dict) and _is_text_generation_model(item)
+    ]
+    discovered = [m for m in discovered if m and m not in _GEMINI_INVALID_MODELS]
+    _GEMINI_MODEL_CACHE["at"] = now
+    _GEMINI_MODEL_CACHE["models"] = list(dict.fromkeys(discovered))
+    return list(_GEMINI_MODEL_CACHE["models"])
+
+
+def _model_rank(model: str) -> tuple[int, str]:
+    low = model.casefold()
+    configured = [_normalize_model_name(GEMINI_TEXT_MODEL), *map(_normalize_model_name, GEMINI_FALLBACK_MODELS)]
+    if model == _GEMINI_LAST_SELECTED_MODEL:
+        return (0, model)
+    if model in configured:
+        return (1 + configured.index(model), model)
+    if "flash-lite" in low:
+        return (20, model)
+    if "flash" in low:
+        return (21, model)
+    if "pro" in low:
+        return (30, model)
+    return (40, model)
+
+
+def _gemini_candidate_models() -> list[str]:
+    configured: list[str] = []
+    for raw in [GEMINI_TEXT_MODEL, *GEMINI_FALLBACK_MODELS]:
+        model = _normalize_model_name(raw)
+        if model and model not in configured and model not in _GEMINI_INVALID_MODELS:
+            configured.append(model)
+
+    discovered = _discover_gemini_models()
+    if discovered:
+        # Discovery is authoritative for availability. Keep configured preference
+        # only when the configured model is actually visible to this key.
+        visible = set(discovered)
+        candidates = [m for m in configured if m in visible]
+        candidates.extend(m for m in sorted(discovered, key=_model_rank) if m not in candidates)
+        return candidates
+    return configured
+
+
 def _gemini_model(model: str, sistema: str, instrucao: str) -> dict | list:
+    global _GEMINI_LAST_SELECTED_MODEL
     if not GEMINI_API_KEY:
         raise AIProviderPermanentError("GEMINI_API_KEY não configurada.")
     url = (
@@ -121,6 +217,8 @@ def _gemini_model(model: str, sistema: str, instrucao: str) -> dict | list:
     if response.status_code in {401, 403}:
         raise AIProviderPermanentError("Gemini recusou a autenticação/permissão da API key.")
     if response.status_code == 404:
+        _GEMINI_INVALID_MODELS.add(model)
+        _GEMINI_MODEL_CACHE["models"] = [m for m in (_GEMINI_MODEL_CACHE.get("models") or []) if m != model]
         raise AIProviderPermanentError(f"Modelo Gemini '{model}' não disponível.")
     try:
         response.raise_for_status()
@@ -134,28 +232,46 @@ def _gemini_model(model: str, sistema: str, instrucao: str) -> dict | list:
     text = "".join(str(part.get("text") or "") for part in parts if isinstance(part, dict))
     if not text.strip():
         raise AIProviderError("Gemini retornou resposta vazia.")
+    _GEMINI_LAST_SELECTED_MODEL = model
     return _parse_json(text, f"Gemini/{model}")
 
 
 def _gemini(sistema: str, instrucao: str) -> dict | list:
     errors: list[str] = []
-    models: list[str] = []
-    for model in [GEMINI_TEXT_MODEL, *GEMINI_FALLBACK_MODELS]:
-        if model and model not in models:
-            models.append(model)
+    models = _gemini_candidate_models()
+    if not models:
+        raise AIProviderTemporaryError(
+            "Gemini não expôs nenhum modelo de texto com generateContent para esta API key neste momento."
+        )
+
     for model in models:
         try:
             return _gemini_model(model, sistema, instrucao)
         except AIProviderPermanentError as exc:
-            # Modelo inexistente pode cair para outro modelo; autenticação não.
             errors.append(str(exc))
-            if "autenticação" in str(exc).casefold() or "api key" in str(exc).casefold():
+            low = str(exc).casefold()
+            if "autenticação" in low or "api key" in low:
                 raise
         except AIProviderTemporaryError as exc:
             errors.append(str(exc))
-    if errors:
-        raise AIProviderTemporaryError("Gemini sem capacidade disponível agora: " + " | ".join(errors))
-    raise AIProviderTemporaryError("Gemini sem modelo disponível para esta chamada.")
+        except AIProviderError as exc:
+            errors.append(str(exc))
+
+    # Refresh discovery once after all candidates fail. This catches model-list
+    # changes without requiring a deploy or editing Streamlit Secrets.
+    refreshed = _discover_gemini_models(force=True)
+    attempted = set(models)
+    for model in sorted(refreshed, key=_model_rank):
+        if model in attempted or model in _GEMINI_INVALID_MODELS:
+            continue
+        try:
+            return _gemini_model(model, sistema, instrucao)
+        except AIProviderError as exc:
+            errors.append(str(exc))
+
+    raise AIProviderTemporaryError(
+        "Gemini sem capacidade/modelo utilizável agora: " + " | ".join(errors)
+    )
 
 
 def _groq(sistema: str, instrucao: str) -> dict | list:
@@ -195,6 +311,7 @@ def _groq(sistema: str, instrucao: str) -> dict | list:
 def provider_status() -> dict:
     return {
         "gemini": bool(GEMINI_API_KEY),
+        "gemini_selected_model": _GEMINI_LAST_SELECTED_MODEL,
         "groq": bool(GROQ_API_KEY),
         "openrouter": bool(os.environ.get("OPENROUTER_API_KEY")) and not bool(_OPENROUTER_DISABLED_REASON),
         "openrouter_disabled_reason": _OPENROUTER_DISABLED_REASON,
