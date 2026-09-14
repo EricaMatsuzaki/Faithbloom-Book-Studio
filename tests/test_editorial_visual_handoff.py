@@ -29,6 +29,18 @@ def _fixture(tmp_path: Path):
     }
     original = book_doctor.preservar_original(project, str(source), "miolo")
     manifest = json.loads((root / "originais" / "manifest.json").read_text(encoding="utf-8"))
+    scenes = [
+        {"numero": 1, "numero_origem": 1, "pagina_origem": 4, "texto": "Mel esperou perto do vaso.", "emocao": "esperanca", "intensidade_emocional": 3},
+        {"numero": 2, "numero_origem": 2, "pagina_origem": 6, "texto": "Mel escolheu continuar cuidando e confiar.", "emocao": "confianca", "intensidade_emocional": 4},
+    ]
+    heart_arc_scene_map = {
+        "encantamento": [1],
+        "emoção": [1],
+        "experiência": [1, 2],
+        "descoberta": [1],
+        "transformação": [2],
+        "fé": [2],
+    }
     state = {
         "remaster_id": "r1",
         "projeto_book_doctor_id": "mel123",
@@ -41,11 +53,16 @@ def _fixture(tmp_path: Path):
         "revisao_aprovada": True,
         "prompt_master_compliance_remaster": {"ok_para_finalizar": True},
         "metadata_emocional_confirmada": True,
-        "cenas_texto": [
-            {"numero": 1, "pagina_origem": 4, "texto": "Mel esperou perto do vaso.", "emocao": "esperanca", "intensidade_emocional": 3},
-        ],
+        "cenas_texto": scenes,
+        "heart_arc_scene_map": heart_arc_scene_map,
+        "historico_storyteller": [{
+            "antes": json.loads(json.dumps(scenes, ensure_ascii=False)),
+            "depois": json.loads(json.dumps(scenes, ensure_ascii=False)),
+            "analise": {"heart_arc_scene_map": heart_arc_scene_map},
+        }],
         "mapa_emocional": [
             {"numero": 1, "emocao_narrativa": "esperanca", "cor_principal": "amarelo"},
+            {"numero": 2, "emocao_narrativa": "confianca", "cor_principal": "dourado"},
         ],
     }
     return project, state
@@ -87,6 +104,7 @@ def test_handoff_preserves_existing_restoration_history(tmp_path):
     assert updated["decisoes"] == [{"id": "old", "acao": "manter_original"}]
     assert updated["versoes_assets"] == [{"id": "v1", "aprovada": True}]
     assert updated["editorial_remaster_handoff"]["remaster_id"] == "r1"
+    assert updated["editorial_remaster_handoff"]["autopilot_compliance"]["ok"] is True
     assert updated["editorial_remaster_handoff"]["cenas"][0]["pagina_origem"] == 4
     assert handoff.contexto_cena_para_asset(carregar_plano_restauracao(project), 4)["texto_revisado"] == "Mel esperou perto do vaso."
 
@@ -95,7 +113,10 @@ def test_changed_handoff_is_versioned(tmp_path):
     project, state = _fixture(tmp_path)
     first = handoff.preparar_handoff_visual(state, project)
     state2 = dict(state)
-    state2["cenas_texto"] = [{**state["cenas_texto"][0], "texto": "Mel sorriu e esperou."}]
+    state2["cenas_texto"] = [
+        {**state["cenas_texto"][0], "texto": "Mel sorriu e esperou."},
+        dict(state["cenas_texto"][1]),
+    ]
     second = handoff.preparar_handoff_visual(state2, project)
     assert first["handoff"]["fingerprint"] != second["handoff"]["fingerprint"]
     assert len(second["restoration_plan"].get("editorial_remaster_handoff_history") or []) == 1
