@@ -162,14 +162,24 @@ def detect_safe_navigation(text: str) -> dict[str, str] | None:
 
     if _is_full_review_request(value):
         destination = SAFE_DESTINATIONS["review"]
-        return {"key": "review", "page": destination["page"], "label": destination["label"]}
+        return {
+            "id": "review",
+            "key": "review",
+            "page": destination["page"],
+            "label": destination["label"],
+        }
 
     verbs = ("abra", "abrir", "vá", "va", "ir para", "mostre", "mostrar", "leve me", "me leve")
     if not any(v in value for v in verbs):
         return None
     for key, destination in SAFE_DESTINATIONS.items():
         if any(_norm(hint) in value for hint in destination["hints"]):
-            return {"key": key, "page": destination["page"], "label": destination["label"]}
+            return {
+                "id": key,
+                "key": key,
+                "page": destination["page"],
+                "label": destination["label"],
+            }
     return None
 
 
