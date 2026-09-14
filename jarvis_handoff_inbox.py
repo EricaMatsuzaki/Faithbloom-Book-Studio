@@ -2,7 +2,8 @@
 
 A fila vive no session_state do Streamlit para atravessar páginas na mesma sessão.
 Ela não promove nenhum arquivo a Master e preserva o pacote original até ação
-humana explícita no módulo de destino.
+humana explícita no módulo de destino. A idempotência usa id E fingerprint para
+impedir encaminhamentos duplicados por clique/rerun acidental.
 """
 from __future__ import annotations
 
@@ -19,7 +20,6 @@ def _route_id(package: dict[str, Any]) -> str:
 
 
 def infer_character_name(package: dict[str, Any]) -> str:
-    """Tenta inferir o nome sem inventar identidade; retorna vazio se ambíguo."""
     request = str(package.get("request") or "").strip()
     patterns = (
         r"(?:personagem\s+|imagem\s+d[oa]\s+|imagens\s+d[oa]\s+|d[oa]\s+)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÀ-ÿ0-9_-]{1,40})",
@@ -51,13 +51,21 @@ def infer_character_name(package: dict[str, Any]) -> str:
 
 
 def enqueue_handoff(state: MutableMapping[str, Any], package: dict[str, Any]) -> dict[str, Any]:
-    """Adiciona de forma idempotente e mantém histórico na sessão."""
+    """Adiciona de forma idempotente, inclusive contra duplo envio equivalente."""
     if not package or not package.get("id"):
         raise ValueError("Pacote de handoff inválido.")
     inbox = list(state.get(INBOX_KEY) or [])
     package_id = str(package["id"])
+    fingerprint = str(package.get("fingerprint") or "")
     for existing in inbox:
         if str(existing.get("id") or "") == package_id:
+            return existing
+        same_active_fingerprint = (
+            fingerprint
+            and str(existing.get("fingerprint") or "") == fingerprint
+            and str(existing.get("status") or "") not in {"completed", "archived", "cancelled"}
+        )
+        if same_active_fingerprint:
             return existing
     entry = dict(package)
     entry.setdefault("status", "received")
@@ -69,7 +77,6 @@ def enqueue_handoff(state: MutableMapping[str, Any], package: dict[str, Any]) ->
 
 
 def capture_legacy_handoff(state: MutableMapping[str, Any], *, route_id: str | None = None) -> dict[str, Any] | None:
-    """Migra o slot único antigo para a fila, evitando que o próximo pedido o apague."""
     package = state.get(LEGACY_PACKAGE_KEY)
     if not isinstance(package, dict) or not package:
         return None
