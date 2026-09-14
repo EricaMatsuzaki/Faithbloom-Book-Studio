@@ -34,6 +34,17 @@ def _state(tmp_path: Path) -> dict:
     }
 
 
+def _heart_map_two_scenes() -> dict:
+    return {
+        "encantamento": [1],
+        "emoção": [1],
+        "experiência": [1, 2],
+        "descoberta": [1],
+        "transformação": [2],
+        "fé": [2],
+    }
+
+
 def test_storyteller_requires_explicit_authorization(tmp_path):
     state = _state(tmp_path)
     try:
@@ -81,8 +92,10 @@ def test_storyteller_can_propose_enrichment_and_new_scene_without_mutating_activ
             "diagnostico_geral": "Falta uma tentativa concreta antes da descoberta.",
             "motivos": ["fortalecer experiência e transformação"],
             "heart_arc": "encantamento → emoção → experiência → descoberta → transformação → fé",
+            "heart_arc_scene_map": _heart_map_two_scenes(),
             "experiencia": "Mel tenta descobrir se a semente já acordou.",
             "descoberta_transformacao": "Ela aprende a esperar sem desistir.",
+            "estrutura_canonica_preservada": True,
             "licao_moral_preservada": True,
             "mensagem_biblica_preservada": True,
             "risco_de_desvio": "baixo",
@@ -100,6 +113,8 @@ def test_storyteller_can_propose_enrichment_and_new_scene_without_mutating_activ
     assert len(proposal["depois"]) == 2
     assert proposal["depois"][0]["pagina_origem"] == 3
     assert proposal["depois"][1]["pagina_origem"] is None
+    assert proposal["analise"]["estrutura_canonica_preservada"] is True
+    assert proposal["analise"]["autopilot_compliance"]["ok"] is True
     assert proposal["analise"]["licao_moral_preservada"] is True
     assert proposal["analise"]["mensagem_biblica_preservada"] is True
     assert Path(proposal["arquivo_proposta"]).exists()
@@ -115,14 +130,17 @@ def test_storyteller_enrichment_only_applies_after_human_approval(tmp_path):
             "diagnostico_geral": "Pode enriquecer.",
             "motivos": ["Heart Arc"],
             "heart_arc": "mais completo",
+            "heart_arc_scene_map": _heart_map_two_scenes(),
             "experiencia": "tentativa",
             "descoberta_transformacao": "espera confiante",
+            "estrutura_canonica_preservada": True,
             "licao_moral_preservada": True,
             "mensagem_biblica_preservada": True,
             "risco_de_desvio": "baixo",
-            "novas_cenas_adicionadas": [],
+            "novas_cenas_adicionadas": ["beat de transformação"],
             "cenas_texto_propostas": [
                 {"numero_origem": 1, "texto": "Mel cuidou do vaso e esperou com carinho."},
+                {"texto": "Sem apressar a semente, Mel escolheu confiar e continuar cuidando."},
             ],
         }
 
@@ -134,6 +152,7 @@ def test_storyteller_enrichment_only_applies_after_human_approval(tmp_path):
     approved = storyteller.aplicar_proposta_enriquecimento_roteirista(state, proposal, aprovado=True)
     assert approved["cenas_texto"][0]["texto"] == "Mel cuidou do vaso e esperou com carinho."
     assert approved["storyteller_enrichment_aprovado"] is True
+    assert approved["heart_arc_scene_map"]["fé"] == [2]
     assert approved["status"] == "texto_enriquecido_aguardando_revisao_final"
     assert book_doctor.sha256(state["original"]["arquivo"]) == state["original"]["sha256"]
 
@@ -144,10 +163,15 @@ def test_storyteller_blocks_loss_of_moral_or_biblical_message(tmp_path):
     def fake_llm(**kwargs):
         return {
             "ganho_editorial": True,
+            "estrutura_canonica_preservada": True,
+            "heart_arc_scene_map": _heart_map_two_scenes(),
             "licao_moral_preservada": False,
             "mensagem_biblica_preservada": True,
             "risco_de_desvio": "baixo",
-            "cenas_texto_propostas": [{"numero_origem": 1, "texto": "Outra história."}],
+            "cenas_texto_propostas": [
+                {"numero_origem": 1, "texto": "Outra história."},
+                {"texto": "Beat extra."},
+            ],
         }
 
     try:
