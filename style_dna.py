@@ -35,10 +35,47 @@ def criar_style_dna(nome: str, colecao: str, regras: dict, modo: str = "geral", 
     return obj
 
 
+def _auto_ativar_story_se_unico(itens: list[dict], colecao: str | None) -> None:
+    """Migra com segurança o Style DNA oficial único de uma coleção para Story.
+
+    O Autopilot deve seguir sem formulário quando a escolha é inequívoca. Esta
+    migração só acontece quando uma coleção explícita possui exatamente UM Style
+    DNA oficial. Regras visuais não são alteradas; apenas o contexto ``story`` é
+    acrescentado, com snapshot/versionamento e trilha em metadata. Com zero ou
+    múltiplos estilos nada é promovido silenciosamente.
+    """
+    if not colecao or len(itens) != 1:
+        return
+    card = itens[0]
+    if str(card.get("status") or "oficial") != "oficial":
+        return
+    sid = str(card.get("id") or "")
+    if not sid:
+        return
+    style = carregar_style(sid)
+    if not style or str(style.get("status") or "oficial") != "oficial":
+        return
+    usos = list(style.get("usos_permitidos") or [])
+    if not usos or "story" in usos:
+        return
+    metadata = dict(style.get("metadata") or {})
+    metadata["story_auto_activation"] = {
+        "source": "autopilot_unambiguous_collection_style",
+        "collection": colecao,
+        "activated_at": int(time.time()),
+        "rules_changed": False,
+    }
+    atualizar_style(sid, {
+        "usos_permitidos": [*usos, "story"],
+        "metadata": metadata,
+    })
+
+
 def listar_styles(colecao: str | None = None) -> list[dict]:
     itens = _index()
     if colecao:
         itens = [x for x in itens if x.get("colecao") == colecao]
+        _auto_ativar_story_se_unico(itens, colecao)
     return sorted(itens, key=lambda x: (x.get("colecao", ""), x.get("nome", "")))
 
 
