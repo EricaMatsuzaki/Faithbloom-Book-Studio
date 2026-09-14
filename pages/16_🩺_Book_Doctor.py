@@ -17,7 +17,7 @@ hero(
     "🩺 Book Doctor",
     "Importe Story Books, Coloring/Line Art ou Activity Books, preserve o original e descubra o que merece revisão antes de criar uma edição Remastered.",
 )
-st.info("🔒 O Book Doctor trabalha em cópia. O arquivo enviado nunca é sobrescrito.")
+st.info("🔒 O Book Doctor trabalha em cópia. O arquivo/texto enviado nunca é sobrescrito.")
 
 jarvis_package = dict(st.session_state.get("jarvis_handoff_package") or {})
 jarvis_route = jarvis_package.get("route") or {}
@@ -30,7 +30,10 @@ jarvis_files = list(jarvis_package.get("files") or [])
 jarvis_pdf = next((x for x in jarvis_files if x.get("kind") == "pdf" and "capa" not in str(x.get("name") or "").casefold()), None)
 if jarvis_pdf is None:
     jarvis_pdf = next((x for x in jarvis_files if x.get("kind") == "pdf"), None)
+jarvis_document = next((x for x in jarvis_files if x.get("kind") == "document"), None)
 jarvis_cover = next((x for x in jarvis_files if "capa" in str(x.get("name") or "").casefold() and x is not jarvis_pdf), None)
+jarvis_text_payload = str(jarvis_package.get("text_payload") or "").strip()
+jarvis_text_manuscript = bool(jarvis_full_remaster and jarvis_text_payload and not (jarvis_pdf or jarvis_document))
 
 
 def _normalizar_nome(value: str) -> str:
@@ -38,14 +41,13 @@ def _normalizar_nome(value: str) -> str:
 
 
 def _jarvis_defaults() -> tuple[str, str]:
-    if not jarvis_pdf:
+    source_item = jarvis_pdf or jarvis_document
+    if not source_item:
         return "Quando Mel Aprendeu a Esperar", "Pequenas Histórias, Grandes Lições"
-    raw_title = Path(str(jarvis_pdf.get("name") or "livro.pdf")).stem
+    raw_title = Path(str(source_item.get("name") or "livro")).stem
     suggested_title = re.sub(r"[_-]+", " ", raw_title).strip() or "Livro importado"
     request = str(jarvis_package.get("request") or "")
     request_norm = _normalizar_nome(request)
-
-    # Reutiliza metadados editoriais já conhecidos antes de inventar coleção nova.
     for book in listar_livros():
         known_title = str(book.get("titulo") or "")
         if known_title and _normalizar_nome(known_title) == _normalizar_nome(suggested_title):
@@ -58,9 +60,10 @@ def _jarvis_defaults() -> tuple[str, str]:
 
 jarvis_title_default, jarvis_collection_default = _jarvis_defaults()
 if jarvis_full_remaster:
+    source_label = "manuscrito em texto" if jarvis_text_manuscript else "arquivo encaminhado"
     st.success(
-        "🤖 Jarvis encaminhou este livro para uma revisão completa. O Book Doctor fará a auditoria inicial automaticamente "
-        "e depois entregará o projeto ao Autopilot Editorial Remaster."
+        f"🤖 Jarvis encaminhou este {source_label} para uma revisão completa. O Book Doctor preservará a entrada "
+        "e entregará o projeto ao Autopilot Editorial Remaster."
     )
 
 st.subheader("1 · Identifique o projeto")
@@ -69,7 +72,7 @@ tipo_options = ["📖 Livro de História", "🖍️ Coloring / Line Art", "🧩 
 tipo_label = a.selectbox("Tipo de projeto", tipo_options, index=0)
 tipo_map = {"📖 Livro de História":"story", "🖍️ Coloring / Line Art":"coloring", "🧩 Livro de Atividades":"activity", "📚 Outro":"other"}
 status_options = ["Já publicado", "Ainda não publicado", "Em desenvolvimento"]
-status_label = b.selectbox("Status editorial", status_options, index=0 if jarvis_full_remaster else 0)
+status_label = b.selectbox("Status editorial", status_options, index=0)
 status_map = {"Já publicado":"publicado", "Ainda não publicado":"nao_publicado", "Em desenvolvimento":"em_desenvolvimento"}
 status_capa = c.selectbox("Situação da capa", ["Capa existente", "Sem capa", "Capa em desenvolvimento"])
 
@@ -95,19 +98,19 @@ if incoming_size:
     tamanho_mb = incoming_size / (1024 * 1024)
     if tamanho_mb >= 80:
         st.info(
-            f"📦 PDF grande detectado: {tamanho_mb:.1f} MB. "
-            "Para este primeiro diagnóstico use preferencialmente a auditoria ⚡ Rápida; "
-            "a auditoria completa pode consumir bastante memória ao decodificar todas as imagens."
+            f"📦 PDF grande detectado: {tamanho_mb:.1f} MB. Para este primeiro diagnóstico use preferencialmente "
+            "a auditoria ⚡ Rápida; a auditoria completa pode consumir bastante memória."
         )
+if jarvis_text_manuscript:
+    st.info("📝 Manuscrito em texto recebido pelo Jarvis. Você não precisa transformar o texto em PDF para usar a Revisão Completa.")
 
 if tipo_map[tipo_label] == "coloring":
-    st.caption("🖍️ Coloring Book: além da resolução, o plano de restauração incluirá Line Art QA, preto/branco puro, espessura de traço, complexidade por idade, Style DNA e Cover Doctor.")
+    st.caption("🖍️ Coloring Book: o plano de restauração incluirá Line Art QA, preto/branco puro, espessura de traço, complexidade por idade, Style DNA e Cover Doctor.")
 if status_capa == "Sem capa":
-    st.caption("📕 Sem capa: o projeto será marcado para criação posterior de Cover Master usando personagens/Style DNA aprovados do próprio miolo.")
+    st.caption("📕 Sem capa: o projeto será marcado para criação posterior de Cover Master usando personagens/Style DNA aprovados.")
 
 
 def _salvar_upload_sem_copia_extra(uploaded, pasta: Path) -> Path:
-    """Salva UploadedFile evitando getvalue(), que duplica PDFs grandes em RAM."""
     pasta.mkdir(parents=True, exist_ok=True)
     destino = pasta / uploaded.name
     buffer = uploaded.getbuffer()
@@ -127,19 +130,27 @@ def _salvar_handoff_bytes(item: dict, pasta: Path) -> Path:
     return destino
 
 
-autorun_key = f"jarvis_book_doctor_autorun_{jarvis_package.get('id','')}"
-jarvis_auto_pending = bool(jarvis_full_remaster and jarvis_pdf and not st.session_state.get(autorun_key))
+def _salvar_handoff_texto(texto: str, pasta: Path) -> Path:
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / "jarvis_manuscrito_original.txt"
+    destino.write_text(texto, encoding="utf-8")
+    return destino
+
+
+autorun_key = f"jarvis_book_doctor_autorun_{jarvis_package.get('fingerprint') or jarvis_package.get('id','')}"
+jarvis_source_available = bool(jarvis_pdf or jarvis_document or jarvis_text_manuscript)
+jarvis_auto_pending = bool(jarvis_full_remaster and jarvis_source_available and not st.session_state.get(autorun_key))
 manual_clicked = st.button(
     "🔎 Criar auditoria + plano de restauração",
     type="primary",
-    disabled=not bool(miolo or capa or jarvis_pdf),
+    disabled=not bool(miolo or capa or jarvis_source_available),
 )
 
 if manual_clicked or jarvis_auto_pending:
     if jarvis_auto_pending:
         st.session_state[autorun_key] = True
     try:
-        with st.spinner("Preservando originais e criando a auditoria…"):
+        with st.spinner("Preservando originais e criando a entrada editorial…"):
             projeto=criar_projeto(
                 titulo, idioma,
                 tipo_projeto=tipo_map[tipo_label],
@@ -153,15 +164,17 @@ if manual_clicked or jarvis_auto_pending:
                 if miolo:
                     tmp = _salvar_upload_sem_copia_extra(miolo, tmp_root / "miolo")
                     orig=preservar_original(projeto,str(tmp),"miolo")
-                    if modo_auditoria.startswith("⚡"):
-                        miolo_r=auditar_pdf_rapido(orig)
-                    else:
-                        miolo_r=auditar_pdf(orig,str(Path(projeto['pasta'])/'extraidas'))
+                    miolo_r=auditar_pdf_rapido(orig) if modo_auditoria.startswith("⚡") else auditar_pdf(orig,str(Path(projeto['pasta'])/'extraidas'))
                 elif jarvis_pdf:
                     tmp = _salvar_handoff_bytes(jarvis_pdf, tmp_root / "miolo")
                     orig=preservar_original(projeto,str(tmp),"miolo")
-                    # Handoff Full Remaster sempre começa em triagem rápida para reduzir pico de RAM.
                     miolo_r=auditar_pdf_rapido(orig) if jarvis_full_remaster or modo_auditoria.startswith("⚡") else auditar_pdf(orig,str(Path(projeto['pasta'])/'extraidas'))
+                elif jarvis_document:
+                    tmp = _salvar_handoff_bytes(jarvis_document, tmp_root / "miolo")
+                    preservar_original(projeto,str(tmp),"miolo")
+                elif jarvis_text_manuscript:
+                    tmp = _salvar_handoff_texto(jarvis_text_payload, tmp_root / "miolo")
+                    preservar_original(projeto,str(tmp),"miolo")
 
                 if capa:
                     tmp = _salvar_upload_sem_copia_extra(capa, tmp_root / "capa")
@@ -179,32 +192,32 @@ if manual_clicked or jarvis_auto_pending:
                         capa_r=auditar_imagem(orig,trim_w or None,trim_h or None)
 
             rel=gerar_relatorio(projeto,miolo_r,capa_r)
+            if jarvis_document or jarvis_text_manuscript:
+                rel["source_format"] = "text"
+                rel["text_source_preserved"] = True
             plano = None
-            if not (miolo_r and miolo_r.get("modo_auditoria") == "rapida"):
+            if not (miolo_r and miolo_r.get("modo_auditoria") == "rapida") and not (jarvis_document or jarvis_text_manuscript):
                 plano=criar_plano_restauracao(projeto,rel,tipo_map[tipo_label],status_map[status_label],colecao)
             st.session_state['book_doctor_report']=rel
             st.session_state['book_doctor_project']=projeto
             st.session_state['restoration_plan']=plano
 
             if jarvis_full_remaster:
-                # Libera os bytes grandes da sessão assim que o original já estiver preservado.
                 st.session_state['autopilot_book_doctor_project_id'] = projeto.get('id')
                 st.session_state['autopilot_jarvis_request'] = str(jarvis_package.get('request') or '')
+                st.session_state['autopilot_source_fingerprint'] = str(jarvis_package.get('fingerprint') or '')
                 st.session_state.pop('jarvis_handoff_package', None)
                 st.switch_page("pages/52_✨_Autopilot_Editorial_Remaster.py")
     except MemoryError:
-        st.error(
-            "O servidor ficou sem memória durante a auditoria. Para este PDF grande, selecione "
-            "⚡ Rápida — triagem sem extrair todas as imagens e tente novamente."
-        )
+        st.error("O servidor ficou sem memória durante a auditoria. Para PDF grande, use a auditoria ⚡ Rápida e tente novamente.")
     except Exception as exc:
-        st.error("Não foi possível concluir a auditoria do Book Doctor.")
+        st.error("Não foi possível concluir a entrada do Book Doctor.")
         st.exception(exc)
 
 rel=st.session_state.get('book_doctor_report')
 projeto=st.session_state.get('book_doctor_project')
 if rel:
-    st.success("Auditoria criada. O original foi preservado com segurança.")
+    st.success("Auditoria/entrada criada. O original foi preservado com segurança.")
     x1,x2,x3,x4=st.columns(4)
     x1.metric("Tipo", rel.get('tipo_projeto','story'))
     x2.metric("Status", rel.get('status_publicacao',''))
@@ -217,13 +230,15 @@ if rel:
         a.metric("Páginas",m['paginas_total']); b.metric(image_label,len(m['imagens'])); c.metric("Tamanho uniforme","Sim" if m['tamanho_uniforme'] else "Não")
         st.caption(m['observacao_ppi'])
         if m.get("modo_auditoria") == "rapida":
-            st.info("⚡ Triagem rápida concluída. Nenhuma imagem foi extraída/decodificada. O plano visual completo será criado quando você rodar a auditoria completa para os assets que realmente precisam de restauração.")
+            st.info("⚡ Triagem rápida concluída. Nenhuma imagem foi extraída/decodificada.")
             text_diag = m.get("analise_textual_piloto") or {}
             if text_diag.get("adjacent_text_overlap"):
-                st.warning(f"Foram detectados {len(text_diag['adjacent_text_overlap'])} par(es) de páginas com forte sobreposição textual. Confirmar visualmente antes de editar.")
+                st.warning(f"Foram detectados {len(text_diag['adjacent_text_overlap'])} par(es) de páginas com forte sobreposição textual.")
                 st.dataframe(text_diag['adjacent_text_overlap'], use_container_width=True, hide_index=True)
         with st.expander("📊 Imagens página por página",expanded=True):
             st.dataframe([{k:v for k,v in x.items() if k not in ('arquivo_extraido',)} for x in m['imagens']],use_container_width=True)
+    elif rel.get("text_source_preserved"):
+        st.info("📝 Manuscrito textual preservado por SHA-256 e pronto para o Autopilot editorial.")
 
     if rel.get('capa'):
         cp=rel['capa']; st.subheader("📕 Capa")
@@ -245,20 +260,18 @@ if rel:
 
     if rel.get('tipo_projeto') == 'story' and projeto:
         st.markdown("### ✨ Full Editorial Remaster — Autopilot")
-        st.write(
-            "Para Story Books, você não precisa abrir cada Studio manualmente. O Autopilot usa checkpoints para passar por "
-            "Revisor, Storyteller + Heart Arc, Moral/Bíblia, emoções, Psicologia das Cores, Style DNA, Character Masters, visual e QA; "
-            "depois entrega um pacote consolidado para sua decisão final."
-        )
+        st.write("O Autopilot usa checkpoints para Revisor, Storyteller + Heart Arc, Moral/Bíblia, emoções, cores, Style DNA, Character Masters, visual e QA; depois entrega um pacote consolidado.")
         if st.button("✨ Iniciar Revisão Completa Automática", type="primary", use_container_width=True):
             st.session_state['autopilot_book_doctor_project_id'] = projeto.get('id')
             st.switch_page("pages/52_✨_Autopilot_Editorial_Remaster.py")
 
     st.markdown("### ✨ Próxima etapa manual: Restoration Studio")
     if rel.get("miolo", {}).get("modo_auditoria") == "rapida":
-        st.write("A triagem rápida serve para decidir onde investigar. Para levar imagens extraídas ao Restoration Studio manualmente, rode a auditoria completa depois — sem alterar o original preservado.")
+        st.write("A triagem rápida serve para decidir onde investigar. Para levar imagens extraídas ao Restoration Studio manualmente, rode a auditoria completa depois.")
+    elif rel.get("text_source_preserved"):
+        st.write("Esta entrada é textual. A etapa visual será resolvida separadamente a partir dos Masters/Assets oficiais.")
     else:
-        st.write("No modo manual, você pode escolher uma imagem/página, vincular Character Master e Style DNA, decidir **Manter / Melhorar tecnicamente / Limpar line art / Corrigir personagem / Reilustrar / Criar variação** e comparar Antes × Depois.")
+        st.write("No modo manual, você pode escolher uma imagem/página, vincular Character Master e Style DNA e comparar Antes × Depois.")
         st.page_link("pages/19_✨_Restoration_Studio.py",label="✨ Abrir Restoration Studio manualmente →",use_container_width=True)
     if rel.get('tipo_projeto') == 'coloring':
         st.page_link("pages/20_🖍️_Coloring_Book_Doctor.py",label="🖍️ Abrir Coloring Book Doctor — Age/Complexity + Cover Master →",use_container_width=True)
