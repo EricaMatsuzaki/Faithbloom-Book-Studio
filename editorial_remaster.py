@@ -1,17 +1,8 @@
 """FaithBloom Full Editorial Remaster — ponte segura para obras já publicadas.
 
-Este módulo NÃO duplica Roteirista, Revisor, Heart Arc, Emotional Experience
-Engine, Prompt-Mestre, Character Universe ou Quality Guardian. Ele prepara um
-estado derivado de um projeto do Book Doctor e registra a rota canônica que deve
-ser usada depois da confirmação humana do texto/cenas importados.
-
-Princípios:
-- original preservado e verificado por SHA-256;
-- nenhuma reescrita automática durante a importação;
-- texto extraído do PDF é rascunho de mapeamento, não verdade editorial;
-- agentes só podem rodar depois de confirmação explícita da autora;
-- revisão textual vem antes da remasterização visual;
-- versão revisada permanece derivada e versionada.
+Prepara um estado derivado de um projeto do Book Doctor sem duplicar os agentes
+especializados. Aceita PDF preservado e também manuscrito textual preservado pelo
+Jarvis. Em ambos os casos o original é imutável e verificado por SHA-256.
 """
 from __future__ import annotations
 
@@ -19,6 +10,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import uuid
 
 from pypdf import PdfReader
@@ -28,23 +20,12 @@ from book_doctor import sha256
 
 SCHEMA = "faithbloom.editorial-remaster.v1"
 
-# Ordem editorial para obra existente: diagnosticar antes de reescrever.
 EDITORIAL_REMASTER_ROUTE = [
-    "book_doctor",
-    "story_reviewer",
-    "story_editor",
-    "storyteller",
-    "heart_arc",
-    "emotional_experience_engine",
-    "prompt_master_compliance",
-    "biblical_reference_validator",
-    "emotional_color_director",
-    "originality_guard",
-    "character_universe",
-    "restoration_studio",
-    "quality_guardian",
-    "publishing_platform_engine",
-    "publishing_distribution_center",
+    "book_doctor", "story_reviewer", "story_editor", "storyteller", "heart_arc",
+    "emotional_experience_engine", "prompt_master_compliance",
+    "biblical_reference_validator", "emotional_color_director", "originality_guard",
+    "character_universe", "restoration_studio", "quality_guardian",
+    "publishing_platform_engine", "publishing_distribution_center",
 ]
 
 
@@ -64,7 +45,6 @@ def _manifest_entries(projeto: dict) -> list[dict]:
 
 
 def localizar_miolo_original(projeto: dict) -> dict:
-    """Retorna o miolo preservado e valida o hash registrado no Book Doctor."""
     entries = [x for x in _manifest_entries(projeto) if x.get("papel") == "miolo"]
     if not entries:
         raise ValueError("O Book Doctor não possui um miolo original preservado para este projeto.")
@@ -80,7 +60,6 @@ def localizar_miolo_original(projeto: dict) -> dict:
 
 
 def extrair_texto_paginas(caminho_pdf: str) -> list[dict]:
-    """Extrai texto por página sem alterar o PDF e sem inventar conteúdo."""
     reader = PdfReader(caminho_pdf)
     paginas: list[dict] = []
     for numero, page in enumerate(reader.pages, 1):
@@ -95,8 +74,62 @@ def extrair_texto_paginas(caminho_pdf: str) -> list[dict]:
             "texto_extraido": texto,
             "tem_texto": bool(texto),
             "erro_extracao": erro,
+            "origem": "pdf",
         })
     return paginas
+
+
+def extrair_texto_manuscrito(caminho: str) -> list[dict]:
+    """Lê manuscrito UTF-8 preservando blocos de página quando já estruturados.
+
+    Se houver cabeçalhos PÁGINA/PAGINA/PAGE, cada bloco vira uma página lógica.
+    Blocos explicitamente marcados como ILUSTRAÇÃO/ILUSTRACAO não viram texto
+    narrativo; permanecem fora do mapeamento textual para não substituir cenas.
+    Sem cabeçalhos, o manuscrito inteiro vira uma página lógica e seguirá pelo
+    classificador editorial normal.
+    """
+    raw = Path(caminho).read_text(encoding="utf-8", errors="replace").strip()
+    if not raw:
+        raise ValueError("O manuscrito textual preservado está vazio.")
+    pattern = re.compile(
+        r"(?im)^\s*(?:#{1,6}\s*)?(?:P[ÁA]GINA|PAGE)\s+(\d+)\s*(?:[-—–:]\s*([^\n]*))?\s*$"
+    )
+    matches = list(pattern.finditer(raw))
+    if not matches:
+        return [{
+            "pagina": 1, "texto_extraido": raw, "tem_texto": True,
+            "erro_extracao": "", "origem": "jarvis_text",
+        }]
+
+    paginas: list[dict] = []
+    for i, match in enumerate(matches):
+        numero = int(match.group(1))
+        rotulo = str(match.group(2) or "").strip()
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
+        corpo = raw[start:end].strip()
+        role = rotulo.casefold()
+        # Direções de ilustração não devem ser tratadas como prosa narrativa.
+        if "ilustra" in role:
+            corpo = ""
+        paginas.append({
+            "pagina": numero,
+            "texto_extraido": corpo,
+            "tem_texto": bool(corpo),
+            "erro_extracao": "",
+            "origem": "jarvis_text",
+            "rotulo_origem": rotulo,
+        })
+    return paginas
+
+
+def _extrair_fonte(original_path: str) -> tuple[list[dict], str]:
+    suffix = Path(original_path).suffix.casefold()
+    if suffix == ".pdf":
+        return extrair_texto_paginas(original_path), "pdf"
+    if suffix in {".txt", ".md", ".rtf"}:
+        return extrair_texto_manuscrito(original_path), "text"
+    raise ValueError(f"Formato de miolo ainda não suportado pelo Full Editorial Remaster: {suffix or 'sem extensão'}")
 
 
 def criar_rascunho_remaster_editorial(
@@ -109,17 +142,12 @@ def criar_rascunho_remaster_editorial(
     aprendizado_cristao: str = "",
     emocao_central: str = "",
 ) -> dict:
-    """Cria rascunho derivado e seguro para revisão editorial completa.
-
-    Não chama LLM, não modifica o original e não transforma páginas em cenas
-    automaticamente. O texto extraído precisa ser confirmado/mapeado pela autora.
-    """
     if str(projeto.get("tipo_projeto") or "story") != "story":
         raise ValueError("Full Editorial Remaster textual está disponível somente para Story Book nesta etapa.")
 
     original = localizar_miolo_original(projeto)
     before_hash = original["sha256"]
-    paginas = extrair_texto_paginas(original["arquivo"])
+    paginas, source_format = _extrair_fonte(original["arquivo"])
     after_hash = sha256(original["arquivo"])
     if before_hash != after_hash:
         raise RuntimeError("O original mudou durante a preparação do remaster. Operação interrompida.")
@@ -140,11 +168,8 @@ def criar_rascunho_remaster_editorial(
         "licao_final": str(licao_final or "").strip(),
         "aprendizado_cristao": str(aprendizado_cristao or "").strip(),
         "emocao_central": str(emocao_central or "").strip(),
-        "original": {
-            "arquivo": original["arquivo"],
-            "sha256": before_hash,
-            "imutavel": True,
-        },
+        "original": {"arquivo": original["arquivo"], "sha256": before_hash, "imutavel": True},
+        "source_format": source_format,
         "book_doctor_report_snapshot": deepcopy(relatorio_book_doctor or {}),
         "paginas_texto_extraido": paginas,
         "cenas_texto": [],
@@ -169,27 +194,25 @@ def criar_rascunho_remaster_editorial(
     pasta = Path(projeto["pasta"]) / "remastered" / "editorial" / remaster_id
     pasta.mkdir(parents=True, exist_ok=True)
     path = pasta / "editorial_remaster.json"
-    path.write_text(json.dumps(estado, ensure_ascii=False, indent=2), encoding="utf-8")
     estado["arquivo_estado"] = str(path)
+    path.write_text(json.dumps(estado, ensure_ascii=False, indent=2), encoding="utf-8")
     return estado
 
 
 def confirmar_mapeamento_cenas(estado: dict, paginas_historia: list[int]) -> dict:
-    """Converte somente páginas explicitamente aprovadas em cenas revisáveis."""
     paginas_ok = {int(x) for x in paginas_historia}
     if not paginas_ok:
         raise ValueError("Selecione ao menos uma página de história antes de confirmar o mapeamento.")
-
     por_pagina = {
         int(x.get("pagina")): x
-        for x in (estado.get("paginas_texto_extraido") or [])
-        if isinstance(x, dict)
+        for x in (estado.get("paginas_texto_extraido") or []) if isinstance(x, dict)
     }
     faltantes = sorted(p for p in paginas_ok if p not in por_pagina)
     if faltantes:
-        raise ValueError(f"Páginas não encontradas no PDF importado: {faltantes}")
+        raise ValueError(f"Páginas não encontradas no material importado: {faltantes}")
 
     cenas = []
+    origem = "jarvis_text" if estado.get("source_format") == "text" else "book_doctor_pdf"
     for p in sorted(paginas_ok):
         texto = str(por_pagina[p].get("texto_extraido") or "").strip()
         if not texto:
@@ -198,10 +221,10 @@ def confirmar_mapeamento_cenas(estado: dict, paginas_historia: list[int]) -> dic
             "numero": len(cenas) + 1,
             "texto": texto,
             "pagina_origem": p,
-            "origem": "book_doctor_pdf",
+            "origem": origem,
         })
     if not cenas:
-        raise ValueError("As páginas selecionadas não possuem texto extraível para revisão.")
+        raise ValueError("As páginas selecionadas não possuem texto para revisão.")
 
     novo = deepcopy(estado)
     novo["cenas_texto"] = cenas
@@ -212,7 +235,6 @@ def confirmar_mapeamento_cenas(estado: dict, paginas_historia: list[int]) -> dic
 
 
 def gate_revisao_editorial(estado: dict) -> dict:
-    """Gate fail-closed antes de qualquer chamada aos agentes editoriais."""
     bloqueios = []
     original = estado.get("original") or {}
     path = str(original.get("arquivo") or "")
@@ -234,17 +256,6 @@ def gate_revisao_editorial(estado: dict) -> dict:
 
 
 def gerar_dossie_revisao(estado: dict, chamar_llm) -> dict:
-    """Executa apenas o diagnóstico editorial inicial, sem reescrever a obra.
-
-    Ordem desta etapa:
-    1. valida o gate e o hash do original;
-    2. chama o Revisor Editorial independente;
-    3. roda o Prompt-Mestre Compliance determinístico;
-    4. devolve/salva um dossiê com problemas e próximos especialistas.
-
-    O Editor de História e o Roteirista NÃO são chamados aqui. Assim, a autora
-    vê o diagnóstico antes de aprovar qualquer alteração textual.
-    """
     gate = gate_revisao_editorial(estado)
     if not gate["ok"]:
         raise ValueError("Revisão editorial bloqueada: " + ", ".join(gate["bloqueios"]))
@@ -259,8 +270,6 @@ def gerar_dossie_revisao(estado: dict, chamar_llm) -> dict:
 
     work = deepcopy(estado)
     revisado = revisor_node(work, chamar_llm)
-
-    # O Revisor não tem autorização para reescrever a obra nesta fase.
     if (revisado.get("cenas_texto") or []) != cenas_antes:
         raise RuntimeError("O Revisor alterou cenas durante a fase de diagnóstico. Operação bloqueada.")
 
@@ -275,12 +284,8 @@ def gerar_dossie_revisao(estado: dict, chamar_llm) -> dict:
     if precisa_revisao_textual:
         proximos.extend(["story_editor", "storyteller"])
     proximos.extend([
-        "heart_arc",
-        "emotional_experience_engine",
-        "prompt_master_compliance",
-        "biblical_reference_validator",
-        "emotional_color_director",
-        "originality_guard",
+        "heart_arc", "emotional_experience_engine", "prompt_master_compliance",
+        "biblical_reference_validator", "emotional_color_director", "originality_guard",
     ])
 
     dossie = {
@@ -290,10 +295,7 @@ def gerar_dossie_revisao(estado: dict, chamar_llm) -> dict:
         "gerado_em": _now_iso(),
         "original_sha256": before_hash,
         "original_preservado": True,
-        "revisor": {
-            "status": "APROVADO" if revisado.get("revisao_aprovada") else "REVISAR",
-            "notas": notas,
-        },
+        "revisor": {"status": "APROVADO" if revisado.get("revisao_aprovada") else "REVISAR", "notas": notas},
         "prompt_mestre": compliance,
         "precisa_revisao_textual": precisa_revisao_textual,
         "proximos_especialistas": proximos,
@@ -301,7 +303,7 @@ def gerar_dossie_revisao(estado: dict, chamar_llm) -> dict:
         "aprovacao_humana_pendente": True,
         "politica": (
             "Diagnóstico primeiro. Nenhuma cena é reescrita e nenhuma ilustração é regenerada "
-            "até a autora revisar o dossiê e aprovar a próxima etapa."
+            "até a próxima etapa autorizada do fluxo."
         ),
     }
 
