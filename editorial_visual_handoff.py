@@ -3,6 +3,10 @@
 Não gera imagens automaticamente. Congela um handoff editorial por cena/página
 com texto revisado e direção emocional e injeta esse contexto no plano existente
 do Restoration Studio, preservando decisões e versões já registradas.
+
+Antes do handoff, o Autopilot Compliance Core valida estrutura canônica, execução
+do Heart Arc, Prompt-Mestre, moral, Bíblia e mapa emocional. Assim uma etapa não
+fica "verde" só porque rodou: precisa provar conformidade editorial.
 """
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from datetime import datetime, timezone
 from hashlib import sha256 as _sha256
 import json
 
+from autopilot_compliance_core import assert_autopilot_compliance
 from book_doctor import sha256
 from restoration_studio import criar_plano_restauracao, carregar_plano_restauracao, salvar_vinculos
 
@@ -25,7 +30,7 @@ def _fingerprint(payload: dict) -> str:
 
 
 def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
-    """Prepara contexto visual somente quando texto e mapa emocional foram aprovados."""
+    """Prepara contexto visual somente quando texto e contratos editoriais passaram."""
     original = state.get("original") or {}
     caminho = str(original.get("arquivo") or "")
     esperado = str(original.get("sha256") or "")
@@ -38,6 +43,8 @@ def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
         raise ValueError("Prompt-Mestre ainda possui bloqueio para a versão revisada.")
     if not state.get("metadata_emocional_confirmada"):
         raise ValueError("O mapa emocional ainda não foi confirmado cena por cena pela autora.")
+
+    compliance_report = assert_autopilot_compliance(state)
 
     cenas = [deepcopy(x) for x in (state.get("cenas_texto") or []) if isinstance(x, dict)]
     mapa = [deepcopy(x) for x in (state.get("mapa_emocional") or []) if isinstance(x, dict)]
@@ -52,6 +59,7 @@ def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
         numero = int(cena.get("numero") or i)
         scene_rows.append({
             "numero": numero,
+            "numero_origem": cena.get("numero_origem"),
             "pagina_origem": cena.get("pagina_origem"),
             "texto_revisado": cena.get("texto", ""),
             "personagem_principal": cena.get("personagem_principal", ""),
@@ -66,7 +74,7 @@ def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
         })
 
     snapshot = {
-        "schema": "faithbloom.editorial-visual-handoff.v1",
+        "schema": "faithbloom.editorial-visual-handoff.v2",
         "remaster_id": state.get("remaster_id", ""),
         "projeto_book_doctor_id": state.get("projeto_book_doctor_id", ""),
         "titulo": state.get("titulo", ""),
@@ -76,8 +84,13 @@ def preparar_handoff_visual(state: dict, projeto: dict) -> dict:
         "licao_final": state.get("licao_final", ""),
         "original_sha256": esperado,
         "cenas": scene_rows,
+        "autopilot_compliance": deepcopy(compliance_report),
+        "heart_arc_scene_map": deepcopy(state.get("heart_arc_scene_map") or {}),
         "criado_em": _now_iso(),
         "policy": {
+            "canonical_story_lock": True,
+            "heart_arc_execution_gate": True,
+            "prompt_master_required": True,
             "use_official_character_masters": True,
             "preserve_original_asset": True,
             "create_derived_versions_only": True,
