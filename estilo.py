@@ -334,6 +334,7 @@ def render_sidebar_navigation() -> None:
 
         with st.expander("🧰 Ferramentas avançadas", expanded=False):
             _sidebar_link("pages/16_🩺_Book_Doctor.py", "🩺 Book Doctor")
+            _sidebar_link("pages/52_✨_Autopilot_Editorial_Remaster.py", "✨ Autopilot Editorial Remaster")
             _sidebar_link("pages/17_🎭_Emotional_Color_Director.py", "🎭 Emotional Color")
             _sidebar_link("pages/18_🎨_Style_DNA_Lab.py", "🎨 Style DNA")
             _sidebar_link("pages/19_✨_Restoration_Studio.py", "✨ Restoration Studio")
