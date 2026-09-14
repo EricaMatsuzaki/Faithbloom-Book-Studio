@@ -5,6 +5,7 @@ import streamlit as st
 
 from estilo import aplicar_estilo, hero
 from book_doctor import listar_projetos, carregar_relatorio
+from editorial_autopilot_storage import restore_runtime_tree, sync_runtime_tree
 from editorial_remaster_autopilot import (
     STAGES, approve_final_remaster, list_runs, load_run, new_run, run_autopilot,
 )
@@ -28,10 +29,11 @@ st.info(
 
 
 def _advance(project: dict, run: dict) -> dict:
-    """Avança texto/emoção/identidade e, ao chegar ao final, prepara o visual."""
+    """Avança o Autopilot e espelha checkpoints no storage persistente."""
     current = run_autopilot(project, run, chamar_llm)
     if current.get("status") == "needs_author_review":
         current = run_visual_autopilot(project, current)
+    sync_runtime_tree(project)
     return current
 
 
@@ -46,7 +48,10 @@ default_idx = next((i for i, p in enumerate(projects) if str(p.get("id") or "") 
 labels = [f"{p.get('titulo','Sem título')} · {p.get('colecao','')} · {p.get('id')}" for p in projects]
 idx = st.selectbox("Livro", range(len(projects)), index=default_idx, format_func=lambda i: labels[i])
 project = projects[idx]
+restore_info = restore_runtime_tree(project)
 report = carregar_relatorio(project)
+if restore_info.get("restored"):
+    st.caption(f"☁️ {restore_info.get('restored')} checkpoint(s)/arquivo(s) do Autopilot foram restaurados do armazenamento persistente.")
 
 st.markdown("### Como o Autopilot trabalha")
 st.caption(
@@ -107,6 +112,7 @@ if not active:
                 "final_human_approval_required": True,
             },
         )
+        sync_runtime_tree(project)
         st.session_state["autopilot_run_id"] = active["run_id"]
         with st.spinner("A equipe FaithBloom está trabalhando. Vou avançar automaticamente até o pacote final ou até um bloqueio que realmente não possa ser resolvido internamente…"):
             active = _advance(project, active)
@@ -237,13 +243,16 @@ if active:
             )
             if visual_after.get("ok"):
                 active = approve_final_remaster(project, prepared, approved=True)
+                sync_runtime_tree(project)
                 st.success("Edição Remastered aprovada pela autora. QA final executado; nenhum Master foi promovido e nada foi publicado automaticamente.")
                 st.rerun()
             else:
                 active = prepared
+                sync_runtime_tree(project)
                 st.error("A aprovação final não foi concluída porque o Quality Gate ainda encontrou uma pendência visual segura. O progresso foi preservado para correção e retomada.")
         if c2.button("✏️ Manter para ajustes pontuais", use_container_width=True):
             active = approve_final_remaster(project, active, approved=False)
+            sync_runtime_tree(project)
             st.info("Pacote mantido para ajustes. O original permanece preservado.")
 
     if status == "completed":
