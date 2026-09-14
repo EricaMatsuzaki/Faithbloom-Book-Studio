@@ -1,9 +1,8 @@
 """Jarvis Multimodal Intake & Agent Handoff.
 
-Centraliza anexos enviados ao Jarvis e os encaminha para módulos já existentes.
-Regra anti-duplicação: verificar -> reutilizar -> estender. Este módulo NÃO cria
-novos estúdios editoriais; apenas classifica, prepara contexto e aponta a rota
-correta. Nenhum upload vira Master automaticamente.
+Centraliza anexos e pedidos acionáveis enviados ao Jarvis e os encaminha para
+módulos já existentes. Regra anti-duplicação: verificar -> reutilizar -> estender.
+Nenhum upload vira Master automaticamente.
 """
 from __future__ import annotations
 
@@ -19,10 +18,6 @@ SUPPORTED_UPLOAD_TYPES = (
     "png", "jpg", "jpeg", "webp",
     "mp3", "wav", "m4a", "aac", "ogg", "webm",
 )
-# Livros publicados ilustrados podem ultrapassar 100 MB. O padrão anterior de
-# 20 MB impedia justamente o uso do Jarvis como porta de entrada do Remaster.
-# Mantemos os limites configuráveis por variável de ambiente e adotamos um
-# padrão compatível com PDFs editoriais grandes sem liberar uploads ilimitados.
 MAX_FILE_BYTES = int(os.environ.get("JARVIS_MAX_UPLOAD_MB", "200")) * 1024 * 1024
 MAX_PACKAGE_BYTES = int(os.environ.get("JARVIS_MAX_PACKAGE_MB", "250")) * 1024 * 1024
 
@@ -79,7 +74,6 @@ def _clean_filename(name: str) -> str:
 
 
 def classify_attachment(name: str, mime_type: str | None = None) -> str:
-    """Classifica anexo por tipo de uso; nunca por conteúdo sensível."""
     filename = _clean_filename(name)
     mime = (mime_type or mimetypes.guess_type(filename)[0] or "").casefold()
     ext = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
@@ -115,7 +109,6 @@ def normalize_attachment(name: str, mime_type: str | None, data: bytes) -> dict[
 
 
 def _text_has(text: str, *terms: str) -> bool:
-    """Procura termos/frases completos para evitar colisões como Mel x melhore."""
     value = (text or "").casefold()
     return any(
         re.search(rf"(?<!\w){re.escape(term.casefold())}(?!\w)", value) is not None
@@ -133,16 +126,30 @@ def _full_remaster_intent(text: str) -> bool:
     )
 
 
+def _review_intent(text: str) -> bool:
+    return _full_remaster_intent(text) or _text_has(
+        text, "revise", "revisar", "revisão", "revisao", "analise", "analisar",
+        "corrija o texto", "corrigir o texto", "book doctor",
+    )
+
+
+def _create_intent(text: str) -> bool:
+    return _text_has(
+        text, "crie uma história", "criar uma história", "nova história",
+        "escreva uma história", "crie história",
+    )
+
+
 def choose_route(request: str, attachments: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
     files = list(attachments or [])
     kinds = {str(f.get("kind") or "") for f in files}
     text = (request or "").strip()
 
-    # Intenção explícita tem prioridade sobre o tipo do arquivo. Full Remaster
-    # continua entrando pelo Book Doctor; o workflow_intent carrega a orquestração.
-    if _text_has(text, "crie uma história", "criar uma história", "nova história", "escreva uma história", "crie história"):
+    # A intenção explícita vence o tipo de entrada. Isso é importante para texto
+    # colado: Revisão Completa não pode cair no Orquestrador só por não haver PDF.
+    if _create_intent(text):
         route_id = "story_create"
-    elif (_full_remaster_intent(text) or _text_has(text, "revise", "revisar", "analise", "analisar", "corrija o texto", "book doctor")) and kinds & {"pdf", "document"}:
+    elif _review_intent(text):
         route_id = "story_review"
     elif _text_has(text, "personagem", "referência", "referencia", "character", "mel") and "image" in kinds:
         route_id = "character_reference"
@@ -158,8 +165,6 @@ def choose_route(request: str, attachments: Iterable[dict[str, Any]] | None = No
         route_id = "audiobook"
     elif files:
         route_id = "asset_library"
-    elif text:
-        route_id = "orchestrator"
     else:
         route_id = "orchestrator"
 
@@ -168,14 +173,40 @@ def choose_route(request: str, attachments: Iterable[dict[str, Any]] | None = No
     return route
 
 
+def should_prepare_handoff(request: str, attachments: Iterable[dict[str, Any]] | None = None) -> bool:
+    """Decide de forma determinística se Jarvis deve conversar ou executar handoff.
+
+    Arquivos sempre exigem handoff. Texto sem arquivo só vira handoff quando contém
+    uma ação editorial inequívoca; conversa comum continua no Jarvis.
+    """
+    files = list(attachments or [])
+    if files:
+        return True
+    text = (request or "").strip()
+    return bool(text and (_review_intent(text) or _create_intent(text)))
+
+
+def _package_fingerprint(request: str, files: list[dict[str, Any]], route_id: str, workflow_intent: str) -> str:
+    payload = "\n".join([
+        route_id,
+        workflow_intent,
+        (request or "").strip(),
+        *[str(f.get("sha256") or "") for f in files],
+    ])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | None = None) -> dict[str, Any]:
     files = list(attachments or [])
     total = sum(int(f.get("size") or 0) for f in files)
     if total > MAX_PACKAGE_BYTES:
         raise ValueError(f"O conjunto de anexos excede o limite de {MAX_PACKAGE_BYTES // (1024 * 1024)} MB.")
-    route = choose_route(request, files)
-    full_remaster = route.get("id") == "story_review" and _full_remaster_intent(request)
+    text = (request or "").strip()
+    route = choose_route(text, files)
+    full_remaster = route.get("id") == "story_review" and _full_remaster_intent(text)
     workflow_intent = "editorial_remaster_full" if full_remaster else "standard"
+    input_mode = "mixed" if (files and text) else "files" if files else "text"
+    fingerprint = _package_fingerprint(text, files, str(route.get("id") or ""), workflow_intent)
     package_id = f"handoff-{uuid.uuid4().hex[:12]}"
     names = ", ".join(f.get("name", "arquivo") for f in files) or "nenhum anexo"
     agents = ", ".join(route.get("agents") or [])
@@ -185,9 +216,11 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
     )
     if files:
         spoken += f" Recebi {len(files)} arquivo{'s' if len(files) != 1 else ''}."
+    elif text and route.get("id") == "story_review":
+        spoken += " Recebi o manuscrito em texto e vou preservá-lo como entrada editorial."
     if full_remaster:
         spoken += (
-            " Depois do diagnóstico do Book Doctor, o pedido seguirá como Full Editorial Remaster pelo Autopilot, "
+            " Depois da entrada segura pelo Book Doctor, o pedido seguirá como Full Editorial Remaster pelo Autopilot, "
             "com checkpoints e pacote consolidado para sua decisão final."
         )
     if route.get("id") == "character_reference":
@@ -195,7 +228,10 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
     spoken += " Vou manter os originais preservados e não promover nenhum arquivo a Master sem sua aprovação."
     return {
         "id": package_id,
-        "request": (request or "").strip(),
+        "fingerprint": fingerprint,
+        "request": text,
+        "text_payload": text if input_mode in {"text", "mixed"} else "",
+        "input_mode": input_mode,
         "route": route,
         "workflow_intent": workflow_intent,
         "files": files,
@@ -212,5 +248,10 @@ def build_handoff_package(request: str, attachments: Iterable[dict[str, Any]] | 
 def handoff_summary(package: dict[str, Any]) -> str:
     route = package.get("route") or {}
     files = package.get("files") or []
-    file_text = ", ".join(str(f.get("name") or "arquivo") for f in files) if files else "sem anexos"
-    return f"{route.get('label', 'Orquestrador FaithBloom')} · {file_text}"
+    if files:
+        source = ", ".join(str(f.get("name") or "arquivo") for f in files)
+    elif str(package.get("text_payload") or "").strip():
+        source = "manuscrito em texto"
+    else:
+        source = "sem anexos"
+    return f"{route.get('label', 'Orquestrador FaithBloom')} · {source}"
