@@ -29,6 +29,15 @@ SAFE_DESTINATIONS = {
         "label": "Criação de História",
         "hints": ("criar história", "criar historia", "nova história", "nova historia"),
     },
+    "review": {
+        "page": "pages/5_🔍_Analisar_Livro.py",
+        "label": "Revisão Completa",
+        "hints": (
+            "revisão completa", "revisao completa", "full editorial remaster",
+            "full editorial review", "revisar completamente", "edição revisada",
+            "edicao revisada", "remaster editorial", "autopilot editorial remaster",
+        ),
+    },
     "orchestrator": {
         "page": "pages/0_🤖_Orquestrador_FaithBloom.py",
         "label": "Orquestrador FaithBloom",
@@ -134,9 +143,27 @@ def detect_general_intent(text: str) -> str | None:
     return None
 
 
+def _is_full_review_request(value: str) -> bool:
+    destination = SAFE_DESTINATIONS["review"]
+    return any(_norm(hint) in value for hint in destination["hints"])
+
+
 def detect_safe_navigation(text: str) -> dict[str, str] | None:
-    """Detecta apenas navegação reversível para páginas que já existem."""
+    """Detecta navegação reversível para páginas que já existem.
+
+    A Revisão Completa é tratada como uma intenção operacional explícita: quando
+    a autora cola um manuscrito e pede revisão completa, não exigimos que ela
+    escreva também 'abra' ou 'me leve'. O conteúdo original permanece no histórico
+    da sessão e é recuperado pela entrada editorial de texto.
+    """
     value = _norm(text)
+    if not value:
+        return None
+
+    if _is_full_review_request(value):
+        destination = SAFE_DESTINATIONS["review"]
+        return {"key": "review", "page": destination["page"], "label": destination["label"]}
+
     verbs = ("abra", "abrir", "vá", "va", "ir para", "mostre", "mostrar", "leve me", "me leve")
     if not any(v in value for v in verbs):
         return None
