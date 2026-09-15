@@ -122,13 +122,17 @@ st.caption(
     f"Estes conteúdos são separados da história, seguem a faixa {perfil['short_label']} e podem ser editados pela autora antes da publicação."
 )
 
-if st.button("🌸 Gerar Boas-vindas + Pais/Educadores + Ficha Pedagógica"):
-    with st.spinner("Preparando os complementos editoriais..."):
-        extras = gerar_complementos_editoriais(dict(s), chamar_llm)
-    s["boas_vindas"] = extras["boas_vindas"]
-    s["pais_educadores"] = extras["pais_educadores"]
-    s["ficha_pedagogica"] = extras["ficha_pedagogica"]
-    st.success("Complementos gerados. Revise e edite antes de finalizar.")
+if st.button("🌸 Gerar Boas-vindas + Pais/Educadores + Ficha Pedagógica", disabled=not s.get("cenas_texto")):
+    try:
+        with st.spinner("Preparando os complementos editoriais..."):
+            extras = gerar_complementos_editoriais(dict(s), chamar_llm)
+    except ValueError as exc:
+        st.error(str(exc) + " Os complementos anteriores foram preservados.")
+    except Exception:
+        st.error("Não foi possível concluir a geração. Confira o provedor e tente novamente; os complementos anteriores foram preservados.")
+    else:
+        s.update(extras)
+        st.success("Complementos gerados e validados. Revise antes de finalizar.")
 
 s["boas_vindas"] = st.text_area(
     "👋 Mensagem de boas-vindas",

@@ -333,6 +333,7 @@ def render_sidebar_navigation() -> None:
             _sidebar_link("pages/13_✅_QA_Final_e_Release.py", "✅ QA final")
 
         with st.expander("🧰 Ferramentas avançadas", expanded=False):
+            _sidebar_link("pages/37_🧠_Agent_Skills_Bestseller_Readiness.py", "🛠️ Engenharia & Skills")
             _sidebar_link("pages/16_🩺_Book_Doctor.py", "🩺 Book Doctor")
             _sidebar_link("pages/52_✨_Autopilot_Editorial_Remaster.py", "✨ Autopilot Editorial Remaster")
             _sidebar_link("pages/17_🎭_Emotional_Color_Director.py", "🎭 Emotional Color")

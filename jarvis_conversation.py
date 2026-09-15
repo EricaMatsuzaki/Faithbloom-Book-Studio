@@ -14,6 +14,8 @@ WAKE_WORDS = ("jarvis",)
 MAX_HISTORY_ITEMS = 12
 
 SAFE_DESTINATIONS = {
+    "engineering": {"page": "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py",
+                    "label": "Engenharia e Skills", "hints": ("diagnóstico técnico", "skills dos agentes")},
     "characters": {
         "page": "pages/14_👥_Character_Universe.py",
         "label": "Personagens",
@@ -159,6 +161,10 @@ def detect_safe_navigation(text: str) -> dict[str, str] | None:
     value = _norm(text)
     if not value:
         return None
+
+    from agents.engenheiro_saas_automacao import is_engineering_request
+    if is_engineering_request(text):
+        return {"id": "engineering", "key": "engineering", **SAFE_DESTINATIONS["engineering"]}
 
     if _is_full_review_request(value):
         destination = SAFE_DESTINATIONS["review"]

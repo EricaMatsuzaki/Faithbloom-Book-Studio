@@ -281,3 +281,73 @@ def handle_saas_request(text: str, *, existing_components: list[str] | None = No
         "non_negotiables": list(NON_NEGOTIABLES),
         "security_policy": "security_by_default_fail_closed",
     })
+
+
+def is_engineering_request(text: str) -> bool:
+    """Explicit technical intent; a fictional engineer is not an app repair request."""
+    import unicodedata
+    value = "".join(c for c in unicodedata.normalize("NFKD", (text or "").casefold()) if not unicodedata.combining(c))
+    if any(x in value for x in ("historia sobre", "personagem engenheiro", "livro sobre")):
+        return False
+    return any(x in value for x in (
+        "code review", "full stack", "fullstack", "github actions", "bug", "erro no app",
+        "erro no codigo", "corrigir codigo", "corrija o codigo", "auditar agentes", "skills dos agentes",
+        "engenheiro saas", "engenheiro de software", "revisao de codigo", "diagnostico tecnico",
+    ))
+
+
+def engineering_route(text: str) -> dict[str, Any]:
+    return {
+        "project_type": "engineering", "request": text.strip(), "intent": "engineering",
+        "next_action": "run_read_only_diagnostic",
+        "next_page": "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py",
+        "engineering_plan": handle_saas_request(text),
+        "requires_author_approval": False, "code_modified": False,
+    }
+
+
+def collect_review_sources(modules: list[str]) -> dict[str, str]:
+    """Read selected shipped Python modules only, never uploads, secrets or symlinks."""
+    from pathlib import Path
+    import re
+    root = Path(__file__).resolve().parents[1]
+    allowed = {p.relative_to(root).as_posix(): p for folder in (root, root / "agents", root / "pages")
+               for p in folder.glob("*.py") if not p.is_symlink() and p.resolve().is_relative_to(root)}
+    result = {}
+    for module in modules:
+        if module not in allowed:
+            raise ValueError("Módulo fora do código-fonte permitido.")
+        source = allowed[module].read_text(encoding="utf-8")
+        # Preserve line numbers while masking common credential literal assignments.
+        source = re.sub(r'(?im)(\b\w*(?:key|token|secret|password)\w*\s*=\s*)[\"\'][^\"\'\n]+[\"\']', r'\1"[REDACTED]"', source)
+        source = re.sub(r'sk-[A-Za-z0-9_-]{15,}|AIza[A-Za-z0-9_-]{20,}|(?i:Bearer)\s+[A-Za-z0-9._-]+', '[REDACTED]', source)
+        result[module] = source
+    if sum(len(s) for s in result.values()) > 40000:
+        raise ValueError("Selecione menos módulos por revisão (limite de 40 mil caracteres).")
+    return result
+
+
+def run_diagnostic(text: str, *, modules: list[str] | None = None,
+                   context: dict[str, Any] | None = None, chamar_llm=None) -> dict[str, Any]:
+    """Operational entrypoint shared by the UI and incident workflow.
+
+    Static diagnostics are local and free. The injected LLM is used only when
+    the caller explicitly requests a semantic review with selected sources.
+    """
+    from agent_skills import validate_registry
+    from scripts_fullstack_audit import audit_repository
+    from agents import engenheiro_code_review_profundo as deep
+    plan = handle_saas_request(text)
+    registry = validate_registry()
+    audit = audit_repository()
+    result = {
+        "role_id": ROLE_ID, "status": "diagnosed_not_fixed", "plan": plan,
+        "registry": registry, "audit": audit, "code_modified": False,
+        "tests_executed": False, "deployed": False,
+    }
+    needs_deep = deep.escalation_required(context) or bool(chamar_llm)
+    if needs_deep:
+        result["deep_review_plan"] = deep.build_deep_review_plan(text, related_modules=modules)
+    if chamar_llm is not None:
+        result["deep_review"] = deep.review_sources(text, collect_review_sources(modules or []), chamar_llm)
+    return result

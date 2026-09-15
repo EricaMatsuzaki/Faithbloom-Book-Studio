@@ -54,6 +54,7 @@ st.set_page_config(page_title="Jarvis · FaithBloom", page_icon="🤖", layout="
 aplicar_estilo()
 
 NAV_PAGES = {
+    "engineering": "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py",
     "orchestrator": "pages/0_🤖_Orquestrador_FaithBloom.py",
     "create": "pages/1_📖_Criar_do_Zero.py",
     "resume": "pages/2_📚_Retomar_Livro.py",
@@ -267,6 +268,11 @@ def _process_request(text: str, *, project_progress: dict | None = None) -> str:
         intent = "calendar_write"
         st.session_state.pop("jarvis_pending_calendar_action", None)
         reply = "Certo. Cancelei essa alteração e não mexi no seu calendário."
+    elif navigation and navigation.get("id") == "engineering":
+        intent = "engineering"
+        st.session_state["jarvis_suggested_destination"] = navigation
+        st.session_state["engineering_request"] = clean
+        reply = "Abra Engenharia e Skills para executar o diagnóstico técnico e a revisão profunda dos módulos selecionados."
     elif _is_datetime_request(clean):
         intent, reply = "datetime", _datetime_reply(clean)
     elif _is_calendar_request(clean):

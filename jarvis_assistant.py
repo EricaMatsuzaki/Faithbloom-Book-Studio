@@ -164,6 +164,9 @@ def interpret_request(text: str) -> dict:
     """Turn one author sentence into an explicit, inspectable routing proposal."""
     if not (text or "").strip():
         raise ValueError("Conte sua ideia em uma frase para o Jarvis.")
+    from agents.engenheiro_saas_automacao import is_engineering_request, engineering_route
+    if is_engineering_request(text):
+        return engineering_route(text)
     if is_character_universe_request(text):
         return _character_universe_result(text)
     project_type = infer_project_type(text)

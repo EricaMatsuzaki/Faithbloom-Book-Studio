@@ -186,7 +186,7 @@ def classify_failure(exc: BaseException, stage: str = "") -> dict:
     return {"owner": owner, "action": action, "message": str(exc), "exception": type(exc).__name__}
 
 
-def _engineering_plan(stage: str, failure: dict) -> dict:
+def _engineering_plan(stage: str, failure: dict, context: dict | None = None) -> dict:
     if failure.get("owner") not in {"saas_automation_engineer", "fullstack_developer"}:
         return {}
     try:
@@ -196,10 +196,15 @@ def _engineering_plan(stage: str, failure: dict) -> dict:
             f"Responsável sugerido: {failure.get('owner')}. Erro: {failure.get('message')}. "
             "Preserve checkpoints, original e retome do estágio que falhou após a correção."
         )
-        return build_execution_plan(request, existing_components=[
+        plan = build_execution_plan(request, existing_components=[
             "editorial_remaster_autopilot", "editorial_remaster", "restoration_studio",
             "quality_guardian", "Streamlit",
         ])
+        from agents.engenheiro_code_review_profundo import escalation_required, build_deep_review_plan
+        if escalation_required(context):
+            plan["deep_review_plan"] = build_deep_review_plan(stage, symptom=failure.get("message", ""))
+        plan["diagnostic_page"] = "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py"
+        return plan
     except Exception as exc:
         return {"status": "plan_generation_failed", "error": str(exc)}
 
@@ -212,7 +217,7 @@ def record_incident(project: dict, run: dict, stage: str, exc: BaseException) ->
         "created_at": _now(),
         "status": "retrying" if failure["action"] == "retry" else "queued_for_repair",
         **failure,
-        "engineering_plan": _engineering_plan(stage, failure),
+        "engineering_plan": _engineering_plan(stage, failure, {"runtime_failure_persists": any(x.get("stage") == stage for x in run.get("incidents", []))}),
         "resume_from": stage,
         "self_code_patch": False,
         "note": (

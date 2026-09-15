@@ -300,13 +300,19 @@ with tabs[2]:
         selected_ids = st.multiselect("Personagens presentes na cena", ids, format_func=lambda x: _char_label(char_by_id[x]), key="scene_characters")
         excerpt = st.text_area("Trecho da história", height=140, placeholder="Ex.: Mel se sentou perto do vaso e cochichou: ‘Sementinha… você já pode sair.’", key="scene_excerpt")
         if st.button("🎬 Gerar 3 ideias de cenário e pose", type="primary", disabled=not selected_ids or not excerpt.strip()):
-            with st.spinner("O Scene Director está criando 3 direções — sem gerar imagens..."):
-                selected_chars = [carregar_personagem_oficial(x) for x in selected_ids]
-                ideas = suggest_scene_concepts(excerpt, selected_chars, count=3)
-            st.session_state["scene_director_ideas"] = ideas
-            st.session_state["scene_director_character_ids"] = selected_ids
-            st.session_state["scene_director_excerpt"] = excerpt
-            st.rerun()
+            try:
+                with st.spinner("O Scene Director está criando 3 direções — sem gerar imagens..."):
+                    selected_chars = [carregar_personagem_oficial(x) for x in selected_ids]
+                    ideas = suggest_scene_concepts(excerpt, selected_chars, count=3, project_context=st.session_state.get("state") or {})
+            except ValueError as exc:
+                st.error(str(exc) + " As propostas anteriores foram preservadas.")
+            except Exception:
+                st.error("Não foi possível concluir as propostas. Confira o provedor e tente novamente. As propostas anteriores foram preservadas.")
+            else:
+                st.session_state["scene_director_ideas"] = ideas
+                st.session_state["scene_director_character_ids"] = selected_ids
+                st.session_state["scene_director_excerpt"] = excerpt
+                st.rerun()
 
         ideas = st.session_state.get("scene_director_ideas") or []
         if ideas:

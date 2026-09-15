@@ -259,6 +259,10 @@ def build_spoken_reply(
     if not texto:
         return "Não consegui ouvir uma mensagem. Grave novamente e tente de novo."
 
+    from agents.engenheiro_saas_automacao import is_engineering_request
+    if is_engineering_request(texto):
+        return "Posso analisar esse problema em Engenharia e Skills. Abra o diagnóstico técnico para executar a auditoria local ou selecionar módulos para revisão profunda."
+
     if _is_date_time_request(texto):
         return _build_date_time_reply()
 

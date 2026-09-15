@@ -11,8 +11,9 @@ from copy import deepcopy
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import json
+import ast
 
-SCHEMA = "faithbloom.agent-skills.v2"
+SCHEMA = "faithbloom.agent-skills.v3"
 
 COMMON_FORBIDDEN = [
     "prometer best-seller, ranking, vendas ou aprovação por plataforma",
@@ -288,6 +289,66 @@ AGENT_PROFILES = {
     ),
 }
 
+# Profiles outside the original narrative pipeline are equally auditable.
+AGENT_PROFILES["pedagogical_editor"] = _p(
+    "pedagogical_editor", "complementos_editoriais.py", "Editor Pedagógico",
+    "Derivar complementos fiéis à história e ao mapa emocional aprovados.",
+    ["leitura integral do manuscrito", "adequação etária", "mediação de leitura", "perguntas abertas por idade", "psicologia das cores editorial", "fidelidade à moral", "Bible Guard", "validação de campos e quantidades"],
+    ["perguntas ligadas à história", "quantidade conforme perfil etário", "nenhum dado pedagógico inventado", "referência bíblica preservada"],
+    ["story_reviewer", "diagrammer"],
+)
+AGENT_PROFILES["scene_director"] = _p(
+    "scene_director", "character_guide.py", "Diretor de Cena",
+    "Propor três cenas distintas e ilustráveis, fiéis ao trecho, idade e universo aprovado.",
+    ["composição", "enquadramento", "acting e poses", "continuidade visual", "Character DNA", "Style DNA", "World Masters", "cor e iluminação", "adequação etária", "espaço para texto editorial", "opções A/B/C", "originalidade visual"],
+    ["três propostas completas e distintas", "ação fiel ao trecho", "identidade preservada", "paleta atua no ambiente", "não gerar imagem nesta etapa"],
+    ["illustrator", "character_consistency", "emotional_color_director"],
+)
+AGENT_PROFILES["scene_director"]["module_directory"] = ""
+
+# Technical profiles reuse their canonical domains; no second skill list to drift.
+from agents import engenheiro_saas_automacao as _saas
+from agents import engenheiro_code_review_profundo as _deep
+for _engineer in (_saas, _deep):
+    _profile = _p(
+        _engineer.ROLE_ID, Path(_engineer.__file__).name, _engineer.NAME,
+        _engineer.MISSION, _engineer.all_skills(),
+        ["diagnóstico vinculado a evidência", "plano não equivale a correção", "teste de regressão e validação de runtime quando aplicável"],
+        ["quality_guardian"], execution="hybrid" if _engineer is _deep else "deterministic",
+        evidence=["fontes inspecionadas", "resultado de testes", "evidência de runtime quando aplicável"],
+    )
+    _profile["scope"] = "technical"
+    _profile["forbidden"] = ["declarar correção, deploy ou teste executado sem evidência", "executar código retornado por IA"]
+    _profile["operating_rules"] = list(_engineer.NON_NEGOTIABLES)
+    for _field in ("shared_editorial_dna", "heart_arc", "heart_arc_principles", "bestseller_readiness_principles"):
+        _profile[_field] = []
+    _profile["heart_arc_mode"] = "not_applicable"
+    AGENT_PROFILES[_engineer.ROLE_ID] = _profile
+
+INHERITED_MODULE_PROFILES = {
+    "estilos_narrativos.py": ["storyteller"],
+    "roteirista_autoral.py": ["storyteller"],
+    "formato_quadrinhos.py": ["storyteller"],
+}
+# Handoffs to deterministic services do not need fictional LLM profiles.
+HANDOFF_SERVICES = {
+    "asset_library": "asset_library.py", "audio_qa": "audiobook_studio.py",
+    "bestseller_readiness": "bestseller_readiness.py",
+    "biblical_reference_validator": "biblical_reference_validator.py",
+    "character_consistency": "character_consistency.py", "character_universe": "character_universe.py",
+    "coloring_doctor": "coloring_book_doctor.py", "cover_master": "cover_master.py",
+    "emotional_color_director": "emotional_color_director.py",
+    "launch_strategy": "agents/marketing.py", "linguistic_reviewer": "translation_localization.py",
+    "market_bestseller_intelligence": "market_intelligence.py",
+    "print_preflight": "qualidade_impressao.py", "publishing_distribution": "publishing_distribution.py",
+    "publishing_engine": "platform_registry.py", "quality_guardian": "quality_guardian.py",
+}
+
+
+def profile_module_path(profile: dict, root: Path | None = None) -> Path:
+    return (root or Path(__file__).resolve().parent) / profile.get("module_directory", "agents") / profile["module"]
+
+
 MODULE_TO_ROLES = {}
 for _rid, _profile in AGENT_PROFILES.items():
     MODULE_TO_ROLES.setdefault(_profile["module"], []).append(_rid)
@@ -304,7 +365,8 @@ def get_agent_profile(role_id: str) -> dict:
 
 
 def roles_for_module(module_name: str) -> list[str]:
-    return list(MODULE_TO_ROLES.get(Path(module_name).name, []))
+    name = Path(module_name).name
+    return list(MODULE_TO_ROLES.get(name, INHERITED_MODULE_PROFILES.get(name, [])))
 
 
 def shared_literary_contract(*, compact: bool = False) -> str:
@@ -327,13 +389,15 @@ def shared_literary_contract(*, compact: bool = False) -> str:
 
 def skill_contract(role_id: str, *, compact: bool = False) -> str:
     p = get_agent_profile(role_id)
-    shared = shared_literary_contract(compact=compact)
+    shared = ("REGRAS TÉCNICAS: " + "; ".join(p.get("operating_rules", []))
+              if p.get("scope") == "technical" else shared_literary_contract(compact=compact))
     if compact:
         return (
             f"\n[FAITHBLOOM SKILL CONTRACT: {p['name']}]\n"
             f"Missão: {p['mission']}\n"
             f"Skills obrigatórias: {', '.join(p['skills'])}.\n"
             f"Critérios: {'; '.join(p['quality_criteria'])}.\n"
+            f"Evidências necessárias: {'; '.join(p['evidence_requirements']) or 'resultado revisável'}.\n"
             f"Heart Arc mode: {p['heart_arc_mode']}.\n"
             f"Limites: {'; '.join(p['forbidden'])}.\n"
             f"{shared}\n"
@@ -345,13 +409,15 @@ def skill_contract(role_id: str, *, compact: bool = False) -> str:
         f"QUALITY CRITERIA: {'; '.join(p['quality_criteria'])}.\n"
         f"HEART ARC MODE: {p['heart_arc_mode']}.\n"
         f"NÃO FAÇA: {'; '.join(p['forbidden'])}.\n"
+        f"EVIDÊNCIAS NECESSÁRIAS: {'; '.join(p['evidence_requirements']) or 'resultado revisável'}.\n"
         f"HANDOFFS ESPERADOS: {', '.join(p['required_handoffs']) or 'nenhum'}.\n"
         "Ao responder, não declare que critérios foram validados se você não recebeu evidência suficiente.\n"
         f"{shared}\n"
     )
 
 
-def validate_registry() -> dict:
+def validate_registry(root: Path | None = None, *, check_export: bool = True) -> dict:
+    root = Path(root or Path(__file__).resolve().parent)
     errors = []
     modules = {}
     required = {
@@ -370,19 +436,65 @@ def validate_registry() -> dict:
             errors.append(f"{rid}: skills insuficientes")
         if len(p.get("quality_criteria") or []) < 2:
             errors.append(f"{rid}: critérios insuficientes")
-        if p.get("heart_arc") != FAITHBLOOM_HEART_ARC:
+        if p.get("scope") != "technical" and p.get("heart_arc") != FAITHBLOOM_HEART_ARC:
             errors.append(f"{rid}: Heart Arc divergente do contrato compartilhado")
-        if not p.get("bestseller_readiness_principles"):
+        if p.get("scope") != "technical" and not p.get("bestseller_readiness_principles"):
             errors.append(f"{rid}: bestseller-readiness ausente")
         modules.setdefault(p.get("module"), 0)
         modules[p.get("module")] += 1
-        module_path = Path(__file__).resolve().parent / "agents" / str(p.get("module") or "")
+        module_path = profile_module_path(p, root)
         if not module_path.exists():
             errors.append(f"{rid}: módulo {p.get('module')} não existe")
         else:
             source = module_path.read_text(encoding="utf-8", errors="ignore")
             if rid not in source:
                 errors.append(f"{rid}: papel não declarado no módulo {p.get('module')}")
+    covered = {p["module"] for p in AGENT_PROFILES.values() if p.get("module_directory", "agents") == "agents"} | set(INHERITED_MODULE_PROFILES)
+    for path in (root / "agents").glob("*.py"):
+        if path.name != "__init__.py" and path.name not in covered:
+            errors.append(f"Agente sem perfil: {path.name}")
+    for module, roles in INHERITED_MODULE_PROFILES.items():
+        if not (root / "agents" / module).is_file():
+            errors.append(f"Módulo herdado ausente: {module}")
+        for role in roles:
+            if role not in AGENT_PROFILES:
+                errors.append(f"Perfil herdado desconhecido: {role}")
+    for rid, p in AGENT_PROFILES.items():
+        for target in p["required_handoffs"]:
+            if target not in AGENT_PROFILES and target not in HANDOFF_SERVICES:
+                errors.append(f"{rid}: handoff desconhecido {target}")
+    for target, module in HANDOFF_SERVICES.items():
+        if not (root / module).is_file():
+            errors.append(f"{target}: serviço ausente {module}")
+    # Inspect syntax, not a string that could occur only in a comment.
+    consumers = [(profile_module_path(p, root), rid) for rid, p in AGENT_PROFILES.items() if p["execution"] in {"llm", "hybrid"}]
+    consumers += [(root / "agents" / module, rid) for module, roles in INHERITED_MODULE_PROFILES.items() for rid in roles]
+    for path, rid in consumers:
+        if not path.is_file():
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            contracts = {n.args[0].value for n in ast.walk(tree) if isinstance(n, ast.Call)
+                         and isinstance(n.func, ast.Name) and n.func.id == "skill_contract"
+                         and n.args and isinstance(n.args[0], ast.Constant)}
+            if rid not in contracts:
+                errors.append(f"{path.name}: contrato de {rid} não utilizado")
+        except SyntaxError:
+            errors.append(f"{path.name}: sintaxe inválida")
+    if check_export:
+        try:
+            saved = json.loads((root / "skills" / "agent_profiles.json").read_text(encoding="utf-8"))
+            if saved != registry_document():
+                errors.append("skills/agent_profiles.json desatualizado")
+        except (OSError, ValueError):
+            errors.append("skills/agent_profiles.json ausente ou inválido")
+        for role in ("saas_automation_engineer", "deep_code_review_engineer"):
+            try:
+                saved = json.loads((root / "skills" / (role + ".json")).read_text(encoding="utf-8"))
+                if saved != technical_profile_document(role):
+                    errors.append(f"skills/{role}.json desatualizado")
+            except (OSError, ValueError):
+                errors.append(f"skills/{role}.json ausente ou inválido")
     return {
         "schema": SCHEMA,
         "ok": not errors,
@@ -393,22 +505,61 @@ def validate_registry() -> dict:
     }
 
 
+def technical_profile_document(role_id: str) -> dict:
+    engineer = {"saas_automation_engineer": _saas, "deep_code_review_engineer": _deep}[role_id]
+    return {
+        "schema": "faithbloom.technical-agent-skills.v2",
+        "role_id": role_id, "name": engineer.NAME, "mission": engineer.MISSION,
+        "module": "agents/" + Path(engineer.__file__).name,
+        "skill_domains": {key: list(values) for key, values in engineer.SKILL_DOMAINS.items()},
+        "non_negotiables": list(engineer.NON_NEGOTIABLES),
+        "runtime_entrypoints": ["run_diagnostic", "handle_saas_request"] if engineer is _saas else ["review_sources", "build_deep_review_plan"],
+        "activation": "Jarvis / Agent Skills / Engenharia; contrato técnico aplicado pelo executor autorizado",
+        "execution_boundary": "Diagnóstico local e revisão de fontes; nenhum patch, teste ou deploy é executado por uma resposta da IA.",
+    }
+
+
+def export_all_profiles(directory: str | Path) -> None:
+    folder = Path(directory)
+    export_registry_json(folder / "agent_profiles.json")
+    for role in ("saas_automation_engineer", "deep_code_review_engineer"):
+        (folder / (role + ".json")).write_text(json.dumps(technical_profile_document(role), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def registry_document() -> dict:
+    return {
+        "schema": SCHEMA,
+        "shared_editorial_dna": FAITHBLOOM_EDITORIAL_DNA,
+        "heart_arc": FAITHBLOOM_HEART_ARC,
+        "heart_arc_principles": HEART_ARC_PRINCIPLES,
+        "bestseller_readiness_principles": BESTSELLER_READINESS_PRINCIPLES,
+        "profiles": all_agent_profiles(),
+        "inherited_modules": INHERITED_MODULE_PROFILES,
+        "handoff_services": HANDOFF_SERVICES,
+    }
+
+
 def export_registry_json(path: str | Path) -> str:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
         json.dumps(
-            {
-                "schema": SCHEMA,
-                "shared_editorial_dna": FAITHBLOOM_EDITORIAL_DNA,
-                "heart_arc": FAITHBLOOM_HEART_ARC,
-                "heart_arc_principles": HEART_ARC_PRINCIPLES,
-                "bestseller_readiness_principles": BESTSELLER_READINESS_PRINCIPLES,
-                "profiles": all_agent_profiles(),
-            },
+            registry_document(),
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
     return str(p)
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Conferir ou exportar contratos de agentes.")
+    parser.add_argument("--export", action="store_true")
+    args = parser.parse_args()
+    if args.export:
+        export_all_profiles(Path(__file__).resolve().parent / "skills")
+    report = validate_registry()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    raise SystemExit(0 if report["ok"] else 1)

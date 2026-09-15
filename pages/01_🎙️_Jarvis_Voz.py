@@ -53,6 +53,7 @@ st.markdown(
 )
 
 NAV_PAGES = {
+    "engineering": "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py",
     "orchestrator": "pages/0_🤖_Orquestrador_FaithBloom.py",
     "create": "pages/1_📖_Criar_do_Zero.py",
     "resume": "pages/2_📚_Retomar_Livro.py",
@@ -119,7 +120,12 @@ def _process_request(transcript: str, *, weather_location: str, project_progress
     intent = "editorial"
     metadata: dict = {}
 
-    if general_intent == "help":
+    if navigation and navigation.get("id") == "engineering":
+        intent = "engineering"
+        st.session_state["jarvis_suggested_destination"] = navigation
+        st.session_state["engineering_request"] = clean
+        reply = "Abra Engenharia e Skills para executar o diagnóstico técnico e a revisão profunda dos módulos selecionados."
+    elif general_intent == "help":
         intent, reply = "help", help_reply()
     elif general_intent == "thanks":
         intent, reply = "thanks", thanks_reply()
