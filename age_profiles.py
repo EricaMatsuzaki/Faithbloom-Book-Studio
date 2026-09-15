@@ -2,7 +2,8 @@
 
 A faixa etária é uma decisão editorial por LIVRO. Ela orienta linguagem,
 ritmo, densidade de texto, musicalidade, onomatopeias, tensão, perguntas
-pedagógicas, profundidade da explicação cristã e tipografia do miolo.
+pedagógicas, profundidade da explicação cristã, experiência emocional e
+tipografia do miolo.
 
 O perfil 3–8 é mantido por compatibilidade com a coleção clássica atual.
 Para novos projetos, perfis mais específicos (3–5, 6–8, 9–12) dão
@@ -15,6 +16,8 @@ from __future__ import annotations
 
 import unicodedata
 from copy import deepcopy
+
+from emotional_experience_engine import instrucao_experiencia_emocional
 
 DEFAULT_AGE_PROFILE = "3-8"
 
@@ -106,6 +109,38 @@ AGE_PROFILES: dict[str, dict] = {
 }
 
 
+class AgeOption(tuple):
+    """Opção compatível com UIs antigas e novas.
+
+    Funciona como `(id, label)` para telas que precisam separar valor e rótulo,
+    mas também se comporta como o id textual em fluxos legados que fazem
+    `"6-8" in opcoes`, `opcoes.index("6-8")` ou passam a opção diretamente
+    para `perfil_etario()`.
+    """
+
+    def __new__(cls, profile_id: str, label: str):
+        return super().__new__(cls, (profile_id, label))
+
+    @property
+    def profile_id(self) -> str:
+        return tuple.__getitem__(self, 0)
+
+    @property
+    def label(self) -> str:
+        return tuple.__getitem__(self, 1)
+
+    def __str__(self) -> str:
+        return self.profile_id
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return self.profile_id == other
+        return tuple.__eq__(self, other)
+
+    def __hash__(self) -> int:
+        return hash(self.profile_id)
+
+
 def _slug(value: str | None) -> str:
     # Troca travessões ANTES de remover caracteres não ASCII, senão "3–5"
     # poderia virar "35". Depois retiramos rótulos humanos comuns.
@@ -138,13 +173,15 @@ def perfil_etario(value: str | None) -> dict:
     return deepcopy({"id": key, **AGE_PROFILES[key]})
 
 
-def opcoes_faixa_etaria() -> list[str]:
-    return ["3-5", "6-8", "9-12", "3-8"]
+def opcoes_faixa_etaria() -> list[AgeOption]:
+    """Retorna opções com id + rótulo sem quebrar consumidores legados."""
+    ids = ("3-5", "6-8", "9-12", "3-8")
+    return [AgeOption(profile_id, AGE_PROFILES[profile_id]["label"]) for profile_id in ids]
 
 
 def instrucao_faixa_etaria(value: str | None) -> str:
     p = perfil_etario(value)
-    return (
+    base = (
         f"FAIXA ETÁRIA OFICIAL: {p['short_label']} ({p['publico']}). "
         f"Ritmo: {p['ritmo']}. Frases: {p['frases']}. "
         f"Texto por cena: {p['texto_por_cena']}. Musicalidade: {p['musicalidade']}. "
@@ -152,3 +189,4 @@ def instrucao_faixa_etaria(value: str | None) -> str:
         f"Tensão: {p['tensao']}. Espiritualidade: {p['espiritualidade']}. "
         f"Moral: {p['moral']}. Densidade visual: {p['densidade_visual']}."
     )
+    return base + "\n\n" + instrucao_experiencia_emocional(p["id"])

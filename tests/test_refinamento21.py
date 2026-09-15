@@ -7,11 +7,11 @@ from agents.curador_tema import curador_tema_node
 from agents.pesquisa_mercado import pesquisa_palavras_chave_node
 
 
-def test_agent_registry_has_23_roles_and_21_modules():
+def test_agent_registry_covers_editorial_visual_and_technical_roles():
     audit = validate_registry()
     assert audit["ok"] is True
-    assert audit["role_count"] == 23
-    assert audit["module_count"] == 21
+    assert audit["role_count"] == 27
+    assert audit["module_count"] == 25
 
 
 def test_every_profile_has_formal_limits_and_quality_criteria():
