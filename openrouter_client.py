@@ -1,4 +1,15 @@
-"""Cliente OpenRouter do FaithBloom com guardrails de custo/duplicidade (Fase 13)."""
+"""Cliente OpenRouter do FaithBloom com guardrails de custo/duplicidade (Fase 13).
+
+Refinamento (16/09/2026): a modalidade de TEXTO agora tenta primeiro o Gemini
+(Google AI Studio, gratuito/econômico — ver gemini_client.py) e só cai para a
+OpenRouter se o Gemini não estiver configurado ou falhar. Isso mantém o SaaS
+funcional mesmo sem crédito pago na OpenRouter. Imagem e áudio permanecem
+exclusivamente na OpenRouter por enquanto: a rota Gemini para essas
+modalidades ainda não foi validada com o mesmo nível de QA visual.
+
+A interface pública deste módulo (chamar_llm, gerar_imagem, gerar_audio) não
+muda para quem já importa daqui — nenhum agente precisa alterar seu import.
+"""
 from __future__ import annotations
 
 import base64
@@ -10,6 +21,7 @@ from typing import Any
 
 import requests
 
+import gemini_client
 from controle_geracao import (
     POLITICA,
     extrair_custo_reportado,
@@ -25,6 +37,11 @@ MODELO_TEXTO = os.environ.get("OPENROUTER_MODELO_TEXTO", "anthropic/claude-sonne
 MODELO_IMAGEM = os.environ.get("OPENROUTER_MODELO_IMAGEM", "google/gemini-3.1-flash-image")
 MODELO_VOZ = os.environ.get("OPENROUTER_MODELO_VOZ", "google/gemini-3.1-flash-tts-preview")
 VOZ_PADRAO = os.environ.get("OPENROUTER_VOZ_PADRAO", "")
+
+# "auto" (padrão): usa Gemini primeiro se GEMINI_API_KEY/GOOGLE_API_KEY estiver
+# configurada, com fallback para a OpenRouter. "gemini" ou "openrouter" forçam
+# um único provedor de texto (útil para diagnóstico/comparação).
+PROVEDOR_TEXTO = os.environ.get("FAITHBLOOM_PROVEDOR_TEXTO", "auto").strip().lower()
 
 PASTA_AUDIO = "saida_audio"
 os.makedirs(PASTA_AUDIO, exist_ok=True)
@@ -75,7 +92,56 @@ def _json_resposta(resp: requests.Response) -> dict[str,Any]:
     return dados
 
 
+def texto_provedor_ativo() -> str:
+    """Diagnóstico: qual provedor de texto o próximo chamar_llm() vai tentar
+    primeiro, dado o ambiente atual. Usado por telas de status/onboarding."""
+    if PROVEDOR_TEXTO == "openrouter":
+        return "openrouter"
+    if PROVEDOR_TEXTO == "gemini":
+        return "gemini" if gemini_client.gemini_disponivel() else "indisponível"
+    # modo "auto"
+    if gemini_client.gemini_disponivel():
+        return "gemini"
+    if OPENROUTER_API_KEY:
+        return "openrouter"
+    return "indisponível"
+
+
 def chamar_llm(sistema: str, instrucao: str) -> dict | list:
+    """Ponto único chamado por todos os agentes. Decide o provedor de texto
+    (Gemini gratuito/econômico primeiro, OpenRouter como fallback pago) sem
+    exigir nenhuma mudança nos agentes que já importam esta função.
+    """
+    tentar_gemini = PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel()
+    tentar_openrouter = PROVEDOR_TEXTO != "gemini" and bool(OPENROUTER_API_KEY)
+
+    if tentar_gemini:
+        try:
+            return gemini_client.chamar_llm_gemini(sistema, instrucao)
+        except Exception as exc_gemini:
+            if not tentar_openrouter:
+                raise
+            # Cai silenciosamente para a OpenRouter; o erro do Gemini fica
+            # registrado no log de gerações (via gemini_client), não é
+            # descartado, só não interrompe o pedido do usuário.
+            try:
+                return _chamar_llm_openrouter(sistema, instrucao)
+            except Exception as exc_openrouter:
+                raise OpenRouterFaithBloomError(
+                    "Nem o Gemini nem a OpenRouter responderam. "
+                    f"Gemini: {exc_gemini}. OpenRouter: {exc_openrouter}."
+                ) from exc_openrouter
+
+    if tentar_openrouter:
+        return _chamar_llm_openrouter(sistema, instrucao)
+
+    raise OpenRouterFaithBloomError(
+        "Nenhum provedor de texto está configurado. Defina GEMINI_API_KEY "
+        "(gratuito/econômico) ou OPENROUTER_API_KEY (pago) nos Secrets do ambiente."
+    )
+
+
+def _chamar_llm_openrouter(sistema: str, instrucao: str) -> dict | list:
     conteudo_assinatura = sistema + "\n" + instrucao
     req_id,assinatura,estimativa,inicio=iniciar_requisicao("texto", MODELO_TEXTO, conteudo_assinatura)
     try:
@@ -104,6 +170,8 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
     `imagem_base` continua compatível com chamadas antigas. `imagens_referencia` é
     usado pelo Restoration Studio para anexar Character Masters sem substituir a
     cena original como referência principal.
+
+    Nota: continua exclusivamente na OpenRouter (ver cabeçalho do módulo).
     """
     refs=[]
     if imagem_base:
@@ -154,6 +222,8 @@ def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str, voice: str | None =
     antes de enviar ao TTS, evitando que o sintetizador leia ``[pausa curta]``
     em voz alta. O Voice Profile pode fornecer um ``provider_voice_id``; quando
     vazio, usa-se a voz padrão configurada no ambiente.
+
+    Nota: continua exclusivamente na OpenRouter (ver cabeçalho do módulo).
     """
     texto_tts=converter_marcacoes_para_texto_natural(texto_com_marcacoes)
     palavras=max(1,len(texto_tts.split()))
@@ -187,3 +257,4 @@ def converter_marcacoes_para_texto_natural(texto_com_marcacoes: str) -> str:
     texto=re.sub(r"\[(?:emoção|emocao|ritmo|speaker|voz):[^\]]+\]","",texto,flags=re.I)
     texto=re.sub(r"\[pausa:\s*(\d+)\s*ms\]",lambda m:", " if int(m.group(1))<500 else "... ",texto,flags=re.I)
     return re.sub(r"[ \t]+"," ",texto).strip()
+
