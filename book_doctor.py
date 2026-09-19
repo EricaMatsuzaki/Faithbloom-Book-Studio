@@ -3,187 +3,374 @@
 Nunca altera o original. Extrai imagens incorporadas do PDF, mede páginas e
 resolução e cria um relatório técnico. Avaliações sem evidência mensurável são
 marcadas para revisão humana/IA posterior, em vez de inventar notas.
+
+Projetos, manifests, relatórios e originais também são espelhados no backend
+persistente do FaithBloom quando disponível (Supabase no Streamlit Cloud), para
+que Book Doctor, Restoration Studio e Autopilot sobrevivam a reboot/redeploy.
 """
 from __future__ import annotations
-import hashlib, json, shutil, time, uuid
+
+import hashlib
+import json
+import shutil
+import time
+import uuid
 from pathlib import Path
+
 from PIL import Image
 from pypdf import PdfReader
 
+from storage_backend import BACKEND, backend_status
+
 ROOT = Path("book_doctor_projects")
+STORAGE_PREFIX = "book_doctor_projects"
+
 
 def _safe(s: str) -> str:
     return "".join(c.lower() if c.isalnum() else "-" for c in (s or "livro")).strip("-") or "livro"
 
+
+def _storage_prefix(project_id: str) -> str:
+    return f"{STORAGE_PREFIX}/{project_id}"
+
+
+def _project_folder_name(project: dict) -> str:
+    return str(project.get("storage_folder") or f"{_safe(project.get('titulo', 'livro'))}-{project.get('id', '')}")
+
+
+def _local_project_dir(project: dict) -> Path:
+    return ROOT / _project_folder_name(project)
+
+
+def _project_payload(project: dict) -> dict:
+    payload = dict(project)
+    payload["storage_folder"] = _project_folder_name(project)
+    payload["storage_prefix"] = _storage_prefix(str(project.get("id") or ""))
+    payload["storage_backend"] = backend_status().get("modo")
+    # ``pasta`` é cache/runtime local; não pode ser tratada como endereço cloud.
+    payload["pasta"] = str(_local_project_dir(payload))
+    return payload
+
+
+def _persist_json(project: dict, relative_path: str, value) -> None:
+    try:
+        BACKEND.put_json(f"{_storage_prefix(str(project.get('id') or ''))}/{relative_path.lstrip('/')}", value)
+    except Exception:
+        # Persistência cloud nunca deve corromper/interromper a cópia local já segura.
+        pass
+
+
+def _write_project_local(project: dict) -> dict:
+    local = _local_project_dir(project)
+    for sub in ("originais", "extraidas", "relatorios", "remastered", "planos"):
+        (local / sub).mkdir(parents=True, exist_ok=True)
+    hydrated = _project_payload({**project, "pasta": str(local)})
+    (local / "projeto.json").write_text(json.dumps(hydrated, ensure_ascii=False, indent=2), encoding="utf-8")
+    return hydrated
+
+
+def _restore_json(project: dict, relative_path: str, local_path: Path):
+    if local_path.exists():
+        try:
+            return json.loads(local_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    try:
+        value = BACKEND.get_json(f"{_storage_prefix(str(project.get('id') or ''))}/{relative_path.lstrip('/')}", None)
+    except Exception:
+        value = None
+    if value is not None:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    return value
+
+
+def _hydrate_originals(project: dict) -> None:
+    """Baixa somente os originais do projeto selecionado quando o cache local sumiu."""
+    manifest_path = Path(project["pasta"]) / "originais" / "manifest.json"
+    manifest = _restore_json(project, "originais/manifest.json", manifest_path)
+    if not isinstance(manifest, list):
+        return
+    changed = False
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            continue
+        storage_path = str(entry.get("storage_path") or "")
+        current = Path(str(entry.get("arquivo") or "")) if entry.get("arquivo") else None
+        if current and current.exists():
+            continue
+        filename = Path(storage_path).name if storage_path else Path(str(entry.get("arquivo") or "original.bin")).name
+        local = Path(project["pasta"]) / "originais" / filename
+        if storage_path:
+            try:
+                data = BACKEND.get_bytes(storage_path)
+                local.parent.mkdir(parents=True, exist_ok=True)
+                local.write_bytes(data)
+                expected = str(entry.get("sha256") or "")
+                if expected and sha256(str(local)) != expected:
+                    local.unlink(missing_ok=True)
+                    continue
+                entry["arquivo"] = str(local)
+                changed = True
+            except Exception:
+                continue
+    if changed:
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def criar_projeto(titulo: str, idioma: str="pt-BR", tipo_projeto: str="story", status_publicacao: str="em_desenvolvimento", colecao: str="", status_capa: str="nao_informado") -> dict:
     pid = uuid.uuid4().hex[:12]
-    pasta = ROOT / f"{_safe(titulo)}-{pid}"
-    for sub in ("originais", "extraidas", "relatorios", "remastered", "planos"):
-        (pasta/sub).mkdir(parents=True, exist_ok=True)
-    obj={
-        "id":pid,"titulo":titulo,"idioma":idioma,"pasta":str(pasta),
-        "tipo_projeto":tipo_projeto,"status_publicacao":status_publicacao,
-        "colecao":colecao,"status_capa":status_capa,
-        "criado_em":int(time.time()),"status":"importado"
+    obj = {
+        "id": pid,
+        "titulo": titulo,
+        "idioma": idioma,
+        "tipo_projeto": tipo_projeto,
+        "status_publicacao": status_publicacao,
+        "colecao": colecao,
+        "status_capa": status_capa,
+        "criado_em": int(time.time()),
+        "status": "importado",
+        "storage_folder": f"{_safe(titulo)}-{pid}",
     }
-    (pasta/"projeto.json").write_text(json.dumps(obj,ensure_ascii=False,indent=2),encoding="utf-8")
+    obj = _write_project_local(obj)
+    _persist_json(obj, "projeto.json", _project_payload(obj))
     return obj
 
+
 def preservar_original(projeto: dict, arquivo: str, papel: str) -> str:
-    src=Path(arquivo); dst=Path(projeto["pasta"])/"originais"/f"{papel}_{src.name}"
-    shutil.copy2(src,dst)
-    manifest_path=Path(projeto["pasta"])/"originais"/"manifest.json"
+    src = Path(arquivo)
+    dst = Path(projeto["pasta"]) / "originais" / f"{papel}_{src.name}"
+    shutil.copy2(src, dst)
+    digest = sha256(str(dst))
+    storage_path = f"{_storage_prefix(str(projeto.get('id') or ''))}/originais/{dst.name}"
     try:
-        manifest=json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else []
+        BACKEND.put_bytes(storage_path, dst.read_bytes(), "application/pdf" if dst.suffix.lower() == ".pdf" else None)
     except Exception:
-        manifest=[]
-    manifest.append({"papel":papel,"arquivo":str(dst),"sha256":sha256(str(dst)),"preservado_em":int(time.time())})
-    manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding="utf-8")
+        storage_path = ""
+
+    manifest_path = Path(projeto["pasta"]) / "originais" / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else []
+    except Exception:
+        manifest = []
+    manifest.append({
+        "papel": papel,
+        "arquivo": str(dst),
+        "sha256": digest,
+        "preservado_em": int(time.time()),
+        "storage_path": storage_path,
+    })
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    _persist_json(projeto, "originais/manifest.json", manifest)
     return str(dst)
 
+
 def sha256(caminho: str) -> str:
-    h=hashlib.sha256()
-    with open(caminho,"rb") as f:
-        for b in iter(lambda:f.read(1024*1024),b""): h.update(b)
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for b in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(b)
     return h.hexdigest()
 
-def _status_ppi(ppi: float) -> tuple[str,str]:
-    if ppi >= 300: return "excelente","300 PPI ou mais"
-    if ppi >= 200: return "atencao","200–299 PPI"
-    return "reprovada","abaixo de 200 PPI"
 
-def auditar_pdf(caminho_pdf: str, pasta_extraidas: str|None=None) -> dict:
-    reader=PdfReader(caminho_pdf)
-    out=Path(pasta_extraidas) if pasta_extraidas else None
-    if out: out.mkdir(parents=True,exist_ok=True)
-    paginas=[]; imagens=[]
-    for n,page in enumerate(reader.pages,1):
-        mb=page.mediabox; w_in=float(mb.width)/72; h_in=float(mb.height)/72
-        fontes=[]
+def _status_ppi(ppi: float) -> tuple[str, str]:
+    if ppi >= 300:
+        return "excelente", "300 PPI ou mais"
+    if ppi >= 200:
+        return "atencao", "200–299 PPI"
+    return "reprovada", "abaixo de 200 PPI"
+
+
+def auditar_pdf(caminho_pdf: str, pasta_extraidas: str | None = None) -> dict:
+    reader = PdfReader(caminho_pdf)
+    out = Path(pasta_extraidas) if pasta_extraidas else None
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+    paginas = []
+    imagens = []
+    for n, page in enumerate(reader.pages, 1):
+        mb = page.mediabox
+        w_in = float(mb.width) / 72
+        h_in = float(mb.height) / 72
+        fontes = []
         try:
-            fd=(page.get("/Resources") or {}).get("/Font") or {}
-            fontes=[str(k) for k in fd.keys()]
-        except Exception: pass
-        pimgs=[]
+            fd = (page.get("/Resources") or {}).get("/Font") or {}
+            fontes = [str(k) for k in fd.keys()]
+        except Exception:
+            pass
+        pimgs = []
         try:
-            for i,imgobj in enumerate(page.images,1):
-                data=imgobj.data
-                ext=Path(imgobj.name or "img.png").suffix or ".png"
-                dest=out/f"pagina_{n:03d}_img_{i:02d}{ext}" if out else None
-                if dest: dest.write_bytes(data)
+            for i, imgobj in enumerate(page.images, 1):
+                data = imgobj.data
+                ext = Path(imgobj.name or "img.png").suffix or ".png"
+                dest = out / f"pagina_{n:03d}_img_{i:02d}{ext}" if out else None
+                if dest:
+                    dest.write_bytes(data)
                 try:
                     from io import BytesIO
-                    with Image.open(BytesIO(data)) as im: px=im.size
-                except Exception: px=(0,0)
-                # Estimativa conservadora: assume que a imagem ocupa a página toda.
-                # PPI exato requer interpretar a matriz de transformação do conteúdo PDF.
-                ppi=min(px[0]/w_in,px[1]/h_in) if px[0] and w_in and h_in else 0
-                status,msg=_status_ppi(ppi) if ppi else ("indeterminado","não foi possível medir")
-                rec={"pagina":n,"indice":i,"arquivo_extraido":str(dest) if dest else "","largura_px":px[0],"altura_px":px[1],"ppi_estimado_full_page":round(ppi,1),"status":status,"nota":msg,"estimativa":True}
-                pimgs.append(rec); imagens.append(rec)
+                    with Image.open(BytesIO(data)) as im:
+                        px = im.size
+                except Exception:
+                    px = (0, 0)
+                ppi = min(px[0] / w_in, px[1] / h_in) if px[0] and w_in and h_in else 0
+                status, msg = _status_ppi(ppi) if ppi else ("indeterminado", "não foi possível medir")
+                rec = {
+                    "pagina": n, "indice": i, "arquivo_extraido": str(dest) if dest else "",
+                    "largura_px": px[0], "altura_px": px[1],
+                    "ppi_estimado_full_page": round(ppi, 1), "status": status,
+                    "nota": msg, "estimativa": True,
+                }
+                pimgs.append(rec)
+                imagens.append(rec)
         except Exception as exc:
-            pimgs.append({"pagina":n,"status":"erro","nota":str(exc)})
-        paginas.append({"pagina":n,"largura_in":round(w_in,4),"altura_in":round(h_in,4),"imagens":pimgs,"fontes_recursos":fontes})
-    tamanhos={(p["largura_in"],p["altura_in"]) for p in paginas}
-    return {"arquivo":caminho_pdf,"sha256":sha256(caminho_pdf),"paginas_total":len(paginas),"paginas":paginas,"imagens":imagens,"tamanho_uniforme":len(tamanhos)<=1,"tamanhos_pagina_in":sorted(list(tamanhos)),"observacao_ppi":"PPI de imagens extraídas é uma estimativa conservadora assumindo uso em página inteira; o PPI efetivo depende do tamanho de colocação no PDF.","original_alterado":False}
-
-def auditar_imagem(caminho: str, largura_final_in: float|None=None, altura_final_in: float|None=None) -> dict:
-    with Image.open(caminho) as im: w,h=im.size; fmt=im.format; mode=im.mode
-    ppi=None; status="indeterminado"; nota="Informe o tamanho final de impressão para calcular PPI efetivo."
-    if largura_final_in and altura_final_in:
-        ppi=min(w/largura_final_in,h/altura_final_in); status,nota=_status_ppi(ppi)
-    return {"arquivo":caminho,"sha256":sha256(caminho),"largura_px":w,"altura_px":h,"formato":fmt,"modo_cor":mode,"ppi_efetivo":round(ppi,1) if ppi else None,"status":status,"nota":nota,"original_alterado":False}
-
-
-
-def auditar_capa_pdf(caminho_pdf: str, largura_final_in: float|None=None, altura_final_in: float|None=None, pasta_extraidas: str|None=None) -> dict:
-    """Audita capa entregue como PDF/wrap, inclusive arquivos com múltiplas versões.
-
-    O PPI continua conservador: usa a dimensão final informada apenas quando disponível.
-    """
-    base=auditar_pdf(caminho_pdf,pasta_extraidas)
-    avaliacoes=[]
-    for im in base.get("imagens",[]):
-        w=im.get("largura_px",0) or 0; h=im.get("altura_px",0) or 0
-        if largura_final_in and altura_final_in and w and h:
-            ppi=min(w/largura_final_in,h/altura_final_in)
-            status,nota=_status_ppi(ppi)
-        else:
-            ppi=im.get("ppi_estimado_full_page") or 0
-            status,nota=(im.get("status","indeterminado"), im.get("nota",""))
-        avaliacoes.append({**im,"ppi_capa_estimado":round(ppi,1) if ppi else None,"status_capa":status,"nota_capa":nota})
-    ordem={"reprovada":3,"atencao":2,"indeterminado":1,"excelente":0}
-    pior=max((x.get("status_capa","indeterminado") for x in avaliacoes),key=lambda x:ordem.get(x,1),default="indeterminado")
+            pimgs.append({"pagina": n, "status": "erro", "nota": str(exc)})
+        paginas.append({
+            "pagina": n, "largura_in": round(w_in, 4), "altura_in": round(h_in, 4),
+            "imagens": pimgs, "fontes_recursos": fontes,
+        })
+    tamanhos = {(p["largura_in"], p["altura_in"]) for p in paginas}
     return {
-        "arquivo":caminho_pdf,"sha256":base.get("sha256"),"tipo":"pdf",
-        "paginas_total":base.get("paginas_total",0),"paginas":base.get("paginas",[]),
-        "imagens":avaliacoes,"tamanhos_pagina_in":base.get("tamanhos_pagina_in",[]),
-        "largura_final_in":largura_final_in,"altura_final_in":altura_final_in,
-        "status":pior,"multiplas_paginas":base.get("paginas_total",0)>1,
-        "nota":"PDF de capa com múltiplas páginas detectado; trate páginas como versões/idiomas separados antes de escolher o Cover Master." if base.get("paginas_total",0)>1 else "Capa PDF auditada sem alterar o original.",
-        "original_alterado":False,
+        "arquivo": caminho_pdf, "sha256": sha256(caminho_pdf), "paginas_total": len(paginas),
+        "paginas": paginas, "imagens": imagens, "tamanho_uniforme": len(tamanhos) <= 1,
+        "tamanhos_pagina_in": sorted(list(tamanhos)),
+        "observacao_ppi": "PPI de imagens extraídas é uma estimativa conservadora assumindo uso em página inteira; o PPI efetivo depende do tamanho de colocação no PDF.",
+        "original_alterado": False,
     }
 
-def gerar_relatorio(projeto: dict, miolo: dict|None=None, capa: dict|None=None) -> dict:
-    alertas=[]
+
+def auditar_imagem(caminho: str, largura_final_in: float | None = None, altura_final_in: float | None = None) -> dict:
+    with Image.open(caminho) as im:
+        w, h = im.size
+        fmt = im.format
+        mode = im.mode
+    ppi = None
+    status = "indeterminado"
+    nota = "Informe o tamanho final de impressão para calcular PPI efetivo."
+    if largura_final_in and altura_final_in:
+        ppi = min(w / largura_final_in, h / altura_final_in)
+        status, nota = _status_ppi(ppi)
+    return {
+        "arquivo": caminho, "sha256": sha256(caminho), "largura_px": w, "altura_px": h,
+        "formato": fmt, "modo_cor": mode, "ppi_efetivo": round(ppi, 1) if ppi else None,
+        "status": status, "nota": nota, "original_alterado": False,
+    }
+
+
+def auditar_capa_pdf(caminho_pdf: str, largura_final_in: float | None = None, altura_final_in: float | None = None, pasta_extraidas: str | None = None) -> dict:
+    """Audita capa entregue como PDF/wrap, inclusive arquivos com múltiplas versões."""
+    base = auditar_pdf(caminho_pdf, pasta_extraidas)
+    avaliacoes = []
+    for im in base.get("imagens", []):
+        w = im.get("largura_px", 0) or 0
+        h = im.get("altura_px", 0) or 0
+        if largura_final_in and altura_final_in and w and h:
+            ppi = min(w / largura_final_in, h / altura_final_in)
+            status, nota = _status_ppi(ppi)
+        else:
+            ppi = im.get("ppi_estimado_full_page") or 0
+            status, nota = im.get("status", "indeterminado"), im.get("nota", "")
+        avaliacoes.append({**im, "ppi_capa_estimado": round(ppi, 1) if ppi else None, "status_capa": status, "nota_capa": nota})
+    ordem = {"reprovada": 3, "atencao": 2, "indeterminado": 1, "excelente": 0}
+    pior = max((x.get("status_capa", "indeterminado") for x in avaliacoes), key=lambda x: ordem.get(x, 1), default="indeterminado")
+    return {
+        "arquivo": caminho_pdf, "sha256": base.get("sha256"), "tipo": "pdf",
+        "paginas_total": base.get("paginas_total", 0), "paginas": base.get("paginas", []),
+        "imagens": avaliacoes, "tamanhos_pagina_in": base.get("tamanhos_pagina_in", []),
+        "largura_final_in": largura_final_in, "altura_final_in": altura_final_in,
+        "status": pior, "multiplas_paginas": base.get("paginas_total", 0) > 1,
+        "nota": "PDF de capa com múltiplas páginas detectado; trate páginas como versões/idiomas separados antes de escolher o Cover Master." if base.get("paginas_total", 0) > 1 else "Capa PDF auditada sem alterar o original.",
+        "original_alterado": False,
+    }
+
+
+def gerar_relatorio(projeto: dict, miolo: dict | None = None, capa: dict | None = None) -> dict:
+    alertas = []
     if miolo:
-        if not miolo.get("tamanho_uniforme"): alertas.append({"gravidade":"bloqueante","area":"diagramação","mensagem":"O PDF contém páginas com dimensões diferentes."})
-        for im in miolo.get("imagens",[]):
-            if im.get("status")=="reprovada": alertas.append({"gravidade":"atencao","area":"imagem","pagina":im.get("pagina"),"mensagem":f"Imagem incorporada com estimativa conservadora de {im.get('ppi_estimado_full_page')} PPI se usada em página inteira. Confirmar tamanho de colocação antes de corrigir."})
-    if capa and capa.get("status")=="reprovada":
-        ppi_capa=capa.get("ppi_efetivo")
+        if not miolo.get("tamanho_uniforme"):
+            alertas.append({"gravidade": "bloqueante", "area": "diagramação", "mensagem": "O PDF contém páginas com dimensões diferentes."})
+        for im in miolo.get("imagens", []):
+            if im.get("status") == "reprovada":
+                alertas.append({"gravidade": "atencao", "area": "imagem", "pagina": im.get("pagina"), "mensagem": f"Imagem incorporada com estimativa conservadora de {im.get('ppi_estimado_full_page')} PPI se usada em página inteira. Confirmar tamanho de colocação antes de corrigir."})
+    if capa and capa.get("status") == "reprovada":
+        ppi_capa = capa.get("ppi_efetivo")
         if ppi_capa is None and capa.get("imagens"):
-            vals=[x.get("ppi_capa_estimado") for x in capa.get("imagens",[]) if x.get("ppi_capa_estimado")]
-            ppi_capa=min(vals) if vals else None
-        alertas.append({"gravidade":"bloqueante","area":"capa","mensagem":f"Capa com resolução abaixo do alvo no tamanho informado" + (f" ({ppi_capa} PPI estimados)." if ppi_capa else ".")})
+            vals = [x.get("ppi_capa_estimado") for x in capa.get("imagens", []) if x.get("ppi_capa_estimado")]
+            ppi_capa = min(vals) if vals else None
+        alertas.append({"gravidade": "bloqueante", "area": "capa", "mensagem": "Capa com resolução abaixo do alvo no tamanho informado" + (f" ({ppi_capa} PPI estimados)." if ppi_capa else ".")})
     if capa and capa.get("multiplas_paginas"):
-        alertas.append({"gravidade":"atencao","area":"capa","mensagem":"Arquivo de capa contém múltiplas páginas/versões. Escolha um Cover Master e preserve as demais como versões antes da exportação."})
-    pendentes=["consistência visual de personagens","texto × imagem","ortografia e faixa etária","tradução/localização (quando aplicável)","bleed/safe area por inspeção de layout","comparação com Character DNA oficial"]
+        alertas.append({"gravidade": "atencao", "area": "capa", "mensagem": "Arquivo de capa contém múltiplas páginas/versões. Escolha um Cover Master e preserve as demais como versões antes da exportação."})
+    pendentes = [
+        "consistência visual de personagens", "texto × imagem", "ortografia e faixa etária",
+        "tradução/localização (quando aplicável)", "bleed/safe area por inspeção de layout",
+        "comparação com Character DNA oficial",
+    ]
     if projeto.get("tipo_projeto") == "coloring":
-        pendentes += ["espessura/uniformidade dos traços","preto e branco puro / cinzas residuais","áreas pequenas demais para a faixa etária","consistência de Style DNA","capa coerente com a line art"]
+        pendentes += ["espessura/uniformidade dos traços", "preto e branco puro / cinzas residuais", "áreas pequenas demais para a faixa etária", "consistência de Style DNA", "capa coerente com a line art"]
     elif projeto.get("tipo_projeto") == "activity":
-        pendentes += ["dificuldade por faixa etária","clareza das instruções","gabaritos/soluções","uso consistente dos personagens"]
-    rel={"projeto_id":projeto["id"],"titulo":projeto["titulo"],"gerado_em":int(time.time()),"tipo_projeto":projeto.get("tipo_projeto","story"),"status_publicacao":projeto.get("status_publicacao","em_desenvolvimento"),"colecao":projeto.get("colecao",""),"status_capa":projeto.get("status_capa","nao_informado"),"miolo":miolo,"capa":capa,"alertas":alertas,"revisoes_pendentes":pendentes,"politica":"O Book Doctor informa e sugere. Nenhum original é substituído e nenhuma correção é aplicada sem aprovação da autora."}
-    path=Path(projeto["pasta"])/"relatorios"/"book_doctor_report.json"; path.write_text(json.dumps(rel,ensure_ascii=False,indent=2),encoding="utf-8")
+        pendentes += ["dificuldade por faixa etária", "clareza das instruções", "gabaritos/soluções", "uso consistente dos personagens"]
+    rel = {
+        "projeto_id": projeto["id"], "titulo": projeto["titulo"], "gerado_em": int(time.time()),
+        "tipo_projeto": projeto.get("tipo_projeto", "story"),
+        "status_publicacao": projeto.get("status_publicacao", "em_desenvolvimento"),
+        "colecao": projeto.get("colecao", ""), "status_capa": projeto.get("status_capa", "nao_informado"),
+        "miolo": miolo, "capa": capa, "alertas": alertas, "revisoes_pendentes": pendentes,
+        "politica": "O Book Doctor informa e sugere. Nenhum original é substituído e nenhuma correção é aplicada sem aprovação da autora.",
+    }
+    path = Path(projeto["pasta"]) / "relatorios" / "book_doctor_report.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rel, ensure_ascii=False, indent=2), encoding="utf-8")
+    _persist_json(projeto, "relatorios/book_doctor_report.json", rel)
+    _persist_json(projeto, "projeto.json", _project_payload(projeto))
     return rel
 
 
 def listar_projetos() -> list[dict]:
-    """Lista projetos Book Doctor locais para retomada no Restoration Studio."""
-    if not ROOT.exists():
-        return []
-    itens=[]
-    for pasta in ROOT.iterdir():
-        if not pasta.is_dir():
-            continue
-        pj=pasta/"projeto.json"
-        if not pj.exists():
-            continue
+    """Lista cache local + projetos persistidos no backend e reidrata metadados."""
+    itens: dict[str, dict] = {}
+    if ROOT.exists():
+        for pasta in ROOT.iterdir():
+            if not pasta.is_dir():
+                continue
+            pj = pasta / "projeto.json"
+            if not pj.exists():
+                continue
+            try:
+                d = json.loads(pj.read_text(encoding="utf-8"))
+                if isinstance(d, dict) and d.get("id"):
+                    d["pasta"] = str(pasta)
+                    itens[str(d["id"])] = d
+            except Exception:
+                continue
+    try:
+        cloud_paths = [x for x in BACKEND.list(STORAGE_PREFIX) if x.endswith("/projeto.json")]
+    except Exception:
+        cloud_paths = []
+    for storage_path in cloud_paths:
         try:
-            d=json.loads(pj.read_text(encoding="utf-8"))
-            if isinstance(d,dict):
-                itens.append(d)
+            d = BACKEND.get_json(storage_path, None)
         except Exception:
+            d = None
+        if not isinstance(d, dict) or not d.get("id"):
             continue
-    return sorted(itens,key=lambda x:int(x.get("criado_em",0)),reverse=True)
+        hydrated = _write_project_local(d)
+        itens[str(hydrated["id"])] = hydrated
+    return sorted(itens.values(), key=lambda x: int(x.get("criado_em", 0)), reverse=True)
 
 
 def carregar_projeto(projeto_id: str) -> dict:
     for p in listar_projetos():
-        if p.get("id")==projeto_id:
+        if p.get("id") == projeto_id:
             return p
     return {}
 
 
 def carregar_relatorio(projeto: dict) -> dict:
-    path=Path(projeto.get("pasta", ""))/"relatorios"/"book_doctor_report.json"
-    if not path.exists():
-        return {}
-    try:
-        d=json.loads(path.read_text(encoding="utf-8"))
-        return d if isinstance(d,dict) else {}
-    except Exception:
-        return {}
+    projeto = _write_project_local(projeto)
+    path = Path(projeto.get("pasta", "")) / "relatorios" / "book_doctor_report.json"
+    data = _restore_json(projeto, "relatorios/book_doctor_report.json", path)
+    # O download grande acontece apenas quando o projeto é efetivamente selecionado.
+    _hydrate_originals(projeto)
+    return data if isinstance(data, dict) else {}
 
 
 def auditar_pdf_rapido(caminho_pdf: str, expected_reference: str = "") -> dict:
