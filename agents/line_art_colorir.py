@@ -122,7 +122,8 @@ def prompt_capa_colorida(sujeitos_destaque: list[dict], titulo: str) -> str:
     return (
         "Capa colorida original para livro de colorir, coerente com a line art do miolo: "
         "formas limpas, cores planas, proporção consistente, sem imitar artista ou marca específica.\n"
-        + "\n".join(descricoes) + f'\nTítulo: "{titulo}".'
+        + "\n".join(descricoes) + "\nSem texto na arte; a tipografia será aplicada separadamente."
+        + skill_contract("cover_specialist", compact=True)
     )
 
 
@@ -159,7 +160,7 @@ def prompt_arte_capa_frontal_colorir(sujeitos_destaque: list[dict]) -> str:
         "nenhum texto, título ou logotipo na imagem (será adicionado "
         "depois separadamente). Sujeitos em destaque, centralizados, "
         "espaço livre na parte superior para posterior título:\n"
-        + "\n".join(descricoes)
+        + "\n".join(descricoes) + skill_contract("cover_specialist", compact=True)
     )
 
 
