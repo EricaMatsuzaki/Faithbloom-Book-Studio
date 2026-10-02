@@ -1,11 +1,13 @@
 """Cliente OpenRouter do FaithBloom com guardrails de custo/duplicidade (Fase 13).
 
-Refinamento (17/09/2026): a modalidade de TEXTO agora tenta primeiro o Gemini
-(Google AI Studio, gratuito/econômico — ver gemini_client.py) e só cai para a
-OpenRouter se o Gemini não estiver configurado ou falhar. Isso mantém o SaaS
-funcional mesmo sem crédito pago na OpenRouter. Imagem e áudio permanecem
-exclusivamente na OpenRouter por enquanto: a rota Gemini para essas
-modalidades ainda não foi validada com o mesmo nível de QA visual.
+Refinamento (17-24/09/2026): as modalidades de TEXTO, VOZ e IMAGEM agora
+tentam primeiro o Gemini (Google AI Studio, gratuito/econômico — ver
+gemini_client.py) e só caem para a OpenRouter se o Gemini não estiver
+configurado ou falhar. Isso mantém o SaaS funcional mesmo sem crédito pago na
+OpenRouter. A opção `provider` de gerar_imagem (roteamento específico da
+própria OpenRouter) continua funcionando exatamente como antes quando
+informada — nesse caso a intenção de quem chamou é respeitada e o Gemini
+direto não é tentado.
 
 A interface pública deste módulo (chamar_llm, gerar_imagem, gerar_audio) não
 muda para quem já importa daqui — nenhum agente precisa alterar seu import.
@@ -181,7 +183,36 @@ def _chamar_llm_openrouter(sistema: str, instrucao: str) -> dict | list:
         raise
 
 
+def _ler_referencias_base64(refs: list[str]) -> list[tuple[str, str]]:
+    saida: list[tuple[str, str]] = []
+    for ref in refs:
+        if not ref or not os.path.exists(ref):
+            continue
+        with open(ref, "rb") as f:
+            dados = f.read()
+        mime = mimetypes.guess_type(ref)[0] or "image/png"
+        saida.append((mime, base64.b64encode(dados).decode()))
+    return saida
+
+
+def _gerar_imagem_gemini_e_salvar(prompt: str, refs: list[str]) -> str:
+    imagens_b64 = _ler_referencias_base64(refs)
+    imagem_bytes, mime_type = gemini_client.gerar_imagem_gemini(prompt, imagens_b64)
+    extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
+    caminho = os.path.join(PASTA_IMAGENS, f"{uuid.uuid4().hex}.{extension}")
+    with open(caminho, "wb") as f:
+        f.write(imagem_bytes)
+    return caminho
+
+
 def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None, provider: str | None = None, aspect_ratio: str | None = None, output_format: str | None = "png") -> str:
+    """Gera/edita imagem. Desde 24/09/2026, tenta primeiro o Gemini direto
+    (gratuito/econômico) quando disponível, com a OpenRouter como reserva —
+    mesmo padrão já usado para texto e voz. Essa tentativa roda ANTES de
+    qualquer chamada à OpenRouter, então quando o Gemini não está configurado
+    (como em todos os testes existentes, que não definem GEMINI_API_KEY), o
+    comportamento abaixo permanece idêntico ao de sempre.
+    """
     if resolution not in {None, "1K", "2K", "4K"}:
         raise ValueError("Resolução inválida. Escolha 1K, 2K ou 4K.")
     if provider not in {None, "google-vertex", "google-ai-studio"}:
@@ -198,10 +229,31 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
     for r in imagens_referencia or []:
         if r and r not in refs:
             refs.append(r)
-    ref_sig=f"|resolution:{resolution or 'default'}|provider:{provider}|aspect_ratio:{aspect_ratio}|output_format:{output_format}"
     for ref in refs:
         if not os.path.isfile(ref):
             raise OpenRouterFaithBloomError("Uma imagem de referência não está disponível. Selecione-a novamente antes de gerar.")
+
+    # "provider" aqui é uma opção de roteamento da própria OpenRouter (pedir a
+    # ela que use o backend google-vertex ou google-ai-studio) — é um conceito
+    # diferente e não relacionado ao Gemini direto abaixo. Só tentamos o
+    # Gemini direto quando quem chamou NÃO pediu um "provider" específico da
+    # OpenRouter (senão a escolha de quem chamou seria ignorada).
+    if provider is None and PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel():
+        try:
+            return _gerar_imagem_gemini_e_salvar(prompt, refs)
+        except Exception as exc_gemini:
+            if PROVEDOR_TEXTO == "gemini":
+                raise
+            # cai silenciosamente para a OpenRouter, fluxo original abaixo.
+
+    if PROVEDOR_TEXTO == "gemini" and provider is None:
+        raise OpenRouterFaithBloomError(
+            "FAITHBLOOM_PROVEDOR_TEXTO=gemini foi definido, mas o Gemini não está "
+            "configurado ou disponível. Defina GEMINI_API_KEY (ou GOOGLE_API_KEY)."
+        )
+
+    ref_sig=f"|resolution:{resolution or 'default'}|provider:{provider}|aspect_ratio:{aspect_ratio}|output_format:{output_format}"
+    for ref in refs:
         if os.path.exists(ref):
             st=os.stat(ref)
             ref_sig+=f"|ref:{os.path.basename(ref)}:{st.st_size}:{int(st.st_mtime)}"
