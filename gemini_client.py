@@ -1,11 +1,9 @@
-"""Cliente Google AI Studio (Gemini) do FaithBloom — camada de texto gratuita/econômica.
+"""Cliente Google AI Studio (Gemini) do FaithBloom — camada gratuita/econômica.
 
-Contexto: os créditos pagos da OpenRouter se esgotaram. Este módulo cobre a
-modalidade de TEXTO (Jarvis, classificação, Roteirista, Revisor, DNA visual
-textual, etc.) usando a API gratuita/econômica do Google AI Studio como
-primeira tentativa. Imagem e áudio continuam na OpenRouter (ver
-openrouter_client.py) até que a rota Gemini para essas modalidades seja
-validada com o mesmo nível de segurança e QA.
+Contexto: os créditos pagos da OpenRouter se esgotaram. Este módulo cobre
+TEXTO (Jarvis, classificação, Roteirista, Revisor, DNA visual textual etc.),
+VOZ (TTS) e IMAGEM, usando a API gratuita/econômica do Google AI Studio como
+primeira tentativa, com a OpenRouter como reserva (ver openrouter_client.py).
 
 Reaproveita integralmente o mesmo módulo de custo/segurança/dedup usado pela
 OpenRouter (controle_geracao.py) — nenhuma lógica de orçamento, cooldown ou
@@ -53,6 +51,11 @@ _MODELOS_TEXTO_RESERVA = [
 MODELO_VOZ_PADRAO = os.environ.get("GEMINI_MODELO_VOZ", "gemini-2.5-flash-preview-tts")
 _MODELOS_VOZ_RESERVA = ["gemini-2.5-pro-preview-tts"]
 VOZ_GEMINI_PADRAO = os.environ.get("GEMINI_VOZ_PADRAO", "Charon")
+
+# Imagem: mesma filosofia de fallback por lista fixa de modelos nativos de
+# geração/edição de imagem do Gemini.
+MODELO_IMAGEM_PADRAO = os.environ.get("GEMINI_MODELO_IMAGEM", "gemini-2.5-flash-image")
+_MODELOS_IMAGEM_RESERVA = ["gemini-2.0-flash-exp"]
 
 
 class GeminiFaithBloomError(RuntimeError):
@@ -200,9 +203,6 @@ def chamar_llm_gemini(sistema: str, instrucao: str) -> dict | list:
             ultimo_erro = exc
             continue
 
-    # A lista fixa inteira falhou (ex.: nomes de modelo desatualizados para
-    # esta chave). Antes de desistir, pergunta à API quais modelos existem
-    # de fato e tenta os que ainda não foram tentados.
     ja_tentados = set(_ordem_modelos_texto())
     for modelo in _descobrir_modelos_disponiveis():
         if modelo in ja_tentados:
@@ -283,7 +283,6 @@ def gerar_audio_gemini(texto: str, voice: str | None = None) -> tuple[bytes, int
 
     Retorna (pcm_bytes, sample_rate_hz) — PCM cru de 16 bits, mono, como o
     Gemini TTS sempre entrega. Quem chama decide o empacotamento final (WAV).
-    Mesmo contrato de fallback por lista de modelos usado em chamar_llm_gemini.
     """
     if not GEMINI_API_KEY:
         raise GeminiFaithBloomError(
@@ -301,4 +300,95 @@ def gerar_audio_gemini(texto: str, voice: str | None = None) -> tuple[bytes, int
             continue
     raise GeminiFaithBloomError(
         "Nenhum modelo de voz do Gemini disponível respondeu corretamente para esta chave."
+    ) from ultimo_erro
+
+
+def _ordem_modelos_imagem() -> list[str]:
+    ordem = [MODELO_IMAGEM_PADRAO] + _MODELOS_IMAGEM_RESERVA
+    vistos: set[str] = set()
+    saida = []
+    for m in ordem:
+        if m and m not in vistos:
+            vistos.add(m)
+            saida.append(m)
+    return saida
+
+
+def _extrair_imagem(dados: dict) -> tuple[bytes, str]:
+    try:
+        partes = dados["candidates"][0]["content"]["parts"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise GeminiFaithBloomError("O Gemini não retornou conteúdo de imagem nesta chamada.") from exc
+    for parte in partes:
+        inline = parte.get("inlineData") or parte.get("inline_data")
+        if inline and inline.get("data"):
+            mime = inline.get("mimeType") or inline.get("mime_type") or "image/png"
+            try:
+                return base64.b64decode(inline["data"], validate=True), mime
+            except Exception as exc:
+                raise GeminiFaithBloomError("A imagem retornada pelo Gemini não pôde ser decodificada.") from exc
+    raise GeminiFaithBloomError("O Gemini não retornou nenhuma imagem nesta chamada.")
+
+
+def _tentar_modelo_imagem(
+    modelo: str, prompt: str, imagens_referencia_b64: list[tuple[str, str]], conteudo_assinatura: str
+) -> tuple[bytes, str]:
+    modelo_marcado = f"gemini/{modelo}"
+    req_id, assinatura, estimativa, inicio = iniciar_requisicao("imagem", modelo_marcado, conteudo_assinatura)
+    try:
+        partes: list[dict] = [{"text": prompt}]
+        for mime, b64dados in imagens_referencia_b64:
+            partes.append({"inline_data": {"mime_type": mime, "data": b64dados}})
+        payload = {
+            "contents": [{"role": "user", "parts": partes}],
+            "generationConfig": {"responseModalities": ["IMAGE"]},
+        }
+        resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 180)
+        dados = _json_resposta(resp)
+        imagem_bytes, mime_type = _extrair_imagem(dados)
+        finalizar_requisicao(
+            req_id, assinatura, "imagem", modelo_marcado, estimativa, inicio, "sucesso",
+            extrair_custo_reportado(dados),
+        )
+        return imagem_bytes, mime_type
+    except Exception as exc:
+        finalizar_requisicao(
+            req_id, assinatura, "imagem", modelo_marcado, estimativa, inicio, "erro",
+            detalhe=sanitizar_texto(str(exc)),
+        )
+        raise
+    except BaseException:
+        liberar_requisicao(assinatura)
+        raise
+
+
+def gerar_imagem_gemini(
+    prompt: str, imagens_referencia_b64: list[tuple[str, str]] | None = None
+) -> tuple[bytes, str]:
+    """Gera/edita imagem pela API gratuita/econômica do Google AI Studio.
+
+    ``imagens_referencia_b64`` é uma lista de (mime_type, dados_em_base64) —
+    o chamador (openrouter_client) já lê os arquivos de referência do disco e
+    converte para base64 antes de chamar esta função, assim este módulo nunca
+    precisa saber de caminhos de arquivo.
+
+    Retorna (bytes_da_imagem, mime_type). Mesmo contrato de fallback por
+    lista de modelos usado em chamar_llm_gemini e gerar_audio_gemini.
+    """
+    if not GEMINI_API_KEY:
+        raise GeminiFaithBloomError(
+            "GEMINI_API_KEY (ou GOOGLE_API_KEY) não configurada. "
+            "Defina nos Secrets do ambiente para usar a imagem gratuita/econômica."
+        )
+    refs = imagens_referencia_b64 or []
+    conteudo_assinatura = prompt + "".join(f"|ref:{mime}:{len(dados)}" for mime, dados in refs)
+    ultimo_erro: Exception | None = None
+    for modelo in _ordem_modelos_imagem():
+        try:
+            return _tentar_modelo_imagem(modelo, prompt, refs, conteudo_assinatura)
+        except Exception as exc:
+            ultimo_erro = exc
+            continue
+    raise GeminiFaithBloomError(
+        "Nenhum modelo de imagem do Gemini disponível respondeu corretamente para esta chave."
     ) from ultimo_erro
