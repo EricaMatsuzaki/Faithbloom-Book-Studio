@@ -1,3 +1,4 @@
+import base64
 import json
 import unittest
 from unittest.mock import MagicMock, patch
@@ -84,8 +85,6 @@ class GeminiClientTests(unittest.TestCase):
         }
         mock_get.return_value = resp_get
 
-        # todos os modelos da lista fixa falham (não importa quantas vezes o
-        # retry interno chame); só o modelo descoberto dinamicamente responde
         def efeito(url, params=None, json=None, timeout=None):
             if "gemini-modelo-novo" in url:
                 return _resposta_gemini({"ok": "via-descoberta"})
@@ -95,6 +94,104 @@ class GeminiClientTests(unittest.TestCase):
         resultado = gc.chamar_llm_gemini("sistema", "instrucao")
         self.assertEqual(resultado, {"ok": "via-descoberta"})
         mock_get.assert_called_once()
+
+    def _resposta_audio_gemini(self, pcm: bytes, sample_rate: int = 24000) -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "inlineData": {
+                        "mimeType": f"audio/L16;rate={sample_rate}",
+                        "data": base64.b64encode(pcm).decode(),
+                    }
+                }]}
+            }]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    @patch("gemini_client.requests.post")
+    def test_gerar_audio_gemini_sucesso(self, mock_post):
+        gc.GEMINI_API_KEY = "chave-teste"
+        mock_post.return_value = self._resposta_audio_gemini(b"\x01\x02\x03\x04")
+        pcm, taxa = gc.gerar_audio_gemini("Olá, Mel!")
+        self.assertEqual(pcm, b"\x01\x02\x03\x04")
+        self.assertEqual(taxa, 24000)
+
+    def test_gerar_audio_gemini_sem_chave(self):
+        gc.GEMINI_API_KEY = ""
+        with self.assertRaises(gc.GeminiFaithBloomError):
+            gc.gerar_audio_gemini("Olá, Mel!")
+
+    @patch("gemini_client.requests.post")
+    def test_gerar_audio_gemini_cai_para_modelo_de_reserva(self, mock_post):
+        gc.GEMINI_API_KEY = "chave-teste"
+
+        def efeito(url, params=None, json=None, timeout=None):
+            if gc.MODELO_VOZ_PADRAO in url:
+                raise gc.requests.exceptions.RequestException("modelo de voz indisponível")
+            return self._resposta_audio_gemini(b"\xaa\xbb")
+
+        mock_post.side_effect = efeito
+        pcm, _ = gc.gerar_audio_gemini("Olá, Mel!")
+        self.assertEqual(pcm, b"\xaa\xbb")
+
+    def _resposta_imagem_gemini(self, dados_imagem: bytes, mime: str = "image/png") -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "inlineData": {
+                        "mimeType": mime,
+                        "data": base64.b64encode(dados_imagem).decode(),
+                    }
+                }]}
+            }]
+        }
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    @patch("gemini_client.requests.post")
+    def test_gerar_imagem_gemini_sucesso(self, mock_post):
+        gc.GEMINI_API_KEY = "chave-teste"
+        mock_post.return_value = self._resposta_imagem_gemini(b"\x89PNG-fake-bytes")
+        imagem, mime = gc.gerar_imagem_gemini("Mel no jardim")
+        self.assertEqual(imagem, b"\x89PNG-fake-bytes")
+        self.assertEqual(mime, "image/png")
+
+    def test_gerar_imagem_gemini_sem_chave(self):
+        gc.GEMINI_API_KEY = ""
+        with self.assertRaises(gc.GeminiFaithBloomError):
+            gc.gerar_imagem_gemini("Mel no jardim")
+
+    @patch("gemini_client.requests.post")
+    def test_gerar_imagem_gemini_com_referencias(self, mock_post):
+        gc.GEMINI_API_KEY = "chave-teste"
+        mock_post.return_value = self._resposta_imagem_gemini(b"dados-jpeg", mime="image/jpeg")
+        imagem, mime = gc.gerar_imagem_gemini(
+            "Editar Mel", [("image/jpeg", base64.b64encode(b"original").decode())]
+        )
+        self.assertEqual(imagem, b"dados-jpeg")
+        self.assertEqual(mime, "image/jpeg")
+        payload_enviado = mock_post.call_args.kwargs["json"]
+        partes = payload_enviado["contents"][0]["parts"]
+        self.assertEqual(len(partes), 2)
+        self.assertEqual(partes[1]["inline_data"]["mime_type"], "image/jpeg")
+
+    @patch("gemini_client.requests.post")
+    def test_gerar_imagem_gemini_cai_para_modelo_de_reserva(self, mock_post):
+        gc.GEMINI_API_KEY = "chave-teste"
+
+        def efeito(url, params=None, json=None, timeout=None):
+            if gc.MODELO_IMAGEM_PADRAO in url:
+                raise gc.requests.exceptions.RequestException("modelo de imagem indisponível")
+            return self._resposta_imagem_gemini(b"via-reserva")
+
+        mock_post.side_effect = efeito
+        imagem, _ = gc.gerar_imagem_gemini("Mel no jardim")
+        self.assertEqual(imagem, b"via-reserva")
 
 
 class OpenRouterDispatcherTests(unittest.TestCase):
@@ -136,8 +233,17 @@ class OpenRouterDispatcherTests(unittest.TestCase):
         orc.PROVEDOR_TEXTO = "auto"
         gc.GEMINI_API_KEY = ""
         orc.OPENROUTER_API_KEY = ""
-        with self.assertRaises(orc.OpenRouterFaithBloomError):
+        with self.assertRaises(RuntimeError):
             orc.chamar_llm("sistema", "instrucao")
+
+    def test_provedor_gemini_forcado_sem_chave_da_erro_claro(self):
+        orc.PROVEDOR_TEXTO = "gemini"
+        gc.GEMINI_API_KEY = ""
+        orc.OPENROUTER_API_KEY = "chave-or-teste"
+        with patch.object(orc, "_chamar_llm_openrouter") as mock_openrouter:
+            with self.assertRaises(orc.OpenRouterFaithBloomError):
+                orc.chamar_llm("sistema", "instrucao")
+        mock_openrouter.assert_not_called()
 
     def test_forcar_provedor_openrouter_ignora_gemini(self):
         orc.PROVEDOR_TEXTO = "openrouter"
@@ -159,6 +265,137 @@ class OpenRouterDispatcherTests(unittest.TestCase):
         self.assertEqual(orc.texto_provedor_ativo(), "openrouter")
         orc.OPENROUTER_API_KEY = ""
         self.assertEqual(orc.texto_provedor_ativo(), "indisponível")
+
+
+class AudioDispatcherTests(unittest.TestCase):
+    """Cobre o roteamento multi-provedor em openrouter_client.gerar_audio."""
+
+    def setUp(self):
+        cg._IN_FLIGHT.clear()
+        cg._RECENT.clear()
+        self._provedor_original = orc.PROVEDOR_TEXTO
+        self._chave_or_original = orc.OPENROUTER_API_KEY
+        self._chave_gemini_original = gc.GEMINI_API_KEY
+
+    def tearDown(self):
+        orc.PROVEDOR_TEXTO = self._provedor_original
+        orc.OPENROUTER_API_KEY = self._chave_or_original
+        gc.GEMINI_API_KEY = self._chave_gemini_original
+
+    def test_prefere_gemini_para_audio_quando_disponivel(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        with patch("gemini_client.gerar_audio_gemini", return_value=(b"\x01\x02", 24000)) as mock_gemini, \
+             patch.object(orc, "_gerar_audio_openrouter") as mock_openrouter:
+            caminho = orc.gerar_audio("Olá, Mel!", "teste_audio")
+        mock_gemini.assert_called_once()
+        mock_openrouter.assert_not_called()
+        self.assertTrue(caminho.endswith(".wav"))
+        with open(caminho, "rb") as f:
+            self.assertEqual(f.read()[:4], b"RIFF")
+
+    def test_audio_cai_para_openrouter_se_gemini_falhar(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        orc.OPENROUTER_API_KEY = "chave-or-teste"
+        with patch("gemini_client.gerar_audio_gemini", side_effect=gc.GeminiFaithBloomError("falhou")), \
+             patch.object(orc, "_gerar_audio_openrouter", return_value="/tmp/x.mp3") as mock_openrouter:
+            caminho = orc.gerar_audio("Olá, Mel!", "teste_audio")
+        self.assertEqual(caminho, "/tmp/x.mp3")
+        mock_openrouter.assert_called_once()
+
+    def test_audio_respeita_model_explicito_nao_gemini_e_nao_tenta_gemini(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        with patch("gemini_client.gerar_audio_gemini") as mock_gemini, \
+             patch.object(orc, "_gerar_audio_openrouter", return_value="/tmp/x.mp3") as mock_openrouter:
+            orc.gerar_audio("Olá, Mel!", "teste_audio", model="openai/algum-modelo")
+        mock_gemini.assert_not_called()
+        mock_openrouter.assert_called_once()
+
+    def test_chamada_real_do_jarvis_com_model_google_gemini_tenta_gemini_direto(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        with patch("gemini_client.gerar_audio_gemini", return_value=(b"\x01\x02", 24000)) as mock_gemini, \
+             patch.object(orc, "_gerar_audio_openrouter") as mock_openrouter:
+            caminho = orc.gerar_audio(
+                "Olá, Mel!", "teste_audio", voice="Charon",
+                model="google/gemini-3.1-flash-tts-preview", instructions=None, response_format="pcm",
+            )
+        mock_gemini.assert_called_once()
+        mock_openrouter.assert_not_called()
+        self.assertTrue(caminho.endswith(".wav"))
+
+
+class ImageDispatcherTests(unittest.TestCase):
+    """Cobre o roteamento multi-provedor em openrouter_client.gerar_imagem."""
+
+    def setUp(self):
+        cg._IN_FLIGHT.clear()
+        cg._RECENT.clear()
+        self._provedor_original = orc.PROVEDOR_TEXTO
+        self._chave_or_original = orc.OPENROUTER_API_KEY
+        self._chave_gemini_original = gc.GEMINI_API_KEY
+
+    def tearDown(self):
+        orc.PROVEDOR_TEXTO = self._provedor_original
+        orc.OPENROUTER_API_KEY = self._chave_or_original
+        gc.GEMINI_API_KEY = self._chave_gemini_original
+
+    def test_prefere_gemini_para_imagem_quando_disponivel(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        with patch("gemini_client.gerar_imagem_gemini", return_value=(b"\x89PNG", "image/png")) as mock_gemini:
+            caminho = orc.gerar_imagem("Mel no jardim")
+        mock_gemini.assert_called_once()
+        self.assertTrue(caminho.endswith(".png"))
+        with open(caminho, "rb") as f:
+            self.assertEqual(f.read(), b"\x89PNG")
+
+    def test_imagem_cai_para_openrouter_se_gemini_falhar(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        orc.OPENROUTER_API_KEY = "chave-or-teste"
+        with patch("gemini_client.gerar_imagem_gemini", side_effect=gc.GeminiFaithBloomError("falhou")), \
+             patch("openrouter_client.iniciar_requisicao", return_value=("id", "sig", 0.1, 1.0)), \
+             patch("openrouter_client.finalizar_requisicao"), \
+             patch("openrouter_client.atualizar_etapa"), \
+             patch("openrouter_client._post_com_retry") as mock_post_com_retry:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"data": [{"b64_json": base64.b64encode(b"via-openrouter").decode(), "media_type": "image/png"}]}
+            mock_post_com_retry.return_value = mock_resp
+            caminho = orc.gerar_imagem("Mel no jardim")
+        with open(caminho, "rb") as f:
+            self.assertEqual(f.read(), b"via-openrouter")
+
+    def test_imagem_com_provider_explicito_nao_tenta_gemini(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = "chave-teste"
+        with patch("gemini_client.gerar_imagem_gemini") as mock_gemini, \
+             patch("openrouter_client.iniciar_requisicao", return_value=("id", "sig", 0.1, 1.0)), \
+             patch("openrouter_client.finalizar_requisicao"), \
+             patch("openrouter_client.atualizar_etapa"), \
+             patch("openrouter_client._post_com_retry") as mock_post_com_retry:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"data": [{"b64_json": base64.b64encode(b"x").decode(), "media_type": "image/png"}]}
+            mock_post_com_retry.return_value = mock_resp
+            orc.gerar_imagem("Mel no jardim", provider="google-vertex")
+        mock_gemini.assert_not_called()
+
+    def test_imagem_sem_gemini_disponivel_usa_openrouter_normalmente(self):
+        orc.PROVEDOR_TEXTO = "auto"
+        gc.GEMINI_API_KEY = ""
+        orc.OPENROUTER_API_KEY = "chave-or-teste"
+        with patch("gemini_client.gerar_imagem_gemini") as mock_gemini, \
+             patch("openrouter_client.iniciar_requisicao", return_value=("id", "sig", 0.1, 1.0)), \
+             patch("openrouter_client.finalizar_requisicao"), \
+             patch("openrouter_client.atualizar_etapa"), \
+             patch("openrouter_client._post_com_retry") as mock_post_com_retry:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"data": [{"b64_json": base64.b64encode(b"x").decode(), "media_type": "image/png"}]}
+            mock_post_com_retry.return_value = mock_resp
+            orc.gerar_imagem("Mel no jardim")
+        mock_gemini.assert_not_called()
 
 
 if __name__ == "__main__":
