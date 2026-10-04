@@ -347,6 +347,19 @@ def render_sidebar_navigation() -> None:
             _sidebar_link("pages/12_🏭_Fila_de_Producao.py", "🏭 Fila de Produção")
             _sidebar_link("pages/33_🧭_Integration_UX_Center.py", "🧭 Integration UX")
 
+        st.markdown(
+            """
+            <div style="margin-top:1rem;padding:1rem;border-radius:18px;
+                        background:linear-gradient(145deg,#fff0f5,#f3edff,#eefcf7);
+                        border:1px solid rgba(133,93,204,.10);
+                        text-align:center;color:#6d557f;line-height:1.35">
+                <div style="font-size:1.35rem">🌸📚💗</div>
+                <strong>Mais histórias para um futuro ainda mais brilhante!</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 
 def aplicar_estilo():
     st.markdown(CSS, unsafe_allow_html=True)
