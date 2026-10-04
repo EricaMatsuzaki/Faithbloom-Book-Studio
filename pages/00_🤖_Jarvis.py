@@ -7,6 +7,7 @@ evita que Revisão Completa dependa da presença de um PDF ou do comportamento d
 from __future__ import annotations
 
 import hashlib
+import html as html_lib
 import os
 import time
 import uuid
@@ -15,7 +16,7 @@ from datetime import datetime
 import streamlit as st
 
 import engenheiro_code_review
-from armazenamento import listar_livros, listar_livros_colorir
+from armazenamento import carregar_livro, carregar_livro_colorir, listar_livros, listar_livros_colorir
 from estilo import aplicar_estilo
 from faithbloom_cost_mode import COST_MODES, mode_config, mode_rows, set_cost_mode
 from jarvis_assistant import inspect_project_state, interpret_request
@@ -417,6 +418,58 @@ def _run_daily_briefing() -> None:
         _set_stage("idle", "Jarvis online. O briefing ficou parcialmente indisponível.")
 
 
+def _home_project_title(item: dict) -> str:
+    return str(item.get("titulo") or item.get("tema_geral") or "Projeto FaithBloom").strip()
+
+
+def _is_home_project(item: dict) -> bool:
+    """Esconde artefatos técnicos do dashboard principal sem apagar nada."""
+    title = _home_project_title(item).casefold()
+    technical_markers = ("teste ", "teste_", "test ", "persistência supabase", "persistencia supabase", "diagnóstico", "diagnostico")
+    return bool(title) and not any(marker in title for marker in technical_markers)
+
+
+def _load_home_project(item: dict) -> dict:
+    try:
+        if item.get("kind") == "coloring":
+            return carregar_livro_colorir(str(item.get("storage_path") or item.get("arquivo") or ""))
+        return carregar_livro(
+            str(item.get("colecao") or ""),
+            str(item.get("storage_path") or item.get("arquivo") or ""),
+        )
+    except Exception:
+        return {}
+
+
+def _project_cover_path(data: dict) -> str:
+    candidates = [
+        data.get("arte_capa_frontal"),
+        data.get("capa_ebook"),
+        data.get("capa_fisica_preview"),
+        data.get("capa_fisica_wrap"),
+        data.get("imagem_capa"),
+        data.get("cover_image"),
+    ]
+    for value in candidates:
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        if value.startswith(("http://", "https://")) or os.path.exists(value):
+            return value
+    return ""
+
+
+def _project_status(item: dict, data: dict) -> tuple[str, str]:
+    raw = str(data.get("status") or data.get("status_publicacao") or "").casefold()
+    if bool(data.get("publicado")) or bool(item.get("pacote_pronto")) or bool(data.get("pacote_pronto")) or raw in {"published", "publicado"}:
+        return "Publicado", "published"
+    if bool(data.get("revisao_aprovada")) or bool(data.get("cenas_texto")) or bool(data.get("texto_final")) or raw in {"in_progress", "em andamento", "remastering"}:
+        return "Em andamento", "progress"
+    return "Rascunho", "draft"
+
+
 st.session_state.setdefault("jarvis_stage", "idle")
 st.session_state.setdefault("jarvis_status_message", "Online")
 st.session_state.setdefault("jarvis_reply", "")
@@ -429,6 +482,11 @@ set_cost_mode(str(st.session_state.get("faithbloom_cost_mode") or "economico"))
 
 current_state = st.session_state.get("state")
 project_progress = inspect_project_state(current_state) if current_state else None
+home_catalog = [
+    *[{"kind": "story", **x} for x in listar_livros()],
+    *[{"kind": "coloring", **x} for x in listar_livros_colorir()],
+]
+home_catalog = [x for x in home_catalog if _is_home_project(x)]
 
 def _render_ai_controls() -> None:
         mode_keys = ["economico", "balanceado", "premium"]
@@ -465,6 +523,34 @@ def _render_ai_controls() -> None:
 
 
 
+top_search, top_profile = st.columns([4.2, 1], gap="medium")
+with top_search:
+    home_search = st.text_input(
+        "Buscar no FaithBloom",
+        placeholder="🔎  Buscar projetos, histórias e coleções…",
+        label_visibility="collapsed",
+        key="faithbloom_home_search",
+    )
+with top_profile:
+    st.html(
+        '<div class="fb-profile-chip"><span class="fb-profile-avatar">🌸</span>'
+        '<span><strong>Erica</strong><small>Autora · Criadora</small></span><span class="fb-profile-chevron">⌄</span></div>'
+    )
+
+if home_search.strip():
+    q = home_search.strip().casefold()
+    matches = [
+        item for item in home_catalog
+        if q in (_home_project_title(item) + " " + str(item.get("colecao") or item.get("tema_geral") or "")).casefold()
+    ][:6]
+    with st.expander(f"🔎 Resultados para “{home_search.strip()}”", expanded=True):
+        if matches:
+            for item in matches:
+                st.write(f"📖 **{_home_project_title(item)}** · {item.get('colecao') or item.get('tema_geral') or 'FaithBloom'}")
+            st.page_link("pages/02_🏠_Dashboard_do_Estudio.py", label="Ver na biblioteca de projetos →")
+        else:
+            st.caption("Nenhum projeto salvo corresponde a essa busca.")
+
 stage = str(st.session_state.get("jarvis_stage") or "idle")
 reply = str(st.session_state.get("jarvis_reply") or "")
 audio_path = str(st.session_state.get("jarvis_audio_path") or "")
@@ -473,9 +559,12 @@ active_cfg = mode_config()
 
 st.html("""
 <style>
+.fb-profile-chip{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.84);border:1px solid rgba(102,90,185,.11);box-shadow:0 7px 22px rgba(59,72,101,.06);color:#20394f}
+.fb-profile-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#fff0f6,#eee8ff);font-size:1.05rem}.fb-profile-chip small{display:block;color:#7a8490;font-size:.68rem;margin-top:.05rem}.fb-profile-chevron{color:#8469d9;font-weight:800}
+div[data-testid="stTextInput"] input{border-radius:16px!important;border:1px solid rgba(75,98,131,.13)!important;background:rgba(255,255,255,.92)!important;box-shadow:0 7px 22px rgba(59,72,101,.05)!important}
 div.st-key-faithbloom_home_hero{
   position:relative;overflow:hidden;border-radius:30px;
-  padding:clamp(24px,4vw,48px);
+  padding:clamp(22px,3vw,34px);
   background:
     radial-gradient(circle at 78% 20%,rgba(255,255,255,.22),transparent 22%),
     radial-gradient(circle at 62% 88%,rgba(246,154,200,.18),transparent 28%),
@@ -488,7 +577,7 @@ div.st-key-faithbloom_home_hero:before{
   right:-70px;top:-100px;background:radial-gradient(circle,rgba(139,108,246,.18),rgba(139,108,246,0));
 }
 .fbh-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.42rem .78rem;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(139,108,246,.16);color:#6c55c7;font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
-.fbh-title{font-size:clamp(2.35rem,5.6vw,4.8rem);line-height:.98;letter-spacing:-.05em;font-weight:850;color:#15324b;margin:.85rem 0 .65rem}
+.fbh-title{font-size:clamp(2.15rem,4.2vw,3.85rem);line-height:1.01;letter-spacing:-.045em;font-weight:850;color:#15324b;margin:.72rem 0 .55rem}
 .fbh-copy{font-size:clamp(1rem,1.65vw,1.2rem);line-height:1.65;color:#536170;max-width:760px}
 .fbh-tagline{margin-top:1rem;font-size:1rem;font-weight:750;color:#7d62d5;font-style:italic}
 .fbh-pills{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.15rem}
@@ -497,13 +586,20 @@ div.st-key-faithbloom_home_hero:before{
 .fb-home-section{margin:1.75rem 0 .8rem}
 .fb-home-section h2{margin:0;color:#16324a;font-size:1.42rem;letter-spacing:-.02em}
 .fb-home-section p{margin:.28rem 0 0;color:#667381;font-size:.94rem}
-.fb-action-card{min-height:150px;padding:1.25rem 1.25rem 1.1rem;border-radius:22px;background:rgba(255,255,255,.85);border:1px solid rgba(57,87,118,.10);box-shadow:0 11px 30px rgba(50,74,103,.07);transition:.18s ease;margin-bottom:.6rem}
+.fb-action-card{min-height:128px;padding:1.12rem 1.18rem 1rem;border-radius:22px;border:1px solid rgba(57,87,118,.08);box-shadow:0 10px 26px rgba(50,74,103,.06);transition:.18s ease;margin-bottom:.38rem}
+.fb-card-pink{background:linear-gradient(135deg,#fff3f6,#ffe9f1)}.fb-card-blue{background:linear-gradient(135deg,#eef9ff,#e1f2ff)}.fb-card-mint{background:linear-gradient(135deg,#effdf7,#ddfaec)}.fb-card-gold{background:linear-gradient(135deg,#fffaf0,#fff0c9)}.fb-card-lilac{background:linear-gradient(135deg,#f8f2ff,#eee3ff)}.fb-card-rose{background:linear-gradient(135deg,#fff3f7,#ffe5ee)}
 .fb-action-card:hover{transform:translateY(-3px);box-shadow:0 17px 36px rgba(50,74,103,.12);border-color:rgba(139,108,246,.22)}
-.fb-action-icon{width:46px;height:46px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:1.45rem;margin-bottom:.8rem;background:linear-gradient(135deg,rgba(34,168,153,.12),rgba(139,108,246,.13))}
+.fb-action-icon{width:44px;height:44px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:.68rem;background:rgba(255,255,255,.62);box-shadow:inset 0 0 0 1px rgba(255,255,255,.55)}
 .fb-action-card h3{font-size:1.03rem;margin:0 0 .34rem;color:#17324b}
 .fb-action-card p{margin:0;color:#64717e;font-size:.87rem;line-height:1.45}
-.fb-assistant-box{margin-top:1.5rem;padding:1.15rem 1.25rem;border-radius:22px;background:linear-gradient(135deg,rgba(246,154,200,.10),rgba(139,108,246,.08),rgba(34,168,153,.08));border:1px solid rgba(139,108,246,.14)}
-.fb-project-card{padding:1rem 1.05rem;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(57,87,118,.10);min-height:110px}
+.fb-assistant-box{margin-top:1.35rem;padding:1.05rem 1.2rem;border-radius:22px;background:linear-gradient(135deg,#fff5f8,#f7f0ff 48%,#effcf8);border:1px solid rgba(139,108,246,.12)}
+div[data-testid="stForm"]{border:1px solid rgba(105,89,183,.10)!important;border-radius:22px!important;padding:1rem!important;background:rgba(255,255,255,.78)!important;box-shadow:0 10px 28px rgba(50,74,103,.05)!important}
+div[data-testid="stFormSubmitButton"] button{border:0!important;border-radius:14px!important;background:linear-gradient(90deg,#ff8fbd 0%,#b46cff 48%,#6d63f5 100%)!important;color:white!important;font-weight:800!important;box-shadow:0 9px 24px rgba(148,91,225,.22)!important}
+div[data-testid="stFormSubmitButton"] button:hover{filter:brightness(1.035);transform:translateY(-1px)}
+.fb-project-card{padding:.85rem .9rem;border-radius:18px;background:rgba(255,255,255,.88);border:1px solid rgba(57,87,118,.09);min-height:92px;box-shadow:0 8px 22px rgba(50,74,103,.05)}
+.fb-project-cover-placeholder{height:142px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);font-size:2.4rem;border:1px solid rgba(105,89,183,.08);margin-bottom:.6rem}
+.fb-status-panel{padding:1rem;border-radius:20px;background:rgba(255,255,255,.88);border:1px solid rgba(57,87,118,.09);box-shadow:0 9px 24px rgba(50,74,103,.06)}
+.fb-status-line{display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;border-radius:13px;margin:.38rem 0;background:#f7f9fc;color:#43576b;font-size:.83rem}.fb-status-line.done{background:#effbf6;color:#167c67}.fb-status-line.active{background:#f4efff;color:#7652c9}.fb-status-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;border:1px solid rgba(84,100,120,.11);font-size:.72rem;font-weight:800}
 .fb-project-card .t{font-weight:780;color:#17324b}.fb-project-card .m{font-size:.82rem;color:#6d7781;margin-top:.25rem}
 .fb-status-row{display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 1.2rem}
 .fb-status-chip{padding:.42rem .7rem;border-radius:999px;background:rgba(255,255,255,.82);border:1px solid rgba(34,168,153,.13);font-size:.78rem;color:#42596c}
@@ -524,26 +620,27 @@ with st.container(key="faithbloom_home_hero"):
             + (f'<div class="fbh-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
         )
     with right:
+        st.html('<div style="text-align:center;margin:.1rem auto .25rem;max-width:230px;padding:.65rem .8rem;border-radius:18px;background:rgba(255,255,255,.72);border:1px solid rgba(126,93,204,.12);color:#7652c9;font-weight:750">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
         heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply, reply_audio="", reply_token=reply_token)
 
 st.html('<div class="fb-home-section"><h2>Comece por aqui</h2><p>Escolha o objetivo. O Jarvis e o Orchestrator cuidam da rota e dos especialistas por trás.</p></div>')
 action_rows = [
     [
-        ("📖","Criar um livro","Comece uma história do zero com storytelling, personagens, fé e direção editorial.","pages/39_✍️_Historia_4_Estilos.py","Criar livro →"),
-        ("🔄","Continuar / Atualizar","Revise, melhore ou remasterize um livro existente sem alterar o original.","pages/16_🩺_Book_Doctor.py","Atualizar livro →"),
-        ("👥","Personagens","Crie e gerencie Character Masters, DNA, Color Master e referências.","pages/14_👥_Character_Universe.py","Abrir personagens →"),
+        ("📖","Criar um livro","Do zero, com a equipe certa para transformar sua ideia em uma história.","pages/39_✍️_Historia_4_Estilos.py","Criar livro →","fb-card-pink"),
+        ("🔄","Continuar / Atualizar","Melhore, revise ou remasterize um livro existente sem alterar o original.","pages/16_🩺_Book_Doctor.py","Atualizar livro →","fb-card-blue"),
+        ("👥","Personagens","Crie personagens e mantenha a aparência deles consistente em todas as histórias.","pages/14_👥_Character_Universe.py","Abrir personagens →","fb-card-mint"),
     ],
     [
-        ("🎨","Imagens & ilustrações","Encontre Masters, restaure imagens e prepare novas cenas com consistência.","pages/31_🖼️_Asset_Library_Media_Manager.py","Abrir imagens →"),
-        ("✍️","Texto & revisão","Analise texto, coerência, linguagem, moral, fé e qualidade editorial.","pages/5_🔍_Analisar_Livro.py","Revisar texto →"),
-        ("🚀","Publicar","Prepare formatos, plataformas, QA e distribuição para a nova edição.","pages/26_🌐_Publishing_Distribution_Center.py","Preparar publicação →"),
+        ("🎨","Imagens & ilustrações","Crie novas cenas, melhore imagens existentes e preserve seus personagens.","pages/31_🖼️_Asset_Library_Media_Manager.py","Abrir imagens →","fb-card-gold"),
+        ("✍️","Texto & revisão","Escreva, revise e aprimore a história com apoio da equipe editorial e da IA.","pages/5_🔍_Analisar_Livro.py","Revisar texto →","fb-card-lilac"),
+        ("🚀","Publicar","Formate e prepare seu livro para KDP e outras plataformas.","pages/26_🌐_Publishing_Distribution_Center.py","Preparar publicação →","fb-card-rose"),
     ],
 ]
 for row in action_rows:
     cols = st.columns(3, gap="medium")
-    for col, (icon, title, desc, page, label) in zip(cols, row):
+    for col, (icon, title, desc, page, label, css_class) in zip(cols, row):
         with col:
-            st.html(f'<div class="fb-action-card"><div class="fb-action-icon">{icon}</div><h3>{title}</h3><p>{desc}</p></div>')
+            st.html(f'<div class="fb-action-card {css_class}"><div class="fb-action-icon">{icon}</div><h3>{title}</h3><p>{desc}</p></div>')
             st.page_link(page, label=label, use_container_width=True)
 
 st.html('<div class="fb-assistant-box"><strong>💡 Prefere só contar o que precisa?</strong><br><span style="color:#63717e">Converse com o Jarvis em linguagem natural. Você pode escrever, falar ou anexar seu livro inteiro.</span></div>')
@@ -694,37 +791,64 @@ page_key = destination.get("destination") or destination.get("id")
 if page_key in NAV_PAGES and st.button(f"Abrir {destination.get('label') or page_key}", type="primary", use_container_width=True):
     st.switch_page(NAV_PAGES[page_key])
 
-st.html('<div class="fb-home-section"><h2>Projetos recentes</h2><p>Retome rapidamente livros e universos já salvos no FaithBloom.</p></div>')
-recent = [{"kind": "story", **x} for x in listar_livros()] + [{"kind": "coloring", **x} for x in listar_livros_colorir()]
-if recent:
-    recent = recent[-4:][::-1]
-    cols = st.columns(min(4, len(recent)), gap="medium")
-    for col, item in zip(cols, recent):
-        with col:
-            icon = "📖" if item.get("kind") == "story" else "🖍️"
-            status = "✅ Pacote pronto" if item.get("pacote_pronto") else "📝 Em andamento"
-            title = str(item.get("titulo") or item.get("tema_geral") or "Projeto FaithBloom")
-            collection = str(item.get("colecao") or item.get("tema_geral") or "")
-            st.html(f'<div class="fb-project-card"><div class="t">{icon} {title}</div><div class="m">{collection}<br>{status}</div></div>')
-    st.page_link("pages/02_🏠_Dashboard_do_Estudio.py", label="📚 Ver todos os projetos", use_container_width=False)
-else:
-    st.caption("Seus projetos aparecerão aqui assim que forem salvos.")
+st.html('<div class="fb-home-section"><h2>Projetos recentes</h2><p>Seus livros e histórias em um só lugar.</p></div>')
+recent = home_catalog[-4:][::-1]
 
-if isinstance(current_state, dict):
-    history_done = bool(current_state.get("cenas_texto") or current_state.get("historia") or current_state.get("texto_final"))
-    characters_done = bool(current_state.get("personagens"))
-    images_done = bool(current_state.get("imagens") or current_state.get("imagens_geradas"))
-    review_done = bool(current_state.get("revisao_aprovada") or current_state.get("revisao_final"))
-    publish_done = bool(current_state.get("pacote_pronto"))
-    chips = [
-        ("História", history_done), ("Personagens", characters_done), ("Ilustrações", images_done),
-        ("Revisão", review_done), ("Publicação", publish_done),
+projects_col, status_col = st.columns([3.15, 1], gap="medium")
+with projects_col:
+    if recent:
+        cols = st.columns(min(4, len(recent)), gap="small")
+        for col, item in zip(cols, recent):
+            data = _load_home_project(item)
+            cover = _project_cover_path(data)
+            status_label, status_kind = _project_status(item, data)
+            title = _home_project_title(item)
+            collection = str(item.get("colecao") or item.get("tema_geral") or "")
+            with col:
+                if cover:
+                    st.image(cover, use_container_width=True)
+                else:
+                    st.html('<div class="fb-project-cover-placeholder">📚🌸</div>')
+                safe_title = html_lib.escape(title)
+                safe_collection = html_lib.escape(collection)
+                status_icon = "✅" if status_kind == "published" else "🟣" if status_kind == "progress" else "🟡"
+                st.html(
+                    f'<div class="fb-project-card"><div class="t">{safe_title}</div>'
+                    f'<div class="m">{safe_collection or "FaithBloom"}<br>{status_icon} {status_label}</div></div>'
+                )
+        st.page_link("pages/02_🏠_Dashboard_do_Estudio.py", label="Ver todos os projetos →", use_container_width=False)
+    else:
+        st.caption("Seus projetos aparecerão aqui assim que forem salvos.")
+
+with status_col:
+    progress = project_progress or {
+        "story_ready": False,
+        "characters_ready": False,
+        "visuals_ready": False,
+        "review_ready": False,
+        "package_ready": False,
+    }
+    status_steps = [
+        ("História", bool(progress.get("story_ready"))),
+        ("Personagens", bool(progress.get("characters_ready"))),
+        ("Ilustrações", bool(progress.get("visuals_ready"))),
+        ("Revisão", bool(progress.get("review_ready"))),
+        ("Diagramação", bool(progress.get("package_ready"))),
+        ("Publicação", bool(progress.get("package_ready"))),
     ]
-    html = '<div class="fb-home-section"><h2>Status da produção</h2><p>Uma visão rápida do projeto ativo nesta sessão.</p></div><div class="fb-status-row">'
-    for label, done in chips:
-        html += f'<span class="fb-status-chip {"done" if done else ""}>{"✓" if done else "○"} {label}</span>'
-    html += '</div>'
-    st.html(html)
+    first_pending = next((i for i, (_, done) in enumerate(status_steps) if not done), len(status_steps))
+    lines = '<div class="fb-status-panel"><strong style="color:#17324b">📊 Status da produção</strong><div style="color:#7a8490;font-size:.78rem;margin:.18rem 0 .65rem">Acompanhe o progresso do livro ativo.</div>'
+    for idx, (label, done) in enumerate(status_steps, 1):
+        active = (idx - 1) == first_pending and not done
+        cls = "done" if done else "active" if active else ""
+        state_label = "Concluído" if done else "Em andamento" if active else "Pendente"
+        marker = "✓" if done else str(idx)
+        lines += (
+            f'<div class="fb-status-line {cls}"><span class="fb-status-num">{marker}</span>'
+            f'<span style="flex:1">{label}</span><small>{state_label}</small></div>'
+        )
+    lines += '</div>'
+    st.html(lines)
 
 with st.expander("⚙️ Preferências do Jarvis e modo de IA", expanded=False):
     _render_ai_controls()
