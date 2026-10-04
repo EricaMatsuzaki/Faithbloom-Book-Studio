@@ -77,3 +77,51 @@ def test_autopilot_repairs_reviewer_notes_in_derived_copy(tmp_path):
     assert updated["original"]["sha256"] == before_hash
     assert sha256(updated["original"]["arquivo"]) == before_hash
     assert updated["metadata_emocional_confirmada"] is False
+
+
+
+def test_autopilot_recovers_only_literal_bible_text_from_published_original(tmp_path):
+    state = _state(tmp_path)
+    state["versiculo_referencia"] = "Eclesiastes 3:1"
+    state["paginas_texto_extraido"] = [
+        {"pagina": 25, "texto_extraido": "Lição de Moral: aprender a esperar é aprender a confiar."},
+        {
+            "pagina": 26,
+            "texto_extraido": "Tudo tem o seu tempo determinado, e há tempo para todo propósito debaixo do céu. Eclesiastes 3:1",
+        },
+    ]
+
+    def fake_llm(**kwargs):
+        return {
+            "found": True,
+            "pagina": 26,
+            "texto_exato": "Tudo tem o seu tempo determinado, e há tempo para todo propósito debaixo do céu.",
+        }
+
+    updated, info = revision._recover_bible_text_from_published_original(state, fake_llm)
+
+    assert info["recovered"] is True
+    assert updated["versiculo_texto_original"].startswith("Tudo tem o seu tempo")
+    assert updated["versiculo_texto_source_page"] == 26
+    assert updated["versiculo_texto_source"] == "original_published_book"
+
+
+def test_autopilot_rejects_invented_bible_text_not_present_in_original(tmp_path):
+    state = _state(tmp_path)
+    state["versiculo_referencia"] = "Eclesiastes 3:1"
+    state["paginas_texto_extraido"] = [
+        {"pagina": 26, "texto_extraido": "Eclesiastes 3:1 — referência registrada."},
+    ]
+
+    def fake_llm(**kwargs):
+        return {
+            "found": True,
+            "pagina": 26,
+            "texto_exato": "Tudo tem o seu tempo determinado.",
+        }
+
+    updated, info = revision._recover_bible_text_from_published_original(state, fake_llm)
+
+    assert info["recovered"] is False
+    assert info["reason"] == "trecho_nao_comprovado_no_original"
+    assert not updated.get("versiculo_texto_original")
