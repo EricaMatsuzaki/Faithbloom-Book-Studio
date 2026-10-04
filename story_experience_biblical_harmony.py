@@ -126,6 +126,49 @@ def bible_final_text_gate(state: dict) -> dict:
     }
 
 
+
+def bible_closing_payload(state: dict) -> dict:
+    """Retorna o fechamento bíblico publicável sem gerar texto novo."""
+    gate = bible_final_text_gate(state)
+    reference = _text(state.get("versiculo_referencia"))
+    if not gate.get("ok"):
+        return {
+            "ok": False,
+            "reference": reference,
+            "text": "",
+            "version": "",
+            "source": gate.get("text_source", ""),
+            "status": gate.get("status", ""),
+            "reason": gate.get("reason", ""),
+        }
+
+    records = state.get("bible_records") or {}
+    if gate.get("text_source") == "bible_record":
+        locale = gate.get("locale")
+        record = records.get(locale) if isinstance(records, dict) else {}
+        record = record if isinstance(record, dict) else {}
+        return {
+            "ok": True,
+            "reference": reference,
+            "text": _text(record.get("texto_aprovado")),
+            "version": _text(record.get("versao")),
+            "source": "bible_record",
+            "locale": locale,
+            "status": gate.get("status"),
+        }
+
+    source = gate.get("text_source")
+    return {
+        "ok": True,
+        "reference": reference,
+        "text": _text(state.get(source)),
+        "version": _text(state.get("versiculo_versao") or state.get("bible_version")),
+        "source": source,
+        "status": gate.get("status"),
+        "notice": gate.get("notice", ""),
+    }
+
+
 def deterministic_story_experience_gate(state: dict) -> dict:
     scenes = _scene_payload(state)
     moral = _text(state.get("licao_final"))
