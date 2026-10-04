@@ -260,7 +260,10 @@ def _reparar_pendencias_editoriais(state: dict, result: dict, chamar_llm: Callab
     notas = deepcopy(result.get("notas") or [])
     prompt = deepcopy(result.get("prompt_mestre") or {})
     bloqueios = deepcopy(prompt.get("bloqueios") or [])
-    if not notas and not bloqueios:
+    harmony = deepcopy(result.get("story_experience_biblical_harmony") or {})
+    harmony_blockers = deepcopy(harmony.get("blockers") or [])
+    harmony_recommendations = deepcopy(harmony.get("recommendations") or [])
+    if not notas and not bloqueios and not harmony_blockers:
         return deepcopy(state), {"changed": False, "cycle": ciclo}
 
     atuais = deepcopy(state.get("cenas_texto") or [])
@@ -279,6 +282,8 @@ def _reparar_pendencias_editoriais(state: dict, result: dict, chamar_llm: Callab
             "Referência bíblica: " + str(state.get("versiculo_referencia") or "") + "\n"
             "Notas do Revisor: " + json.dumps(notas, ensure_ascii=False) + "\n"
             "Bloqueios Prompt-Mestre: " + json.dumps(bloqueios, ensure_ascii=False) + "\n"
+            "Bloqueios Story Experience/Biblical Harmony: " + json.dumps(harmony_blockers, ensure_ascii=False) + "\n"
+            "Recomendações Story Experience/Biblical Harmony: " + json.dumps(harmony_recommendations, ensure_ascii=False) + "\n"
             "Cenas atuais: " + json.dumps(atuais, ensure_ascii=False) + "\n"
             "Retorne JSON com cenas_texto_revisadas (mesma quantidade e mesmos números), ajustes_realizados (lista) "
             "e invariantes_preservados=true."
@@ -298,6 +303,8 @@ def _reparar_pendencias_editoriais(state: dict, result: dict, chamar_llm: Callab
         "ciclo": ciclo,
         "notas_revisor": notas,
         "bloqueios_prompt_mestre": bloqueios,
+        "bloqueios_story_experience": harmony_blockers,
+        "recomendacoes_story_experience": harmony_recommendations,
         "ajustes_realizados": deepcopy(resposta.get("ajustes_realizados") or []),
         "invariantes_preservados": True,
     }
@@ -363,12 +370,15 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
             "rewrote_story": False,
         }
         bible_text = bible_final_text_gate(dict(revisado))
+        # A etapa textual pode liberar o handoff visual com referência bíblica
+        # presente e harmonia narrativa aprovada. A validação de fonte/contexto e
+        # o TEXTO bíblico aprovado continuam gates obrigatórios de fechamento,
+        # não devem impedir trabalho visual já autorizado.
         pronto = bool(
             aprovado
             and compliance.get("ok_para_finalizar")
-            and bible.get("ok")
+            and bool(str(revisado.get("versiculo_referencia") or "").strip())
             and harmony.get("ok")
-            and bible_text.get("ok")
         )
 
         novo = deepcopy(work)
