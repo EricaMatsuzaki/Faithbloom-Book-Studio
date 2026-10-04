@@ -35,7 +35,8 @@ def _state():
                 "referencia": "Isaías 41:10",
                 "status": "approved_text",
                 "texto_aprovado": "Não temas, porque eu sou contigo.",
-                "versao": "versão aprovada",
+                "versao": "King James Version",
+                "fonte": "Bíblia — King James Version",
                 "aprovado_pela_autora": True,
             }
         },
