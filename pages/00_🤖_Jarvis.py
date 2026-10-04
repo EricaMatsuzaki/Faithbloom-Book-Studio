@@ -659,6 +659,7 @@ active_cfg = mode_config()
 
 st.html("""
 <style>
+header[data-testid="stHeader"]{height:0!important;min-height:0!important;background:transparent!important}div[data-testid="stToolbar"]{display:none!important}.block-container{padding-top:.7rem!important}
 .fb-profile-chip{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.90);border:1px solid rgba(102,90,185,.10);box-shadow:0 7px 22px rgba(59,72,101,.05);color:#20394f}
 .fb-profile-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#ffd6e7,#e8dfff);font-size:.9rem;font-weight:850;color:#6c4ec7}.fb-profile-chip small{display:block;color:#7a8490;font-size:.68rem;margin-top:.05rem}.fb-profile-chevron{color:#8469d9;font-weight:800}
 .fb-top-icon{height:46px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#7356d6}
@@ -705,8 +706,7 @@ div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"]{padding:.38r
 div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] small{display:none!important}
 div.st-key-jarvis_compose textarea{min-height:54px!important;border-radius:13px!important}
 div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{border:0!important;border-radius:13px!important;background:linear-gradient(90deg,#ff91b9,#b66cff 55%,#745cf5)!important;color:white!important;font-weight:820!important;min-height:48px!important;box-shadow:0 8px 20px rgba(143,83,223,.18)!important}
-.fb-project-card{padding:.68rem .76rem;border-radius:14px;background:#fff;border:1px solid rgba(57,87,118,.08);min-height:82px;box-shadow:0 7px 18px rgba(50,74,103,.04)}.fb-project-card .t{font-weight:780;color:#17324b}.fb-project-card .m{font-size:.77rem;color:#6d7781;margin-top:.18rem}
-.fb-project-cover-placeholder{height:126px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);font-size:2.2rem;border:1px solid rgba(105,89,183,.07);margin-bottom:.45rem}
+.fb-project-card{padding:.56rem;border-radius:14px;background:#fff;border:1px solid rgba(57,87,118,.08);min-height:190px;box-shadow:0 7px 18px rgba(50,74,103,.04);overflow:hidden}.fb-project-card .t{font-weight:790;color:#17324b;font-size:.82rem;line-height:1.22;margin:.48rem .12rem .15rem}.fb-project-card .m{font-size:.72rem;color:#7a8490;margin:.12rem}.fb-project-thumb-wrap{height:118px;border-radius:11px;overflow:hidden;position:relative;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);border:1px solid rgba(105,89,183,.07)}.fb-project-thumb{width:100%;height:100%;object-fit:cover;display:block}.fb-project-cover-placeholder{height:100%;display:flex;align-items:center;justify-content:center;font-size:2.2rem}.fb-project-badge{position:absolute;left:7px;bottom:7px;padding:.24rem .48rem;border-radius:999px;background:rgba(255,255,255,.93);box-shadow:0 3px 10px rgba(42,56,82,.12);font-size:.68rem;font-weight:820}.fb-badge-published{color:#16835d;background:#eafaf2}.fb-badge-progress{color:#704fd1;background:#f1ebff}.fb-badge-draft{color:#c77810;background:#fff3d8}
 .fb-status-panel{padding:.82rem;border-radius:17px;background:#fff;border:1px solid rgba(57,87,118,.08);box-shadow:0 8px 20px rgba(50,74,103,.045)}
 .fb-status-line{display:flex;align-items:center;gap:.5rem;padding:.44rem .55rem;border-radius:11px;margin:.3rem 0;background:#f8f9fc;color:#43576b;font-size:.78rem}.fb-status-line.done{background:#effbf6;color:#167c67}.fb-status-line.active{background:#f2ecff;color:#7652c9}.fb-status-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;border:1px solid rgba(84,100,120,.10);font-size:.68rem;font-weight:800}
 @media(max-width:900px){.fb-master-stage{height:160px}.fb-master-manu{width:150px;height:165px}.fb-master-mel{width:110px;height:118px;left:100px}.fb-master-teo{width:62px;height:68px;left:188px}.fbh-title{font-size:2rem}}
@@ -923,16 +923,20 @@ with projects_col:
             title = _home_project_title(item)
             collection = str(item.get("colecao") or item.get("tema_geral") or "")
             with col:
-                if cover:
-                    st.image(cover, use_container_width=True)
-                else:
-                    st.html('<div class="fb-project-cover-placeholder">📚🌸</div>')
                 safe_title = html_lib.escape(title)
                 safe_collection = html_lib.escape(collection)
-                status_icon = "✅" if status_kind == "published" else "🟣" if status_kind == "progress" else "🟡"
+                cover_src = _image_data_uri(cover) if cover else ""
+                badge_class = "fb-badge-published" if status_kind == "published" else "fb-badge-progress" if status_kind == "progress" else "fb-badge-draft"
+                status_icon = "✓" if status_kind == "published" else "◌" if status_kind == "progress" else "▼"
+                thumb = (
+                    f'<img class="fb-project-thumb" src="{cover_src}" alt="{safe_title}">'
+                    if cover_src else '<div class="fb-project-cover-placeholder">📚🌸</div>'
+                )
                 st.html(
-                    f'<div class="fb-project-card"><div class="t">{safe_title}</div>'
-                    f'<div class="m">{safe_collection or "FaithBloom"}<br>{status_icon} {status_label}</div></div>'
+                    f'<div class="fb-project-card"><div class="fb-project-thumb-wrap">{thumb}'
+                    f'<span class="fb-project-badge {badge_class}">{status_icon} {html_lib.escape(status_label)}</span></div>'
+                    f'<div class="t">{safe_title}</div>'
+                    f'<div class="m">{safe_collection or "FaithBloom"}</div></div>'
                 )
         st.page_link("pages/02_🏠_Dashboard_do_Estudio.py", label="Ver todos os projetos →", use_container_width=False)
     else:
