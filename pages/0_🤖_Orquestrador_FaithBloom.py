@@ -5,7 +5,9 @@ import uuid
 import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title
+from armazenamento import listar_colecoes
 from character_universe import listar_personagens_oficiais, carregar_personagem_oficial
+from ui_saved_choices import select_many_saved_plus_new, select_saved_or_new
 from orchestrator_editorial import (
     AUDIENCES,
     EDITORIAL_LINES,
@@ -154,18 +156,35 @@ section_title("1 · Conteúdo-base primeiro", "Escreva/cole o conteúdo aprovado
 left, right = st.columns([2, 1])
 with left:
     title = st.text_input("Título do projeto", value=st.session_state.get("orchestrator_title", ""), placeholder="Ex.: A nova aventura da Mel")
-    collection = st.text_input("Coleção", value=st.session_state.get("orchestrator_collection", "Pequenas Histórias, Grandes Lições"))
+    collection = select_saved_or_new(
+        "Coleção",
+        listar_colecoes(),
+        current=st.session_state.get("orchestrator_collection", "Pequenas Histórias, Grandes Lições"),
+        key="orchestrator_collection_select",
+        new_input_label="Nome da nova coleção",
+        placeholder="Ex.: Pequenas Histórias, Grandes Lições",
+        help="Prefira uma coleção já salva para preservar Character Masters, Style DNA e histórico do mesmo universo.",
+    )
+    st.session_state["orchestrator_collection"] = collection
     story = st.text_area("História / conteúdo-base", height=220, placeholder="Cole aqui a versão que será usada para definir personagens e cenários.")
 with right:
     st.markdown("#### Projeto narrativo?")
     st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="✍️ Abrir Roteirista", use_container_width=True)
     st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="🪄 Abrir Prompt-Mestre", use_container_width=True)
 
-characters_text = st.text_input("Personagens principais (separe por vírgula)", placeholder="Mel, Manu, Téo")
+personagens_salvos = listar_personagens_oficiais(collection or None) if collection else []
+personagens_nomes = [str(x.get("nome") or "").strip() for x in personagens_salvos if str(x.get("nome") or "").strip()]
+chars = select_many_saved_plus_new(
+    "Personagens principais",
+    personagens_nomes,
+    key="orchestrator_characters_select",
+    new_input_label="Outros / novos personagens (separe por vírgula)",
+    placeholder="Ex.: Mel, Manu, Téo",
+    help="Selecione Character Masters já salvos sempre que existirem; digite apenas personagens realmente novos.",
+)
 locations_text = st.text_input("Cenários principais (separe por vírgula)", placeholder="Jardim, Casa da Manu, Praça")
 
 if st.button("🌱 Criar pré-voo visual", type="primary", use_container_width=True):
-    chars = [x.strip() for x in characters_text.split(",") if x.strip()]
     locs = [x.strip() for x in locations_text.split(",") if x.strip()]
     plan = create_visual_plan(
         project_id=uuid.uuid4().hex,
