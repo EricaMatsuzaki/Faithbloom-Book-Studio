@@ -10,6 +10,7 @@ from book_doctor import (
     auditar_capa_pdf, gerar_relatorio,
 )
 from restoration_studio import criar_plano_restauracao
+from ui_saved_choices import select_saved_or_new
 
 st.set_page_config(page_title="Book Doctor", page_icon="🩺", layout="wide")
 aplicar_estilo()
@@ -77,7 +78,15 @@ status_map = {"Já publicado":"publicado", "Ainda não publicado":"nao_publicado
 status_capa = c.selectbox("Situação da capa", ["Capa existente", "Sem capa", "Capa em desenvolvimento"])
 
 titulo=st.text_input("Título do livro", jarvis_title_default if jarvis_full_remaster else "Quando Mel Aprendeu a Esperar")
-colecao=st.text_input("Coleção / universo", jarvis_collection_default if jarvis_full_remaster else "Pequenas Histórias, Grandes Lições")
+colecao = select_saved_or_new(
+    "Coleção / universo",
+    listar_colecoes(),
+    current=jarvis_collection_default if jarvis_full_remaster else "Pequenas Histórias, Grandes Lições",
+    key="book_doctor_collection_select",
+    new_input_label="Nome da nova coleção / universo",
+    placeholder="Ex.: Pequenas Histórias, Grandes Lições",
+    help="Escolha uma coleção já salva quando ela existir. Isso evita duplicidades e preserva vínculos com Character Masters e Style DNA.",
+)
 idioma=st.selectbox("Idioma/edição",["pt-BR","en-US","es","ja-JP","fr","it","de","Outro"])
 
 st.subheader("2 · Envie os arquivos")
