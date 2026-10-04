@@ -31,5 +31,5 @@ def test_jarvis_home_keeps_jarvis_inside_approved_banner_layout():
     source = JARVIS_PAGE.read_text(encoding="utf-8")
     assert 'chars, copy, bot = st.columns([1.08, 1.65, .78]' in source
     assert 'Oi! Eu sou o Jarvis.' in source
-    assert 'home_action_create' in source
+    assert 'home_action_{key}' in source
     assert 'jarvis_compose' in source
