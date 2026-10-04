@@ -363,6 +363,10 @@ def build_final_review_package(run: dict, state: dict, project: dict) -> dict:
         "referencia_biblica": state.get("versiculo_referencia", ""),
         "bible_guard": deepcopy(state.get("bible_reference_gate_remaster") or {}),
         "bible_final_text_gate": deepcopy(state.get("bible_final_text_gate_remaster") or {}),
+        "bible_closing": __import__(
+            "story_experience_biblical_harmony",
+            fromlist=["bible_closing_payload"],
+        ).bible_closing_payload(state),
         "story_experience_biblical_harmony": deepcopy(state.get("story_experience_biblical_harmony") or {}),
         "prompt_master": deepcopy(state.get("prompt_master_compliance_remaster") or {}),
         "mapa_emocional": deepcopy(state.get("mapa_emocional") or []),
@@ -501,6 +505,20 @@ def _execute_stage(
 
     if stage == "quality_preflight":
         result = _quality_preflight(state, project)
+        if not result.get("ready_for_final_quality_guardian"):
+            pending = {
+                "text_approved": result.get("text_approved"),
+                "prompt_master_ok": result.get("prompt_master_ok"),
+                "bible_gate": (result.get("bible_gate") or {}).get("status") or (result.get("bible_gate") or {}).get("ok"),
+                "bible_final_text_gate": (result.get("bible_final_text_gate") or {}).get("status"),
+                "story_experience_ok": (result.get("story_experience_biblical_harmony") or {}).get("ok"),
+                "emotional_map_ready": result.get("emotional_map_ready"),
+                "visual_ok": (result.get("visual") or {}).get("ok"),
+            }
+            raise RuntimeError(
+                "Quality Preflight bloqueou o pacote final. Pendências: "
+                + json.dumps(pending, ensure_ascii=False)
+            )
         return {"state": state, "result": result}
 
     if stage == "final_review_package":
