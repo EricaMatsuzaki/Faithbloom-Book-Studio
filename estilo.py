@@ -321,7 +321,7 @@ def render_sidebar_navigation() -> None:
             _sidebar_link("pages/5_🔍_Analisar_Livro.py", "✍️ Texto & revisão")
             _sidebar_link("pages/26_🌐_Publishing_Distribution_Center.py", "🚀 Publicar")
 
-        with st.expander("📚 Biblioteca & derivados", expanded=False):
+        with st.expander("👥 Universo & biblioteca", expanded=False):
             _sidebar_link("pages/27_🚀_Project_Hub.py", "🚀 Project Hub")
             _sidebar_link("pages/15_📚_Biblioteca_Editorial.py", "📚 Biblioteca Editorial")
             _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🖼️ Assets & Masters")
