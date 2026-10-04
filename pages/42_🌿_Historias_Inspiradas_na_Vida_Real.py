@@ -6,6 +6,8 @@ import streamlit as st
 from age_profiles import normalizar_faixa_etaria, opcoes_faixa_etaria
 from agents.curador_tema import curador_tema_node
 from estilo import aplicar_estilo, hero
+from armazenamento import listar_colecoes
+from ui_saved_choices import select_saved_or_new
 from openrouter_client import chamar_llm
 from real_experience_story import (
     FIDELITY_FAITHFUL,
@@ -48,11 +50,16 @@ if not storage.get("persistente_cloud"):
     )
 
 st.subheader("1. Projeto")
-s["colecao"] = st.text_input(
+s["colecao"] = select_saved_or_new(
     "Coleção",
-    value=str(s.get("colecao") or ""),
+    listar_colecoes(),
+    current=str(s.get("colecao") or ""),
+    key="real_experience_collection_select",
+    new_input_label="Nome da nova coleção",
     placeholder="Ex.: Histórias que Florescem da Vida",
-).strip()
+    allow_empty=True,
+    help="Escolha uma coleção já salva quando existir; crie uma nova somente de forma intencional.",
+)
 s["titulo"] = st.text_input(
     "Título provisório (opcional)",
     value=str(s.get("titulo") or ""),
