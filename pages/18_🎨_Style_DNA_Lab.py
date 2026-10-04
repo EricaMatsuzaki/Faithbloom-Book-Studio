@@ -7,8 +7,30 @@ st.set_page_config(page_title='Style DNA Lab', page_icon='🎨', layout='wide')
 aplicar_estilo()
 hero('Style DNA Lab', 'Salve a linguagem visual de uma coleção para criar novos personagens, cenas, story books, coloring books e activity books no mesmo universo.', 'FaithBloom · Collection Consistency')
 
-colecoes = listar_colecoes()
-colecao = st.text_input('Coleção / Universo', value=colecoes[0] if colecoes else 'Cute Friends')
+colecoes = [str(x).strip() for x in listar_colecoes() if str(x).strip()]
+NOVA_COLECAO = '➕ Outra / nova coleção…'
+opcoes_colecao = [*colecoes, NOVA_COLECAO]
+
+colecao_selecionada = st.selectbox(
+    'Coleção / Universo',
+    opcoes_colecao,
+    index=0,
+    key='style_dna_collection_select',
+    help='Escolha uma coleção já salva. Use “Outra / nova coleção” somente quando quiser cadastrar um universo que ainda não existe.',
+)
+if colecao_selecionada == NOVA_COLECAO:
+    colecao = st.text_input(
+        'Nome da nova coleção / universo',
+        placeholder='Ex.: Pequenas Histórias, Grandes Lições',
+        key='style_dna_new_collection',
+    ).strip()
+else:
+    colecao = colecao_selecionada
+
+if colecoes:
+    st.caption('📚 Coleções já salvas no FaithBloom aparecem nesta lista automaticamente.')
+else:
+    st.info('Ainda não há coleções salvas. Informe o nome da primeira coleção para criar o Style DNA.')
 section_title('Style Masters', 'Character DNA define quem é o personagem. Style DNA define como o universo é desenhado.', 'Estilo')
 st.info('📖 Para Story Books e Full Editorial Remaster, o Style DNA precisa ter o uso **story** ativo. Isso mantém o universo visual consistente sem alterar Character DNA ou Color Master.')
 
@@ -27,12 +49,12 @@ with st.expander('➕ Criar Style DNA oficial', expanded=False):
         default=['story','coloring','activity','cover'],
         help='Deixe story ativo para usar este Style DNA em livros ilustrados, Handoff Visual e Visual Remaster Workbench.',
     )
-    if st.button('⭐ Salvar Style DNA', type='primary', disabled=not nome.strip()):
+    if st.button('⭐ Salvar Style DNA', type='primary', disabled=not (nome.strip() and colecao.strip())):
         regras = {'olhos_expressao': olhos, 'proporcoes': proporcoes, 'linhas_contornos': linhas, 'composicao': composicao, 'nivel_detalhe': detalhes, 'extras': extras}
         criar_style_dna(nome.strip(), colecao, regras, modo, usos)
         st.success('Style DNA oficial salvo.'); st.rerun()
 
-itens = listar_styles(colecao)
+itens = listar_styles(colecao) if colecao.strip() else []
 if not itens:
     st.info('Ainda não há Style DNA oficial nesta coleção.')
 for item in itens:
