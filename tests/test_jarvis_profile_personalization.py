@@ -41,3 +41,11 @@ def test_jarvis_home_uses_compact_interactive_jarvis_and_master_sidebar_card():
     assert "Manu Master" in source
     assert "Mel Master" in source
     assert "Plano Profissional" in source
+
+
+def test_jarvis_home_has_mobile_specific_layout_contract():
+    source = JARVIS_PAGE.read_text(encoding="utf-8")
+    assert "@media(max-width:560px)" in source
+    assert 'grid-template-areas:"chars copy" "bot bot"' in source
+    assert 'active_workspace_name.split()[0]' in source
+    assert "Diagnóstico de velocidade" in source
