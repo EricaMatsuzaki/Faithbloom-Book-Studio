@@ -6,17 +6,21 @@ evita que Revisão Completa dependa da presença de um PDF ou do comportamento d
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import html as html_lib
+import mimetypes
 import os
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
 
 import engenheiro_code_review
 from armazenamento import carregar_livro, carregar_livro_colorir, listar_livros, listar_livros_colorir
+from character_universe import buscar_personagens_por_nome, carregar_personagem_oficial
 from estilo import aplicar_estilo
 from faithbloom_cost_mode import COST_MODES, mode_config, mode_rows, set_cost_mode
 from family_profiles import get_workspace_profile, list_workspace_profiles, visible_project_cards
@@ -446,6 +450,52 @@ def _run_daily_briefing() -> None:
         _set_stage("idle", "Jarvis online. O briefing ficou parcialmente indisponível.")
 
 
+CANONICAL_HOME_COLLECTION = "Pequenas Histórias, Grandes Lições"
+
+
+def _canonical_character(name: str) -> dict:
+    candidates = buscar_personagens_por_nome(name, incluir_arquivados=False)
+    if not candidates:
+        return {}
+    chosen = next(
+        (x for x in candidates if str(x.get("colecao") or "").strip() == CANONICAL_HOME_COLLECTION),
+        candidates[0],
+    )
+    try:
+        return carregar_personagem_oficial(str(chosen.get("id") or ""))
+    except Exception:
+        return {}
+
+
+def _character_master_path(name: str) -> str:
+    personagem = _canonical_character(name)
+    master = str(personagem.get("color_master") or "").strip()
+    if master and (master.startswith(("http://", "https://")) or os.path.exists(master)):
+        return master
+    for ref in personagem.get("reference_pack") or []:
+        if not isinstance(ref, dict):
+            continue
+        for field in ("asset", "caminho_arquivo", "path", "storage_uri", "uri"):
+            value = str(ref.get(field) or "").strip()
+            if value and (value.startswith(("http://", "https://")) or os.path.exists(value)):
+                return value
+    return ""
+
+
+def _image_data_uri(path: str) -> str:
+    value = str(path or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "data:")):
+        return value
+    try:
+        data = Path(value).read_bytes()
+    except Exception:
+        return ""
+    mime = mimetypes.guess_type(value)[0] or "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
 def _home_project_title(item: dict) -> str:
     return str(item.get("titulo") or item.get("tema_geral") or "Projeto FaithBloom").strip()
 
@@ -524,6 +574,9 @@ home_catalog = (
     else all_home_catalog
 )
 home_catalog = [x for x in home_catalog if _is_home_project(x)]
+home_manu_uri = _image_data_uri(_character_master_path("Manu"))
+home_mel_uri = _image_data_uri(_character_master_path("Mel"))
+home_teo_uri = _image_data_uri(_character_master_path("Téo"))
 
 def _render_ai_controls() -> None:
         mode_keys = ["economico", "balanceado", "premium"]
@@ -599,91 +652,106 @@ active_cfg = mode_config()
 
 st.html("""
 <style>
-.fb-profile-chip{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.84);border:1px solid rgba(102,90,185,.11);box-shadow:0 7px 22px rgba(59,72,101,.06);color:#20394f}
+.fb-profile-chip{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.90);border:1px solid rgba(102,90,185,.10);box-shadow:0 7px 22px rgba(59,72,101,.05);color:#20394f}
 .fb-profile-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#fff0f6,#eee8ff);font-size:1.05rem}.fb-profile-chip small{display:block;color:#7a8490;font-size:.68rem;margin-top:.05rem}.fb-profile-chevron{color:#8469d9;font-weight:800}
-div[data-testid="stTextInput"] input{border-radius:16px!important;border:1px solid rgba(75,98,131,.13)!important;background:rgba(255,255,255,.92)!important;box-shadow:0 7px 22px rgba(59,72,101,.05)!important}
+div[data-testid="stTextInput"] input{border-radius:15px!important;border:1px solid rgba(75,98,131,.13)!important;background:#fff!important;box-shadow:0 5px 18px rgba(59,72,101,.04)!important}
 div.st-key-faithbloom_home_hero{
-  position:relative;overflow:hidden;border-radius:30px;
-  padding:clamp(22px,3vw,34px);
+  position:relative;overflow:hidden;border-radius:20px;padding:16px 18px 10px;
+  min-height:238px;
   background:
-    radial-gradient(circle at 78% 20%,rgba(255,255,255,.22),transparent 22%),
-    radial-gradient(circle at 62% 88%,rgba(246,154,200,.18),transparent 28%),
-    linear-gradient(128deg,#f9f7ff 0%,#eefaff 42%,#f9f2ff 100%);
-  border:1px solid rgba(105,89,183,.14);
-  box-shadow:0 24px 70px rgba(70,76,132,.14);
+    radial-gradient(circle at 7% 78%,rgba(255,174,204,.34),transparent 25%),
+    radial-gradient(circle at 20% 22%,rgba(255,232,149,.45),transparent 28%),
+    radial-gradient(circle at 87% 18%,rgba(186,223,255,.48),transparent 28%),
+    linear-gradient(102deg,#fff5f7 0%,#fff9e9 25%,#eef9ff 62%,#f7eeff 100%);
+  border:1px solid rgba(108,89,183,.10);box-shadow:0 13px 34px rgba(55,72,102,.08);
 }
-div.st-key-faithbloom_home_hero:before{
-  content:"";position:absolute;width:260px;height:260px;border-radius:50%;
-  right:-70px;top:-100px;background:radial-gradient(circle,rgba(139,108,246,.18),rgba(139,108,246,0));
+div.st-key-faithbloom_home_hero:after{
+  content:"✝";position:absolute;right:15.5%;top:7px;font-size:42px;color:rgba(188,137,77,.24);z-index:0
 }
-.fbh-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.42rem .78rem;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(139,108,246,.16);color:#6c55c7;font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
-.fbh-title{font-size:clamp(2.15rem,4.2vw,3.85rem);line-height:1.01;letter-spacing:-.045em;font-weight:850;color:#15324b;margin:.72rem 0 .55rem}
-.fbh-copy{font-size:clamp(1rem,1.65vw,1.2rem);line-height:1.65;color:#536170;max-width:760px}
-.fbh-tagline{margin-top:1rem;font-size:1rem;font-weight:750;color:#7d62d5;font-style:italic}
-.fbh-pills{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.15rem}
-.fbh-pill{padding:.38rem .68rem;border-radius:999px;background:rgba(255,255,255,.82);border:1px solid rgba(34,168,153,.14);font-size:.76rem;font-weight:750;color:#375267}
-.fbh-reply{margin-top:1.1rem;padding:1rem 1.05rem;border-radius:18px;background:rgba(255,255,255,.82);border:1px solid rgba(78,124,255,.14);color:#21374b;line-height:1.55}
-.fb-home-section{margin:1.75rem 0 .8rem}
-.fb-home-section h2{margin:0;color:#16324a;font-size:1.42rem;letter-spacing:-.02em}
-.fb-home-section p{margin:.28rem 0 0;color:#667381;font-size:.94rem}
-.fb-action-card{min-height:128px;padding:1.12rem 1.18rem 1rem;border-radius:22px;border:1px solid rgba(57,87,118,.08);box-shadow:0 10px 26px rgba(50,74,103,.06);transition:.18s ease;margin-bottom:.38rem}
-.fb-card-pink{background:linear-gradient(135deg,#fff3f6,#ffe9f1)}.fb-card-blue{background:linear-gradient(135deg,#eef9ff,#e1f2ff)}.fb-card-mint{background:linear-gradient(135deg,#effdf7,#ddfaec)}.fb-card-gold{background:linear-gradient(135deg,#fffaf0,#fff0c9)}.fb-card-lilac{background:linear-gradient(135deg,#f8f2ff,#eee3ff)}.fb-card-rose{background:linear-gradient(135deg,#fff3f7,#ffe5ee)}
-.fb-action-card:hover{transform:translateY(-3px);box-shadow:0 17px 36px rgba(50,74,103,.12);border-color:rgba(139,108,246,.22)}
-.fb-action-icon{width:44px;height:44px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:.68rem;background:rgba(255,255,255,.62);box-shadow:inset 0 0 0 1px rgba(255,255,255,.55)}
-.fb-action-card h3{font-size:1.03rem;margin:0 0 .34rem;color:#17324b}
-.fb-action-card p{margin:0;color:#64717e;font-size:.87rem;line-height:1.45}
-.fb-assistant-box{margin-top:1.35rem;padding:1.05rem 1.2rem;border-radius:22px;background:linear-gradient(135deg,#fff5f8,#f7f0ff 48%,#effcf8);border:1px solid rgba(139,108,246,.12)}
-div[data-testid="stForm"]{border:1px solid rgba(105,89,183,.10)!important;border-radius:22px!important;padding:1rem!important;background:rgba(255,255,255,.78)!important;box-shadow:0 10px 28px rgba(50,74,103,.05)!important}
-div[data-testid="stFormSubmitButton"] button{border:0!important;border-radius:14px!important;background:linear-gradient(90deg,#ff8fbd 0%,#b46cff 48%,#6d63f5 100%)!important;color:white!important;font-weight:800!important;box-shadow:0 9px 24px rgba(148,91,225,.22)!important}
-div[data-testid="stFormSubmitButton"] button:hover{filter:brightness(1.035);transform:translateY(-1px)}
-.fb-project-card{padding:.85rem .9rem;border-radius:18px;background:rgba(255,255,255,.88);border:1px solid rgba(57,87,118,.09);min-height:92px;box-shadow:0 8px 22px rgba(50,74,103,.05)}
-.fb-project-cover-placeholder{height:142px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);font-size:2.4rem;border:1px solid rgba(105,89,183,.08);margin-bottom:.6rem}
-.fb-status-panel{padding:1rem;border-radius:20px;background:rgba(255,255,255,.88);border:1px solid rgba(57,87,118,.09);box-shadow:0 9px 24px rgba(50,74,103,.06)}
-.fb-status-line{display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;border-radius:13px;margin:.38rem 0;background:#f7f9fc;color:#43576b;font-size:.83rem}.fb-status-line.done{background:#effbf6;color:#167c67}.fb-status-line.active{background:#f4efff;color:#7652c9}.fb-status-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;border:1px solid rgba(84,100,120,.11);font-size:.72rem;font-weight:800}
-.fb-project-card .t{font-weight:780;color:#17324b}.fb-project-card .m{font-size:.82rem;color:#6d7781;margin-top:.25rem}
-.fb-status-row{display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 1.2rem}
-.fb-status-chip{padding:.42rem .7rem;border-radius:999px;background:rgba(255,255,255,.82);border:1px solid rgba(34,168,153,.13);font-size:.78rem;color:#42596c}
-.fb-status-chip.done{background:rgba(34,168,153,.10);color:#177d73}
-@media(max-width:800px){div.st-key-faithbloom_home_hero{padding:22px 18px;border-radius:22px}.fbh-title{font-size:2.65rem}.fb-action-card{min-height:auto}}
+.fb-master-stage{height:210px;position:relative;overflow:visible}
+.fb-master-stage:after{content:"🌸  🌼   🌷";position:absolute;left:0;right:0;bottom:0;font-size:24px;letter-spacing:12px;opacity:.72;white-space:nowrap}
+.fb-master{position:absolute;object-fit:contain;filter:drop-shadow(0 8px 10px rgba(73,56,63,.11));-webkit-mask-image:radial-gradient(ellipse at center,#000 63%,rgba(0,0,0,.94) 76%,transparent 99%);mask-image:radial-gradient(ellipse at center,#000 63%,rgba(0,0,0,.94) 76%,transparent 99%)}
+.fb-master-manu{width:205px;height:220px;left:-22px;bottom:-12px;z-index:2}
+.fb-master-mel{width:148px;height:158px;left:136px;bottom:-5px;z-index:3}
+.fb-master-teo{width:80px;height:86px;left:254px;bottom:18px;z-index:4}
+.fb-master-fallback{font-size:86px;padding-top:56px;text-align:center}
+.fbh-copy-wrap{padding:.2rem .25rem 0 .4rem;position:relative;z-index:2}
+.fbh-title{font-size:clamp(1.95rem,3.15vw,3.25rem);line-height:1.02;letter-spacing:-.04em;font-weight:880;color:#172a67;margin:.18rem 0 .35rem}
+.fbh-copy{font-size:clamp(.9rem,1.22vw,1.05rem);line-height:1.42;color:#253b69;max-width:710px}
+.fbh-tagline{margin-top:.55rem;font-size:clamp(.96rem,1.35vw,1.12rem);font-weight:760;color:#7655c8;font-style:italic}
+.fb-jarvis-bubble{margin:.1rem auto .2rem;max-width:205px;padding:.62rem .75rem;border-radius:17px;background:rgba(255,255,255,.88);border:1px solid rgba(126,93,204,.12);color:#7652c9;font-weight:780;text-align:center;box-shadow:0 7px 16px rgba(92,72,136,.07)}
+.fb-home-section{margin:1.1rem 0 .55rem}.fb-home-section h2{margin:0;color:#17305f;font-size:1.24rem;letter-spacing:-.02em}.fb-home-section p{margin:.18rem 0 0;color:#69778a;font-size:.83rem}
+.fb-action-card{min-height:105px;padding:1rem 3.9rem .92rem 1rem;border-radius:18px;border:1px solid rgba(57,87,118,.06);box-shadow:0 8px 20px rgba(50,74,103,.045);transition:.16s ease;margin:0}
+.fb-card-pink{background:linear-gradient(135deg,#fff3f7,#ffe8f0)}.fb-card-blue{background:linear-gradient(135deg,#eff9ff,#dff1ff)}.fb-card-mint{background:linear-gradient(135deg,#effdf7,#dcfaeb)}.fb-card-gold{background:linear-gradient(135deg,#fffaf0,#fff0c9)}.fb-card-lilac{background:linear-gradient(135deg,#f8f1ff,#eadfff)}.fb-card-rose{background:linear-gradient(135deg,#fff2f7,#ffe2ed)}
+.fb-action-card:hover{transform:translateY(-2px);box-shadow:0 13px 27px rgba(50,74,103,.09)}
+.fb-action-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.55rem;margin-bottom:.45rem;background:rgba(255,255,255,.64);box-shadow:inset 0 0 0 1px rgba(255,255,255,.65)}
+.fb-action-card h3{font-size:1rem;margin:0 0 .18rem;color:#152a62}.fb-action-card p{margin:0;color:#445779;font-size:.82rem;line-height:1.32}
+div[class*="st-key-home_action_"]{position:relative;margin-bottom:.55rem}
+div[class*="st-key-home_action_"] div[data-testid="stPageLink"]{position:absolute;right:14px;top:50%;transform:translateY(-50%);z-index:5;width:40px}
+div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"]{width:40px!important;height:40px!important;min-height:40px!important;border-radius:50%!important;padding:0!important;justify-content:center!important;background:rgba(255,255,255,.55)!important;border:1px solid rgba(91,78,160,.08)!important;box-shadow:none!important}
+div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"] p{font-size:1.28rem!important;margin:0!important;color:#6e51dd!important}
+.fb-assistant-box{margin-top:.65rem;padding:.75rem 1rem;border-radius:17px;background:#fff;border:1px solid rgba(91,78,160,.10);box-shadow:0 7px 20px rgba(50,74,103,.045)}
+div.st-key-jarvis_compose{padding:.8rem 1rem;border:1px solid rgba(91,78,160,.10);border-radius:18px;background:#fff;box-shadow:0 7px 20px rgba(50,74,103,.04);margin-top:.35rem}
+div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"]{padding:.38rem .55rem!important;min-height:42px!important;border-radius:13px!important;background:#fafbff!important}
+div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] small{display:none!important}
+div.st-key-jarvis_compose textarea{min-height:54px!important;border-radius:13px!important}
+div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{border:0!important;border-radius:13px!important;background:linear-gradient(90deg,#ff91b9,#b66cff 55%,#745cf5)!important;color:white!important;font-weight:820!important;min-height:48px!important;box-shadow:0 8px 20px rgba(143,83,223,.18)!important}
+.fb-project-card{padding:.68rem .76rem;border-radius:14px;background:#fff;border:1px solid rgba(57,87,118,.08);min-height:82px;box-shadow:0 7px 18px rgba(50,74,103,.04)}.fb-project-card .t{font-weight:780;color:#17324b}.fb-project-card .m{font-size:.77rem;color:#6d7781;margin-top:.18rem}
+.fb-project-cover-placeholder{height:126px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);font-size:2.2rem;border:1px solid rgba(105,89,183,.07);margin-bottom:.45rem}
+.fb-status-panel{padding:.82rem;border-radius:17px;background:#fff;border:1px solid rgba(57,87,118,.08);box-shadow:0 8px 20px rgba(50,74,103,.045)}
+.fb-status-line{display:flex;align-items:center;gap:.5rem;padding:.44rem .55rem;border-radius:11px;margin:.3rem 0;background:#f8f9fc;color:#43576b;font-size:.78rem}.fb-status-line.done{background:#effbf6;color:#167c67}.fb-status-line.active{background:#f2ecff;color:#7652c9}.fb-status-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;border:1px solid rgba(84,100,120,.10);font-size:.68rem;font-weight:800}
+@media(max-width:900px){.fb-master-stage{height:160px}.fb-master-manu{width:150px;height:165px}.fb-master-mel{width:110px;height:118px;left:100px}.fb-master-teo{width:62px;height:68px;left:188px}.fbh-title{font-size:2rem}}
 </style>
 """)
 
 with st.container(key="faithbloom_home_hero"):
-    left, right = st.columns([1.2, .8], gap="large")
-    with left:
+    chars, copy, bot = st.columns([1.08, 1.65, .78], gap="small")
+    with chars:
+        if home_manu_uri or home_mel_uri or home_teo_uri:
+            imgs = '<div class="fb-master-stage">'
+            if home_manu_uri:
+                imgs += f'<img class="fb-master fb-master-manu" src="{home_manu_uri}" alt="Manu Character Master">'
+            if home_mel_uri:
+                imgs += f'<img class="fb-master fb-master-mel" src="{home_mel_uri}" alt="Mel Character Master">'
+            if home_teo_uri:
+                imgs += f'<img class="fb-master fb-master-teo" src="{home_teo_uri}" alt="Téo Character Master">'
+            imgs += '</div>'
+            st.html(imgs)
+        else:
+            st.html('<div class="fb-master-fallback">👧🏻 🐱 🐦</div>')
+    with copy:
+        safe_name = html_lib.escape(active_workspace_name) if active_workspace_name else "bem-vindo(a)"
         st.html(
-            f'<span class="fbh-kicker">🌸 FaithBloom Book Studio · Jarvis Orchestrator</span>'
-            f'<div class="fbh-title">Oi, {html_lib.escape(active_workspace_name) if active_workspace_name else "bem-vindo(a)"}! ✨<br>O que você quer fazer hoje?</div>'
-            f'<div class="fbh-copy">Conte sua ideia, envie um livro ou escolha uma opção. Eu entendo o objetivo, monto a equipe certa e acompanho o trabalho até a próxima decisão que realmente precisa de você.</div>'
-            f'<div class="fbh-tagline">Você sonha. Nós orquestramos. Deus floresce. 💜</div>'
-            f'<div class="fbh-pills"><span class="fbh-pill">🟢 Jarvis online</span><span class="fbh-pill">{active_cfg["label"]}</span><span class="fbh-pill">📎 PDF, imagens e áudio</span><span class="fbh-pill">🔐 Masters protegidos</span></div>'
-            + (f'<div class="fbh-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
+            f'<div class="fbh-copy-wrap"><div class="fbh-title">Oi, {safe_name}! ✨<br>O que você quer fazer hoje?</div>'
+            f'<div class="fbh-copy">O Jarvis entende seu objetivo, monta a equipe certa de especialistas e guia todo o processo, do começo ao fim.</div>'
+            f'<div class="fbh-tagline">Você sonha. Nós orquestramos. Deus floresce. 💜</div></div>'
         )
-    with right:
-        st.html('<div style="text-align:center;margin:.1rem auto .25rem;max-width:230px;padding:.65rem .8rem;border-radius:18px;background:rgba(255,255,255,.72);border:1px solid rgba(126,93,204,.12);color:#7652c9;font-weight:750">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
+    with bot:
+        st.html('<div class="fb-jarvis-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
         heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply, reply_audio="", reply_token=reply_token)
 
 st.html('<div class="fb-home-section"><h2>Comece por aqui</h2><p>Escolha o objetivo. O Jarvis e o Orchestrator cuidam da rota e dos especialistas por trás.</p></div>')
 action_rows = [
     [
-        ("📖","Criar um livro","Do zero, com a equipe certa para transformar sua ideia em uma história.","pages/39_✍️_Historia_4_Estilos.py","Criar livro →","fb-card-pink"),
-        ("🔄","Continuar / Atualizar","Melhore, revise ou remasterize um livro existente sem alterar o original.","pages/16_🩺_Book_Doctor.py","Atualizar livro →","fb-card-blue"),
-        ("👥","Personagens","Crie personagens e mantenha a aparência deles consistente em todas as histórias.","pages/14_👥_Character_Universe.py","Abrir personagens →","fb-card-mint"),
+        ("create","📖","Criar um livro","Do zero, com a equipe certa para a sua história.","pages/39_✍️_Historia_4_Estilos.py","fb-card-pink"),
+        ("resume","🔄","Continuar / Atualizar","Melhorar um livro existente ou retomar de onde parou.","pages/16_🩺_Book_Doctor.py","fb-card-blue"),
+        ("characters","👥","Personagens","Criar, editar e gerenciar personagens (ex.: Mel).","pages/14_👥_Character_Universe.py","fb-card-mint"),
     ],
     [
-        ("🎨","Imagens & ilustrações","Crie novas cenas, melhore imagens existentes e preserve seus personagens.","pages/31_🖼️_Asset_Library_Media_Manager.py","Abrir imagens →","fb-card-gold"),
-        ("✍️","Texto & revisão","Escreva, revise e aprimore a história com apoio da equipe editorial e da IA.","pages/5_🔍_Analisar_Livro.py","Revisar texto →","fb-card-lilac"),
-        ("🚀","Publicar","Formate e prepare seu livro para KDP e outras plataformas.","pages/26_🌐_Publishing_Distribution_Center.py","Preparar publicação →","fb-card-rose"),
+        ("images","🖼️","Imagens & ilustrações","Gerar, melhorar ou restaurar ilustrações.","pages/31_🖼️_Asset_Library_Media_Manager.py","fb-card-gold"),
+        ("review","📄","Texto & revisão","Escrever, revisar e ajustar com apoio da IA.","pages/5_🔍_Analisar_Livro.py","fb-card-lilac"),
+        ("publish","🚀","Publicar","Formatar e preparar para KDP e outras plataformas.","pages/26_🌐_Publishing_Distribution_Center.py","fb-card-rose"),
     ],
 ]
 for row in action_rows:
     cols = st.columns(3, gap="medium")
-    for col, (icon, title, desc, page, label, css_class) in zip(cols, row):
+    for col, (key, icon, title, desc, page, css_class) in zip(cols, row):
         with col:
-            st.html(f'<div class="fb-action-card {css_class}"><div class="fb-action-icon">{icon}</div><h3>{title}</h3><p>{desc}</p></div>')
-            st.page_link(page, label=label, use_container_width=True)
+            with st.container(key=f"home_action_{key}"):
+                st.html(f'<div class="fb-action-card {css_class}"><div class="fb-action-icon">{icon}</div><h3>{title}</h3><p>{desc}</p></div>')
+                st.page_link(page, label="→", use_container_width=False)
 
-st.html('<div class="fb-assistant-box"><strong>💡 Prefere só contar o que precisa?</strong><br><span style="color:#63717e">Converse com o Jarvis em linguagem natural. Você pode escrever, falar ou anexar seu livro inteiro.</span></div>')
+st.html('<div class="fb-assistant-box"><strong style="color:#17305f">💬 Prefere só contar o que precisa?</strong><br><span style="color:#63717e;font-size:.86rem">Converse ou envie arquivos para o Jarvis. Ele entende sua ideia e já organiza os próximos passos.</span></div>')
 
 if audio_path and os.path.exists(audio_path) and reply_token and reply_token != st.session_state.get("jarvis_autoplayed_token"):
     st.audio(audio_path, format=_audio_mime(audio_path), autoplay=True)
@@ -771,23 +839,24 @@ if heart is None:
 if st.session_state.get("jarvis_last_transcript"):
     st.caption(f"🎙️ Você disse: {st.session_state['jarvis_last_transcript']}")
 
-st.markdown("### 💬 Converse ou envie arquivos para o Jarvis")
-st.caption("Ex.: “Quero remasterizar completamente este livro preservando o original” ou “Crie uma nova história sobre aprender a lidar com frustrações.”")
-uploads = st.file_uploader(
-    "📎 Anexar imagens, PDF, documentos ou áudio", type=list(SUPPORTED_UPLOAD_TYPES),
-    accept_multiple_files=True, key="jarvis_multimodal_uploads",
-    help="Os anexos ficam no contexto da sessão. Nenhum upload vira Master automaticamente.",
-)
-if uploads:
-    st.caption(f"{len(uploads)} arquivo{'s' if len(uploads) != 1 else ''} selecionado{'s' if len(uploads) != 1 else ''}.")
-
-with st.form("jarvis_text_form", clear_on_submit=True):
-    typed = st.text_area(
-        "Mensagem", height=100,
-        placeholder="Ex.: faça a Revisão Completa deste texto-base; revise este PDF; use esta imagem como referência…",
-        label_visibility="collapsed",
+with st.container(key="jarvis_compose"):
+    uploads = st.file_uploader(
+        "📎 Anexar imagens, PDF, documentos ou áudio", type=list(SUPPORTED_UPLOAD_TYPES),
+        accept_multiple_files=True, key="jarvis_multimodal_uploads",
+        help="Os anexos ficam no contexto da sessão. Nenhum upload vira Master automaticamente.",
     )
-    submitted = st.form_submit_button("Enviar ao Jarvis", type="primary", use_container_width=True)
+    if uploads:
+        st.caption(f"{len(uploads)} arquivo{'s' if len(uploads) != 1 else ''} selecionado{'s' if len(uploads) != 1 else ''}.")
+    with st.form("jarvis_text_form", clear_on_submit=True):
+        msg_col, send_col = st.columns([5.2, 1.25], gap="small")
+        with msg_col:
+            typed = st.text_area(
+                "Mensagem", height=62,
+                placeholder="Escreva sua mensagem ou envie arquivos (PDF, imagens, etc.)…",
+                label_visibility="collapsed",
+            )
+        with send_col:
+            submitted = st.form_submit_button("✨ Enviar para o Jarvis", type="primary", use_container_width=True)
 if submitted and (typed.strip() or uploads):
     try:
         # Regra central: arquivo OU ação editorial inequívoca = handoff. Texto de
