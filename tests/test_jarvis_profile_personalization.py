@@ -57,3 +57,14 @@ def test_jarvis_home_matches_approved_compact_composer_contract():
     assert 'Plano Profissional' in source
     assert 'Enviar para o Jarvis' in source
     assert 'max-width:1500px' in source
+
+
+def test_jarvis_home_hero_matches_garden_banner_contract():
+    source = JARVIS_PAGE.read_text(encoding="utf-8")
+    assert "mix-blend-mode:multiply" in source
+    assert "grid-template-columns:34% 43% 23%" in source
+    assert "🌸  🌼  🌷" in source
+    assert "Oi! Eu sou o Jarvis." in source
+    assert '_character_master_path("Manu")' in source
+    assert '_character_master_path("Mel")' in source
+    assert '_character_master_path("Téo")' in source
