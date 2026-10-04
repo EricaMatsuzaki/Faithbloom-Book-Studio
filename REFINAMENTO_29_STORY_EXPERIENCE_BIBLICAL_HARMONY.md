@@ -19,7 +19,7 @@ O FaithBloom deve produzir histórias infantis cristãs que funcionem primeiro c
 7. Esforço, treino, persistência e oração **não garantem vitória externa**. O crescimento pode ser reconhecer que fez o melhor, amadurecer, recomeçar, aprender e manter esperança.
 8. A **Lição de Moral explícita no final é obrigatória**.
 9. A **Palavra de Deus no final é obrigatória** e precisa estar em harmonia com a jornada moral e emocional.
-10. O texto bíblico completo nunca é inventado, completado ou traduzido livremente pela IA. Ele vem de Bible Record aprovado ou, no caso de remasterização, pode ser recuperado literalmente do original publicado com prova de origem.
+10. O texto bíblico completo nunca é inventado, completado, parafraseado ou traduzido livremente pela IA. Ele deve vir de uma Bíblia/edição real identificada por versão e fonte — por exemplo, King James Version (KJV) quando essa for a versão escolhida para o idioma aplicável. Em remasterização, texto recuperado do original publicado serve como evidência, mas precisa ser reconciliado com um Bible Record aprovado antes do fechamento.
 11. A introdução não deve revelar toda a descoberta central antes da criança viver a história.
 12. Publicação, aprovação final, Masters e decisões críticas continuam humanas.
 
@@ -72,13 +72,16 @@ O Storyteller pode enriquecer e adicionar cenas, mas não reduzir silenciosament
 
 Para obra nova:
 - a referência pode ser sugerida, mas precisa passar pelo Biblical Reference Validator;
-- o texto completo só entra após seleção/fornecimento, fonte/versão aplicável e aprovação humana.
+- o texto completo só entra a partir de uma Bíblia/edição real selecionada, com versão e fonte registradas;
+- King James Version (KJV) pode ser uma das versões oficiais escolhidas quando aplicável ao idioma;
+- o texto precisa ser aprovado no Bible Record antes da exportação final.
 
 Para obra já publicada:
 - o Autopilot pode localizar o texto bíblico já existente no PDF;
-- o modelo funciona apenas como **localizador**;
-- o trecho só é aceito se estiver literalmente comprovado no texto extraído da página original;
-- se não houver prova, o gate permanece pendente.
+- o modelo funciona apenas como **localizador**, nunca como fonte;
+- o trecho só é aceito como evidência se estiver literalmente comprovado no texto extraído da página original;
+- antes do fechamento, esse trecho precisa ser conciliado com uma Bíblia/edição real identificada por versão e fonte e registrado em Bible Record aprovado;
+- se não houver essa validação, o gate permanece pendente.
 
 ## Ordem dos gates
 
