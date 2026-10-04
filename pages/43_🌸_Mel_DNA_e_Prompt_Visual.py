@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from armazenamento import listar_colecoes
+from ui_saved_choices import select_saved_or_new
 from character_universe import (
     atualizar_personagem_oficial,
     carregar_personagem_oficial,
@@ -49,7 +50,15 @@ if default_collection not in colecoes and colecoes:
     default_collection = colecoes[0]
 
 st.subheader("1. Coleção e personagem")
-colecao = st.text_input("Coleção da Mel", value=default_collection).strip()
+colecao = select_saved_or_new(
+    "Coleção da Mel",
+    colecoes,
+    current=default_collection,
+    key="mel_dna_collection_select",
+    new_input_label="Nome da nova coleção da Mel",
+    placeholder="Ex.: Pequenas Histórias, Grandes Lições",
+    help="Prefira a coleção canônica já salva para não criar uma segunda Mel em outro universo por engano.",
+)
 items = listar_personagens_oficiais(colecao) if colecao else []
 mel_item = next((x for x in items if str(x.get("nome") or "").strip().casefold() == MEL_CHARACTER_NAME.casefold()), None)
 mel_saved = carregar_personagem_oficial(mel_item["id"]) if mel_item else None
