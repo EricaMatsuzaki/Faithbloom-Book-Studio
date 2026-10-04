@@ -317,19 +317,29 @@ def _resolve_visual_identity(project: dict, report: dict | None = None) -> dict:
 
 def _quality_preflight(state: dict, project: dict) -> dict:
     from editorial_remaster_quality import visual_completion_gate
+    from story_experience_biblical_harmony import bible_final_text_gate
     visual = visual_completion_gate(project)
+    bible_reference = deepcopy(state.get("bible_reference_gate_remaster") or {})
+    bible_text = deepcopy(state.get("bible_final_text_gate_remaster") or bible_final_text_gate(state))
+    harmony = deepcopy(state.get("story_experience_biblical_harmony") or {})
+    ready = bool(
+        state.get("revisao_aprovada")
+        and (state.get("prompt_master_compliance_remaster") or {}).get("ok_para_finalizar")
+        and bible_reference.get("ok")
+        and bible_text.get("ok")
+        and harmony.get("ok")
+        and state.get("metadata_emocional_confirmada")
+        and visual.get("ok")
+    )
     return {
         "text_approved": bool(state.get("revisao_aprovada")),
         "prompt_master_ok": bool((state.get("prompt_master_compliance_remaster") or {}).get("ok_para_finalizar")),
-        "bible_gate": deepcopy(state.get("bible_reference_gate_remaster") or {}),
+        "bible_gate": bible_reference,
+        "bible_final_text_gate": bible_text,
+        "story_experience_biblical_harmony": harmony,
         "emotional_map_ready": bool(state.get("metadata_emocional_confirmada")),
         "visual": visual,
-        "ready_for_final_quality_guardian": bool(
-            state.get("revisao_aprovada")
-            and (state.get("prompt_master_compliance_remaster") or {}).get("ok_para_finalizar")
-            and state.get("metadata_emocional_confirmada")
-            and visual.get("ok")
-        ),
+        "ready_for_final_quality_guardian": ready,
     }
 
 
@@ -352,6 +362,8 @@ def build_final_review_package(run: dict, state: dict, project: dict) -> dict:
         "aprendizado_cristao": state.get("aprendizado_cristao", ""),
         "referencia_biblica": state.get("versiculo_referencia", ""),
         "bible_guard": deepcopy(state.get("bible_reference_gate_remaster") or {}),
+        "bible_final_text_gate": deepcopy(state.get("bible_final_text_gate_remaster") or {}),
+        "story_experience_biblical_harmony": deepcopy(state.get("story_experience_biblical_harmony") or {}),
         "prompt_master": deepcopy(state.get("prompt_master_compliance_remaster") or {}),
         "mapa_emocional": deepcopy(state.get("mapa_emocional") or []),
         "style_dna": deepcopy(((run.get("stages") or {}).get("style_and_character_resolution") or {}).get("result", {}).get("style") or {}),
