@@ -646,11 +646,12 @@ with st.container(key="faithbloom_home_topbar"):
     with bell_col:
         st.html('<div class="fb-top-icon" title="Notificações">🔔</div>')
     with top_profile:
-        safe_profile_name = html_lib.escape(active_workspace_name or "Perfil")
+        full_profile_name = html_lib.escape(active_workspace_name or "Perfil")
+        safe_profile_name = html_lib.escape((active_workspace_name.split()[0] if active_workspace_name else "") or "Perfil")
         safe_profile_role = html_lib.escape(active_workspace_role.title() if active_workspace_role else "Perfil do workspace")
         initial = safe_profile_name[:1].upper() if safe_profile_name else "🌸"
         st.html(
-            '<div class="fb-profile-chip"><span class="fb-profile-avatar">'+initial+'</span>'
+            f'<div class="fb-profile-chip" title="{full_profile_name}"><span class="fb-profile-avatar">'+initial+'</span>'
             f'<span><strong>{safe_profile_name}</strong><small>{safe_profile_role}</small></span>'
             '<span class="fb-profile-chevron">⌄</span></div>'
         )
@@ -677,17 +678,17 @@ active_cfg = mode_config()
 
 st.html("""
 <style>
-header[data-testid="stHeader"]{height:0!important;min-height:0!important;background:transparent!important}div[data-testid="stToolbar"]{display:none!important}.block-container{padding-top:.55rem!important;padding-bottom:2.4rem!important}
-div.st-key-faithbloom_home_topbar{margin-bottom:.45rem}
+header[data-testid="stHeader"]{height:0!important;min-height:0!important;background:transparent!important}div[data-testid="stToolbar"]{display:none!important}.block-container{max-width:1500px!important;padding-top:.45rem!important;padding-bottom:2rem!important;padding-left:1rem!important;padding-right:1rem!important}
+div.st-key-faithbloom_home_topbar{margin-bottom:.32rem}
 div.st-key-faithbloom_home_topbar [data-testid="stHorizontalBlock"]{align-items:center!important}
-.fb-profile-chip{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.90);border:1px solid rgba(102,90,185,.10);box-shadow:0 7px 22px rgba(59,72,101,.05);color:#20394f}
+.fb-profile-chip{height:42px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.90);border:1px solid rgba(102,90,185,.10);box-shadow:0 7px 22px rgba(59,72,101,.05);color:#20394f}
 .fb-profile-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#ffd6e7,#e8dfff);font-size:.9rem;font-weight:850;color:#6c4ec7}.fb-profile-chip small{display:block;color:#7a8490;font-size:.68rem;margin-top:.05rem}.fb-profile-chevron{color:#8469d9;font-weight:800}
-.fb-top-icon{height:46px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#7356d6}
-.fb-plan-chip{height:46px;display:flex;align-items:center;justify-content:center;gap:.34rem;padding:0 .7rem;border-radius:14px;background:linear-gradient(135deg,#fff7f8,#f5ecff);border:1px solid rgba(124,88,205,.10);font-size:.78rem;color:#3a315f;white-space:nowrap}
+.fb-top-icon{height:42px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#7356d6}
+.fb-plan-chip{height:42px;display:flex;align-items:center;justify-content:center;gap:.34rem;padding:0 .7rem;border-radius:14px;background:linear-gradient(135deg,#fff7f8,#f5ecff);border:1px solid rgba(124,88,205,.10);font-size:.78rem;color:#3a315f;white-space:nowrap}
 div[data-testid="stTextInput"] input{border-radius:15px!important;border:1px solid rgba(75,98,131,.13)!important;background:#fff!important;box-shadow:0 5px 18px rgba(59,72,101,.04)!important}
 div.st-key-faithbloom_home_hero{
   position:relative;overflow:hidden;border-radius:17px;padding:10px 14px 8px;
-  min-height:204px;
+  min-height:196px;
   background:
     radial-gradient(circle at 7% 78%,rgba(255,174,204,.34),transparent 25%),
     radial-gradient(circle at 20% 22%,rgba(255,232,149,.45),transparent 28%),
@@ -711,7 +712,7 @@ div.st-key-faithbloom_home_hero:after{
 .fbh-tagline{margin-top:.55rem;font-size:clamp(.96rem,1.35vw,1.12rem);font-weight:760;color:#7655c8;font-style:italic}
 .fb-jarvis-bubble{margin:.1rem auto .2rem;max-width:205px;padding:.62rem .75rem;border-radius:17px;background:rgba(255,255,255,.88);border:1px solid rgba(126,93,204,.12);color:#7652c9;font-weight:780;text-align:center;box-shadow:0 7px 16px rgba(92,72,136,.07)}
 .fb-home-section{margin:.72rem 0 .42rem}.fb-home-section h2{margin:0;color:#17305f;font-size:1.24rem;letter-spacing:-.02em}.fb-home-section p{margin:.18rem 0 0;color:#69778a;font-size:.83rem}
-.fb-action-card{min-height:92px;padding:.76rem 3.65rem .72rem .9rem;border-radius:18px;border:1px solid rgba(57,87,118,.06);box-shadow:0 8px 20px rgba(50,74,103,.045);transition:.16s ease;margin:0;display:grid;grid-template-columns:54px 1fr;grid-template-rows:auto auto;column-gap:.72rem;align-items:center}
+.fb-action-card{min-height:86px;padding:.76rem 3.65rem .72rem .9rem;border-radius:18px;border:1px solid rgba(57,87,118,.06);box-shadow:0 8px 20px rgba(50,74,103,.045);transition:.16s ease;margin:0;display:grid;grid-template-columns:54px 1fr;grid-template-rows:auto auto;column-gap:.72rem;align-items:center}
 .fb-card-pink{background:linear-gradient(135deg,#fff3f7,#ffe8f0)}.fb-card-blue{background:linear-gradient(135deg,#eff9ff,#dff1ff)}.fb-card-mint{background:linear-gradient(135deg,#effdf7,#dcfaeb)}.fb-card-gold{background:linear-gradient(135deg,#fffaf0,#fff0c9)}.fb-card-lilac{background:linear-gradient(135deg,#f8f1ff,#eadfff)}.fb-card-rose{background:linear-gradient(135deg,#fff2f7,#ffe2ed)}
 .fb-action-card:hover{transform:translateY(-2px);box-shadow:0 13px 27px rgba(50,74,103,.09)}
 .fb-action-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.55rem;background:rgba(255,255,255,.64);box-shadow:inset 0 0 0 1px rgba(255,255,255,.65);grid-column:1;grid-row:1/3}
@@ -720,8 +721,9 @@ div[class*="st-key-home_action_"]{position:relative;margin-bottom:.55rem}
 div[class*="st-key-home_action_"] div[data-testid="stPageLink"]{position:absolute;right:14px;top:50%;transform:translateY(-50%);z-index:5;width:40px}
 div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"]{width:40px!important;height:40px!important;min-height:40px!important;border-radius:50%!important;padding:0!important;justify-content:center!important;background:rgba(255,255,255,.55)!important;border:1px solid rgba(91,78,160,.08)!important;box-shadow:none!important}
 div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"] p{font-size:1.28rem!important;margin:0!important;color:#6e51dd!important}
-.fb-assistant-box{margin-top:.65rem;padding:.75rem 1rem;border-radius:17px;background:#fff;border:1px solid rgba(91,78,160,.10);box-shadow:0 7px 20px rgba(50,74,103,.045)}
-div.st-key-jarvis_compose{padding:.8rem 1rem;border:1px solid rgba(91,78,160,.10);border-radius:18px;background:#fff;box-shadow:0 7px 20px rgba(50,74,103,.04);margin-top:.35rem}
+.fb-assistant-box{margin-top:.55rem;padding:.62rem .9rem .25rem;border-radius:17px 17px 0 0;background:#fff;border:1px solid rgba(91,78,160,.10);border-bottom:0;box-shadow:0 7px 20px rgba(50,74,103,.035)}
+div.st-key-jarvis_compose{padding:.35rem .75rem .68rem;border:1px solid rgba(91,78,160,.10);border-top:0;border-radius:0 0 17px 17px;background:#fff;box-shadow:0 7px 20px rgba(50,74,103,.035);margin-top:0}
+div.st-key-jarvis_compose [data-testid="stPopover"] button{height:48px!important;min-width:48px!important;border-radius:13px!important;background:#fff!important;border:1px solid rgba(75,98,131,.13)!important;font-size:1.15rem!important;padding:0!important}
 div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"]{padding:.2rem .4rem!important;min-height:38px!important;border-radius:12px!important;background:#fafbff!important}
 div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] small,
 div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] span{font-size:.72rem!important}
@@ -729,7 +731,7 @@ div.st-key-jarvis_compose [data-testid="stFileUploader"] section{min-height:44px
 div.st-key-jarvis_compose [data-testid="stFileUploader"] button{min-height:34px!important;padding:.2rem .7rem!important}
 div.st-key-jarvis_compose textarea{min-height:54px!important;border-radius:13px!important}
 div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{border:0!important;border-radius:13px!important;background:linear-gradient(90deg,#ff91b9,#b66cff 55%,#745cf5)!important;color:white!important;font-weight:820!important;min-height:48px!important;box-shadow:0 8px 20px rgba(143,83,223,.18)!important}
-.fb-project-card{padding:.56rem;border-radius:14px;background:#fff;border:1px solid rgba(57,87,118,.08);min-height:190px;box-shadow:0 7px 18px rgba(50,74,103,.04);overflow:hidden}.fb-project-card .t{font-weight:790;color:#17324b;font-size:.82rem;line-height:1.22;margin:.48rem .12rem .15rem}.fb-project-card .m{font-size:.72rem;color:#7a8490;margin:.12rem}.fb-project-thumb-wrap{height:118px;border-radius:11px;overflow:hidden;position:relative;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);border:1px solid rgba(105,89,183,.07)}.fb-project-thumb{width:100%;height:100%;object-fit:cover;display:block}.fb-project-cover-placeholder{height:100%;display:flex;align-items:center;justify-content:center;font-size:2.2rem}.fb-project-badge{position:absolute;left:7px;bottom:7px;padding:.24rem .48rem;border-radius:999px;background:rgba(255,255,255,.93);box-shadow:0 3px 10px rgba(42,56,82,.12);font-size:.68rem;font-weight:820}.fb-badge-published{color:#16835d;background:#eafaf2}.fb-badge-progress{color:#704fd1;background:#f1ebff}.fb-badge-draft{color:#c77810;background:#fff3d8}
+.fb-project-card{padding:.48rem;border-radius:13px;background:#fff;border:1px solid rgba(57,87,118,.08);min-height:176px;box-shadow:0 7px 18px rgba(50,74,103,.04);overflow:hidden}.fb-project-card .t{font-weight:790;color:#17324b;font-size:.82rem;line-height:1.22;margin:.48rem .12rem .15rem}.fb-project-card .m{font-size:.72rem;color:#7a8490;margin:.12rem}.fb-project-thumb-wrap{height:108px;border-radius:11px;overflow:hidden;position:relative;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);border:1px solid rgba(105,89,183,.07)}.fb-project-thumb{width:100%;height:100%;object-fit:cover;display:block}.fb-project-cover-placeholder{height:100%;display:flex;align-items:center;justify-content:center;font-size:2.2rem}.fb-project-badge{position:absolute;left:7px;bottom:7px;padding:.24rem .48rem;border-radius:999px;background:rgba(255,255,255,.93);box-shadow:0 3px 10px rgba(42,56,82,.12);font-size:.68rem;font-weight:820}.fb-badge-published{color:#16835d;background:#eafaf2}.fb-badge-progress{color:#704fd1;background:#f1ebff}.fb-badge-draft{color:#c77810;background:#fff3d8}
 .fb-status-panel{padding:.82rem;border-radius:17px;background:#fff;border:1px solid rgba(57,87,118,.08);box-shadow:0 8px 20px rgba(50,74,103,.045)}
 .fb-status-line{display:flex;align-items:center;gap:.5rem;padding:.44rem .55rem;border-radius:11px;margin:.3rem 0;background:#f8f9fc;color:#43576b;font-size:.78rem}.fb-status-line.done{background:#effbf6;color:#167c67}.fb-status-line.active{background:#f2ecff;color:#7652c9}.fb-status-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;border:1px solid rgba(84,100,120,.10);font-size:.68rem;font-weight:800}
 @media(max-width:900px){
@@ -756,7 +758,8 @@ div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{border:0!
   div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"]{width:34px!important;height:34px!important;min-height:34px!important}
   .fb-assistant-box{padding:.65rem .72rem;border-radius:14px}.fb-assistant-box strong{font-size:.92rem}
   div.st-key-jarvis_compose{padding:.6rem .65rem;border-radius:15px}
-  div.st-key-jarvis_compose [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:1fr!important}
+  div.st-key-jarvis_compose > div[data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:46px 1fr!important;gap:.35rem!important}
+  div.st-key-jarvis_compose form [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:1fr!important;gap:.35rem!important}
   div.st-key-jarvis_compose textarea{min-height:48px!important}
   div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{min-height:44px!important}
   .fb-project-card{min-height:150px}.fb-project-thumb-wrap{height:94px}
@@ -908,23 +911,30 @@ if st.session_state.get("jarvis_last_transcript"):
     st.caption(f"🎙️ Você disse: {st.session_state['jarvis_last_transcript']}")
 
 with st.container(key="jarvis_compose"):
-    uploads = st.file_uploader(
-        "📎 Anexar imagens, PDF, documentos ou áudio", type=list(SUPPORTED_UPLOAD_TYPES),
-        accept_multiple_files=True, key="jarvis_multimodal_uploads",
-        help="Os anexos ficam no contexto da sessão. Nenhum upload vira Master automaticamente.",
-    )
-    if uploads:
-        st.caption(f"{len(uploads)} arquivo{'s' if len(uploads) != 1 else ''} selecionado{'s' if len(uploads) != 1 else ''}.")
-    with st.form("jarvis_text_form", clear_on_submit=True):
-        msg_col, send_col = st.columns([5.2, 1.25], gap="small")
-        with msg_col:
-            typed = st.text_area(
-                "Mensagem", height=62,
-                placeholder="Escreva sua mensagem ou envie arquivos (PDF, imagens, etc.)…",
-                label_visibility="collapsed",
+    attach_col, form_col = st.columns([.42, 6.1], gap="small")
+    with attach_col:
+        with st.popover("📎", use_container_width=True):
+            uploads = st.file_uploader(
+                "Anexar imagens, PDF, documentos ou áudio",
+                type=list(SUPPORTED_UPLOAD_TYPES),
+                accept_multiple_files=True,
+                key="jarvis_multimodal_uploads",
+                help="Os anexos ficam no contexto da sessão. Nenhum upload vira Master automaticamente.",
             )
-        with send_col:
-            submitted = st.form_submit_button("✨ Enviar para o Jarvis", type="primary", use_container_width=True)
+            if uploads:
+                st.caption(f"{len(uploads)} arquivo{'s' if len(uploads) != 1 else ''} selecionado{'s' if len(uploads) != 1 else ''}.")
+    with form_col:
+        with st.form("jarvis_text_form", clear_on_submit=True):
+            msg_col, send_col = st.columns([5.2, 1.35], gap="small")
+            with msg_col:
+                typed = st.text_area(
+                    "Mensagem",
+                    height=48,
+                    placeholder="Escreva sua mensagem ou envie arquivos (PDF, imagens, etc.)…",
+                    label_visibility="collapsed",
+                )
+            with send_col:
+                submitted = st.form_submit_button("✨ Enviar para o Jarvis", type="primary", use_container_width=True)
 if submitted and (typed.strip() or uploads):
     try:
         # Regra central: arquivo OU ação editorial inequívoca = handoff. Texto de
