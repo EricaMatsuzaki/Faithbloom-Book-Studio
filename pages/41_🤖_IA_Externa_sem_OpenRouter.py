@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import streamlit as st
+from armazenamento import listar_colecoes
+from ui_saved_choices import select_saved_or_new
 
 from age_profiles import normalizar_faixa_etaria, opcoes_faixa_etaria
 from armazenamento import listar_livros, carregar_livro
@@ -62,7 +64,15 @@ if livros:
         st.session_state.state = LivroState(**loaded)
         st.rerun()
 
-s["colecao"] = st.text_input("Coleção", value=str(s.get("colecao") or "")).strip()
+s["colecao"] = select_saved_or_new(
+    "Coleção",
+    listar_colecoes(),
+    current=str(s.get("colecao") or ""),
+    key="external_ai_collection_select",
+    new_input_label="Nome da nova coleção",
+    allow_empty=True,
+    help="Prefira uma coleção já salva para reutilizar universo, personagens e Style DNA.",
+)
 s["titulo"] = st.text_input("Título / título provisório", value=str(s.get("titulo") or "")).strip()
 
 age_options = opcoes_faixa_etaria()
