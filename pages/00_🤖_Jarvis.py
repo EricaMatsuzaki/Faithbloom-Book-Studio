@@ -578,6 +578,23 @@ home_manu_uri = _image_data_uri(_character_master_path("Manu"))
 home_mel_uri = _image_data_uri(_character_master_path("Mel"))
 home_teo_uri = _image_data_uri(_character_master_path("Téo"))
 
+with st.sidebar:
+    if home_manu_uri or home_mel_uri:
+        sidebar_imgs = '<div style="position:relative;height:118px;margin-bottom:.25rem">'
+        if home_manu_uri:
+            sidebar_imgs += f'<img src="{home_manu_uri}" alt="Manu Master" style="position:absolute;width:112px;height:118px;object-fit:contain;left:-8px;bottom:-4px;-webkit-mask-image:radial-gradient(ellipse at center,#000 66%,transparent 98%);mask-image:radial-gradient(ellipse at center,#000 66%,transparent 98%)">'
+        if home_mel_uri:
+            sidebar_imgs += f'<img src="{home_mel_uri}" alt="Mel Master" style="position:absolute;width:86px;height:90px;object-fit:contain;left:76px;bottom:-1px;-webkit-mask-image:radial-gradient(ellipse at center,#000 66%,transparent 98%);mask-image:radial-gradient(ellipse at center,#000 66%,transparent 98%)">'
+        sidebar_imgs += '</div>'
+        st.html(
+            '<div style="margin-top:.75rem;padding:.45rem .55rem .75rem;border-radius:16px;'
+            'background:linear-gradient(150deg,#fff1f5,#ffe9ef 58%,#f7efff);'
+            'border:1px solid rgba(211,104,156,.10);text-align:center;color:#8a4268;overflow:hidden">'
+            + sidebar_imgs +
+            '<div style="font-family:Georgia,serif;font-style:italic;font-weight:650;font-size:.85rem;line-height:1.35">'
+            'Mais histórias para um futuro<br>ainda mais brilhante! 💗</div></div>'
+        )
+
 def _render_ai_controls() -> None:
         mode_keys = ["economico", "balanceado", "premium"]
         current_mode = str(st.session_state.get("faithbloom_cost_mode") or "economico")
