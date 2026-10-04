@@ -29,6 +29,7 @@ def _state(tmp_path: Path) -> dict:
         "titulo": "Quando Mel Aprendeu a Esperar",
         "faixa_etaria": "3-8",
         "versiculo_referencia": "Eclesiastes 3:1",
+        "versiculo_texto_original": "Tudo tem o seu tempo determinado.",
         "licao_final": "Há um tempo certo para cada coisa.",
         "aprendizado_cristao": "aprender a esperar e confiar em Deus",
         "emocao_central": "impaciencia",
@@ -119,6 +120,19 @@ def test_final_review_builds_emotional_map_only_after_reviewer_approval(tmp_path
         return work
 
     monkeypatch.setattr("agents.revisor.revisor_node", fake_reviewer)
+    monkeypatch.setattr(
+        "story_experience_biblical_harmony.review_story_experience_harmony",
+        lambda state, chamar_llm: {
+            "schema": "faithbloom.story-experience-biblical-harmony.v1",
+            "ok": True,
+            "checks": {"story_first_not_sermon": {"ok": True}},
+            "blockers": [],
+            "strengths": ["experiência preservada"],
+            "recommendations": [],
+            "summary": "Harmonia narrativa confirmada.",
+            "rewrote_story": False,
+        },
+    )
     result = revision.rodar_revisao_final_textual(state, lambda **kwargs: {})
 
     assert result["aprovado"] is True
