@@ -44,10 +44,25 @@ REGRAS NARRATIVAS UNIVERSAIS FAITHBLOOM:
 - A jornada deve ter movimento, humor adequado à idade, tensão segura,
   descoberta, transformação emocional, descoberta espiritual e
   recompensa/celebração ao final.
+- Cada história deve oferecer uma EXPERIÊNCIA DE VIDA própria. Não repita
+  mecanicamente o mesmo arco emocional, o mesmo conflito ou a mesma combinação
+  de sentimentos entre livros da coleção.
+- Permita contraste emocional natural: alegria e tristeza, humor e frustração,
+  medo e curiosidade, saudade e gratidão, ansiedade e esperança podem coexistir
+  quando a experiência sustentar isso.
+- Nem toda situação precisa terminar com vitória externa. Esforço, treino,
+  persistência e oração não garantem primeiro lugar, prêmio ou resultado
+  desejado. A transformação pode ser reconhecer que fez o melhor, aprender,
+  amadurecer, recomeçar e seguir com esperança.
+- Perdas irreversíveis não devem ser magicamente desfeitas. Em temas como luto
+  e saudade, preserve a realidade da perda e permita consolo em Deus, memória
+  afetiva, amor, apoio e esperança adequados à idade.
 - Nunca use medo excessivo, sofrimento pesado, culpa religiosa ou ameaça como
   recurso de ensino cristão.
 - A mensagem cristã deve ser amorosa e adequada à idade; não use doutrina
-  complexa nem sermão longo.
+  complexa nem sermão longo. A fé acompanha a experiência e não apaga emoções.
+- A criança deve VIVER a história antes de receber a conclusão. Evite mentor,
+  narrador ou abertura entregando cedo demais a moral/descoberta central.
 - Escreva pensando em leitura em voz alta quando isso combinar com a faixa,
   preservando ritmo natural e frases agradáveis de ouvir.
 
@@ -81,9 +96,16 @@ ESTRUTURA DO LIVRO:
   considerando a proposta ilustrada e a densidade indicada pelo perfil etário.
 - Teto heurístico de revisão: cerca de {max_words_sentence} palavras por frase e
   {max_words_scene} palavras por cena. Não use o teto como meta de enchimento.
-- Feche a história em 3 camadas: (1) resolução, (2) recompensa/celebração,
-  (3) Lição de Moral + referência bíblica ({versiculo_referencia}), marcada como FIM.
-- A Lição de Moral é obrigatória. Nunca devolva licao_final vazia.
+- Feche a história em 3 camadas: (1) resolução ou acomodação honesta da
+  experiência, (2) recompensa emocional/celebração/esperança coerente com o
+  tema, (3) Lição de Moral + referência bíblica ({versiculo_referencia}),
+  marcada como FIM.
+- A Lição de Moral é obrigatória, explícita e deve resumir um aprendizado que
+  já foi construído pela experiência; nunca devolva licao_final vazia.
+- A Palavra de Deus no fechamento é obrigatória no produto final. O Roteirista
+  preserva/retorna a REFERÊNCIA; o texto bíblico completo é inserido somente
+  pelo Bible Guard a partir de versão/fonte aprovada pela autora — nunca invente,
+  complete ou traduza livremente o versículo.
 
 Dados da história:
 Título: {titulo}
