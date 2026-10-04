@@ -19,6 +19,7 @@ import engenheiro_code_review
 from armazenamento import carregar_livro, carregar_livro_colorir, listar_livros, listar_livros_colorir
 from estilo import aplicar_estilo
 from faithbloom_cost_mode import COST_MODES, mode_config, mode_rows, set_cost_mode
+from family_profiles import get_workspace_profile, list_workspace_profiles, visible_project_cards
 from jarvis_assistant import inspect_project_state, interpret_request
 from jarvis_conversation import (
     append_turn,
@@ -78,9 +79,36 @@ def _now() -> datetime:
     return local_now(os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE))
 
 
+def _active_workspace_profile() -> dict | None:
+    """Resolve o perfil pessoal ativo usado pela home/Jarvis.
+
+    A sessão compartilha o mesmo profile_id do Dashboard. Se ainda não houver um
+    perfil válido selecionado, usa o primeiro perfil ativo apenas como default de UX.
+    """
+    profiles = list_workspace_profiles()
+    if not profiles:
+        return None
+    active_id = str(st.session_state.get("faithbloom_workspace_profile_id") or "")
+    valid_ids = {str(p.get("id") or "") for p in profiles}
+    if active_id not in valid_ids:
+        active_id = str(profiles[0].get("id") or "")
+        st.session_state["faithbloom_workspace_profile_id"] = active_id
+    return get_workspace_profile(active_id) or next(
+        (p for p in profiles if str(p.get("id") or "") == active_id),
+        None,
+    )
+
+
+def _active_profile_name() -> str:
+    profile = _active_workspace_profile() or {}
+    return str(profile.get("display_name") or "").strip()
+
+
 def _greeting() -> str:
     now = _now()
-    return f"{greeting_for(now)}, Erica. Estou online e pronto para ajudar."
+    name = _active_profile_name()
+    who = f", {name}" if name else ""
+    return f"{greeting_for(now)}{who}. Estou online e pronto para ajudar."
 
 
 def _set_stage(stage: str, message: str | None = None) -> None:
@@ -482,10 +510,19 @@ set_cost_mode(str(st.session_state.get("faithbloom_cost_mode") or "economico"))
 
 current_state = st.session_state.get("state")
 project_progress = inspect_project_state(current_state) if current_state else None
-home_catalog = [
+active_workspace_profile = _active_workspace_profile()
+active_workspace_profile_id = str((active_workspace_profile or {}).get("id") or "")
+active_workspace_name = str((active_workspace_profile or {}).get("display_name") or "").strip()
+active_workspace_role = str((active_workspace_profile or {}).get("relationship") or "").strip()
+all_home_catalog = [
     *[{"kind": "story", **x} for x in listar_livros()],
     *[{"kind": "coloring", **x} for x in listar_livros_colorir()],
 ]
+home_catalog = (
+    visible_project_cards(all_home_catalog, active_workspace_profile_id)
+    if active_workspace_profile_id
+    else all_home_catalog
+)
 home_catalog = [x for x in home_catalog if _is_home_project(x)]
 
 def _render_ai_controls() -> None:
@@ -532,9 +569,12 @@ with top_search:
         key="faithbloom_home_search",
     )
 with top_profile:
+    safe_profile_name = html_lib.escape(active_workspace_name or "Perfil")
+    safe_profile_role = html_lib.escape(active_workspace_role.title() if active_workspace_role else "Perfil do workspace")
     st.html(
         '<div class="fb-profile-chip"><span class="fb-profile-avatar">🌸</span>'
-        '<span><strong>Erica</strong><small>Autora · Criadora</small></span><span class="fb-profile-chevron">⌄</span></div>'
+        f'<span><strong>{safe_profile_name}</strong><small>{safe_profile_role}</small></span>'
+        '<span class="fb-profile-chevron">⌄</span></div>'
     )
 
 if home_search.strip():
@@ -613,7 +653,7 @@ with st.container(key="faithbloom_home_hero"):
     with left:
         st.html(
             f'<span class="fbh-kicker">🌸 FaithBloom Book Studio · Jarvis Orchestrator</span>'
-            f'<div class="fbh-title">Oi, Erica! ✨<br>O que você quer fazer hoje?</div>'
+            f'<div class="fbh-title">Oi, {html_lib.escape(active_workspace_name) if active_workspace_name else "bem-vindo(a)"}! ✨<br>O que você quer fazer hoje?</div>'
             f'<div class="fbh-copy">Conte sua ideia, envie um livro ou escolha uma opção. Eu entendo o objetivo, monto a equipe certa e acompanho o trabalho até a próxima decisão que realmente precisa de você.</div>'
             f'<div class="fbh-tagline">Você sonha. Nós orquestramos. Deus floresce. 💜</div>'
             f'<div class="fbh-pills"><span class="fbh-pill">🟢 Jarvis online</span><span class="fbh-pill">{active_cfg["label"]}</span><span class="fbh-pill">📎 PDF, imagens e áudio</span><span class="fbh-pill">🔐 Masters protegidos</span></div>'
