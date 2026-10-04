@@ -4,6 +4,8 @@ from __future__ import annotations
 from copy import deepcopy
 
 import streamlit as st
+from armazenamento import listar_colecoes
+from ui_saved_choices import select_saved_or_new
 
 from asset_library import get_asset, get_thumbnail, list_assets, set_archived, update_asset
 from character_guide import (
@@ -179,7 +181,15 @@ with tabs[1]:
         defaults = (current_edit or {}).get("dna", {}).get("campos_bloqueados", {})
         with st.form("character_guide_crud_form"):
             name = st.text_input("Nome", value=(current_edit or {}).get("nome", ""))
-            collection = st.text_input("Coleção", value=(current_edit or {}).get("colecao", ""))
+            collection = select_saved_or_new(
+                "Coleção",
+                listar_colecoes(),
+                current=(current_edit or {}).get("colecao", ""),
+                key="character_guide_collection_select",
+                new_input_label="Nome da nova coleção",
+                allow_empty=False,
+                help="Selecione a coleção canônica já salva sempre que ela existir.",
+            )
             c_a, c_b = st.columns(2)
             species = c_a.text_input("Espécie / tipo", value=defaults.get("especie", ""))
             eyes = c_b.text_input("Olhos", value=defaults.get("olhos", ""))
