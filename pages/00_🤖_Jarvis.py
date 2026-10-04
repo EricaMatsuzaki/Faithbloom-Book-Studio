@@ -635,8 +635,9 @@ if page_key in NAV_PAGES and st.button(f"Abrir {destination.get('label') or page
     st.switch_page(NAV_PAGES[page_key])
 
 st.markdown("### Ações rápidas")
-cols = st.columns(4)
+cols = st.columns(5)
 for col, (label, page) in zip(cols, [
+    ("🏠 Dashboard", "pages/02_🏠_Dashboard_do_Estudio.py"),
     ("📖 Criar", "pages/1_📖_Criar_do_Zero.py"),
     ("📚 Retomar", "pages/2_📚_Retomar_Livro.py"),
     ("👥 Personagens", "pages/14_👥_Character_Universe.py"),
