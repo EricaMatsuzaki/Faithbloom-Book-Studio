@@ -15,6 +15,7 @@ from datetime import datetime
 import streamlit as st
 
 import engenheiro_code_review
+from armazenamento import listar_livros, listar_livros_colorir
 from estilo import aplicar_estilo
 from faithbloom_cost_mode import COST_MODES, mode_config, mode_rows, set_cost_mode
 from jarvis_assistant import inspect_project_state, interpret_request
@@ -429,38 +430,40 @@ set_cost_mode(str(st.session_state.get("faithbloom_cost_mode") or "economico"))
 current_state = st.session_state.get("state")
 project_progress = inspect_project_state(current_state) if current_state else None
 
-with st.expander("💸 Modo de IA e economia", expanded=True):
-    mode_keys = ["economico", "balanceado", "premium"]
-    current_mode = str(st.session_state.get("faithbloom_cost_mode") or "economico")
-    selected_mode = st.radio(
-        "Como o FaithBloom deve gastar IA?", mode_keys,
-        index=mode_keys.index(current_mode) if current_mode in mode_keys else 0,
-        format_func=lambda key: str(COST_MODES[key]["label"]), horizontal=True,
-        key="faithbloom_cost_mode_selector",
-    )
-    if selected_mode != current_mode:
-        st.session_state["faithbloom_cost_mode"] = set_cost_mode(selected_mode)
+def _render_ai_controls() -> None:
+        mode_keys = ["economico", "balanceado", "premium"]
+        current_mode = str(st.session_state.get("faithbloom_cost_mode") or "economico")
+        selected_mode = st.radio(
+            "Como o FaithBloom deve gastar IA?", mode_keys,
+            index=mode_keys.index(current_mode) if current_mode in mode_keys else 0,
+            format_func=lambda key: str(COST_MODES[key]["label"]), horizontal=True,
+            key="faithbloom_cost_mode_selector",
+        )
+        if selected_mode != current_mode:
+            st.session_state["faithbloom_cost_mode"] = set_cost_mode(selected_mode)
+            cfg = mode_config(selected_mode)
+            st.session_state["jarvis_auto_voice"] = bool(cfg.get("auto_voice", False))
+            st.rerun()
+        set_cost_mode(selected_mode)
         cfg = mode_config(selected_mode)
-        st.session_state["jarvis_auto_voice"] = bool(cfg.get("auto_voice", False))
-        st.rerun()
-    set_cost_mode(selected_mode)
-    cfg = mode_config(selected_mode)
-    st.success(f"Modo atual: {cfg['label']} — {cfg['description']}")
-    st.caption(f"Ideal para: {cfg['ideal_for']} | Atenção: {cfg['tradeoff']}")
-    st.markdown(f"**Jarvis/texto:** `{cfg['dialogue_model']}`  ·  **DNA visual/análise de personagem:** `{cfg['vision_model']}`")
-    st.checkbox("🔊 Falar respostas automaticamente (TTS consome créditos)", key="jarvis_auto_voice", help="Desligado no modo Econômico. Você ainda pode gerar a voz manualmente para qualquer resposta.")
-    st.checkbox(
-        "🛠️ Deixar o Engenheiro investigar e corrigir erros técnicos sozinho",
-        key="jarvis_engenheiro_automatico",
-        help="Quando o Jarvis encontrar uma falha técnica real (não uma resposta que ele apenas não entendeu), o Engenheiro de Code Review Profundo investiga e, se tiver confiança alta, abre um Pull Request Draft para você revisar. Nunca mescla sozinho.",
-    )
-    briefing_col, info_col = st.columns([1, 2])
-    if briefing_col.button("☀️ Gerar briefing agora", use_container_width=True):
-        _run_daily_briefing(); st.rerun()
-    info_col.caption("O briefing não roda mais ao atualizar/recarregar a página. Só é gerado quando você pedir.")
-    with st.expander("Quando usar cada modo", expanded=False):
-        for row in mode_rows():
-            st.markdown(f"**{row['label']}**  \n• Jarvis: `{row['dialogue_model']}`  \n• Visão/DNA: `{row['vision_model']}`  \n• Melhor uso: {row['ideal_for']}  \n• Observação: {row['tradeoff']}")
+        st.success(f"Modo atual: {cfg['label']} — {cfg['description']}")
+        st.caption(f"Ideal para: {cfg['ideal_for']} | Atenção: {cfg['tradeoff']}")
+        st.markdown(f"**Jarvis/texto:** `{cfg['dialogue_model']}`  ·  **DNA visual/análise de personagem:** `{cfg['vision_model']}`")
+        st.checkbox("🔊 Falar respostas automaticamente (TTS consome créditos)", key="jarvis_auto_voice", help="Desligado no modo Econômico. Você ainda pode gerar a voz manualmente para qualquer resposta.")
+        st.checkbox(
+            "🛠️ Deixar o Engenheiro investigar e corrigir erros técnicos sozinho",
+            key="jarvis_engenheiro_automatico",
+            help="Quando o Jarvis encontrar uma falha técnica real (não uma resposta que ele apenas não entendeu), o Engenheiro de Code Review Profundo investiga e, se tiver confiança alta, abre um Pull Request Draft para você revisar. Nunca mescla sozinho.",
+        )
+        briefing_col, info_col = st.columns([1, 2])
+        if briefing_col.button("☀️ Gerar briefing agora", use_container_width=True):
+            _run_daily_briefing(); st.rerun()
+        info_col.caption("O briefing não roda mais ao atualizar/recarregar a página. Só é gerado quando você pedir.")
+        with st.expander("Quando usar cada modo", expanded=False):
+            for row in mode_rows():
+                st.markdown(f"**{row['label']}**  \n• Jarvis: `{row['dialogue_model']}`  \n• Visão/DNA: `{row['vision_model']}`  \n• Melhor uso: {row['ideal_for']}  \n• Observação: {row['tradeoff']}")
+
+
 
 stage = str(st.session_state.get("jarvis_stage") or "idle")
 reply = str(st.session_state.get("jarvis_reply") or "")
@@ -470,24 +473,80 @@ active_cfg = mode_config()
 
 st.html("""
 <style>
-div.st-key-jarvis_core{position:relative;overflow:hidden;border-radius:30px;padding:clamp(20px,4vw,46px);background:radial-gradient(circle at 72% 22%,rgba(74,236,255,.18),transparent 20%),radial-gradient(circle at 75% 70%,rgba(121,91,255,.22),transparent 28%),linear-gradient(135deg,#071b2b,#0c3f50 48%,#282660);color:#fff;border:1px solid rgba(125,238,255,.22);box-shadow:0 28px 80px rgba(13,48,78,.25)}
-div.st-key-jarvis_core h1,div.st-key-jarvis_core h2,div.st-key-jarvis_core h3,div.st-key-jarvis_core p{color:#fff}.j-kicker{display:inline-flex;padding:.42rem .78rem;border:1px solid rgba(161,244,255,.24);border-radius:999px;background:rgba(255,255,255,.06);font-size:.72rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase}.j-title{font-size:clamp(3rem,7vw,6rem);font-weight:850;line-height:.92;letter-spacing:-.055em;margin:.8rem 0 .6rem}.j-copy{font-size:clamp(1rem,1.7vw,1.22rem);line-height:1.62;color:rgba(242,250,255,.88);max-width:720px}.j-pills{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1.15rem}.j-pill{padding:.38rem .68rem;border-radius:999px;background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.12);font-size:.75rem;font-weight:750}.j-status{margin-top:1rem;color:#bdfaff;font-weight:750}.j-reply{margin-top:1rem;padding:1rem;border-radius:18px;background:linear-gradient(135deg,rgba(43,222,218,.08),rgba(127,96,255,.08));border:1px solid rgba(100,227,239,.16);line-height:1.55;color:#f7fdff}@media(max-width:800px){div.st-key-jarvis_core{padding:20px 17px;border-radius:22px}.j-title{font-size:3.05rem}}
+div.st-key-faithbloom_home_hero{
+  position:relative;overflow:hidden;border-radius:30px;
+  padding:clamp(24px,4vw,48px);
+  background:
+    radial-gradient(circle at 78% 20%,rgba(255,255,255,.22),transparent 22%),
+    radial-gradient(circle at 62% 88%,rgba(246,154,200,.18),transparent 28%),
+    linear-gradient(128deg,#f9f7ff 0%,#eefaff 42%,#f9f2ff 100%);
+  border:1px solid rgba(105,89,183,.14);
+  box-shadow:0 24px 70px rgba(70,76,132,.14);
+}
+div.st-key-faithbloom_home_hero:before{
+  content:"";position:absolute;width:260px;height:260px;border-radius:50%;
+  right:-70px;top:-100px;background:radial-gradient(circle,rgba(139,108,246,.18),rgba(139,108,246,0));
+}
+.fbh-kicker{display:inline-flex;align-items:center;gap:.45rem;padding:.42rem .78rem;border-radius:999px;background:rgba(255,255,255,.78);border:1px solid rgba(139,108,246,.16);color:#6c55c7;font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+.fbh-title{font-size:clamp(2.35rem,5.6vw,4.8rem);line-height:.98;letter-spacing:-.05em;font-weight:850;color:#15324b;margin:.85rem 0 .65rem}
+.fbh-copy{font-size:clamp(1rem,1.65vw,1.2rem);line-height:1.65;color:#536170;max-width:760px}
+.fbh-tagline{margin-top:1rem;font-size:1rem;font-weight:750;color:#7d62d5;font-style:italic}
+.fbh-pills{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.15rem}
+.fbh-pill{padding:.38rem .68rem;border-radius:999px;background:rgba(255,255,255,.82);border:1px solid rgba(34,168,153,.14);font-size:.76rem;font-weight:750;color:#375267}
+.fbh-reply{margin-top:1.1rem;padding:1rem 1.05rem;border-radius:18px;background:rgba(255,255,255,.82);border:1px solid rgba(78,124,255,.14);color:#21374b;line-height:1.55}
+.fb-home-section{margin:1.75rem 0 .8rem}
+.fb-home-section h2{margin:0;color:#16324a;font-size:1.42rem;letter-spacing:-.02em}
+.fb-home-section p{margin:.28rem 0 0;color:#667381;font-size:.94rem}
+.fb-action-card{min-height:150px;padding:1.25rem 1.25rem 1.1rem;border-radius:22px;background:rgba(255,255,255,.85);border:1px solid rgba(57,87,118,.10);box-shadow:0 11px 30px rgba(50,74,103,.07);transition:.18s ease;margin-bottom:.6rem}
+.fb-action-card:hover{transform:translateY(-3px);box-shadow:0 17px 36px rgba(50,74,103,.12);border-color:rgba(139,108,246,.22)}
+.fb-action-icon{width:46px;height:46px;border-radius:15px;display:flex;align-items:center;justify-content:center;font-size:1.45rem;margin-bottom:.8rem;background:linear-gradient(135deg,rgba(34,168,153,.12),rgba(139,108,246,.13))}
+.fb-action-card h3{font-size:1.03rem;margin:0 0 .34rem;color:#17324b}
+.fb-action-card p{margin:0;color:#64717e;font-size:.87rem;line-height:1.45}
+.fb-assistant-box{margin-top:1.5rem;padding:1.15rem 1.25rem;border-radius:22px;background:linear-gradient(135deg,rgba(246,154,200,.10),rgba(139,108,246,.08),rgba(34,168,153,.08));border:1px solid rgba(139,108,246,.14)}
+.fb-project-card{padding:1rem 1.05rem;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(57,87,118,.10);min-height:110px}
+.fb-project-card .t{font-weight:780;color:#17324b}.fb-project-card .m{font-size:.82rem;color:#6d7781;margin-top:.25rem}
+.fb-status-row{display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0 1.2rem}
+.fb-status-chip{padding:.42rem .7rem;border-radius:999px;background:rgba(255,255,255,.82);border:1px solid rgba(34,168,153,.13);font-size:.78rem;color:#42596c}
+.fb-status-chip.done{background:rgba(34,168,153,.10);color:#177d73}
+@media(max-width:800px){div.st-key-faithbloom_home_hero{padding:22px 18px;border-radius:22px}.fbh-title{font-size:2.65rem}.fb-action-card{min-height:auto}}
 </style>
 """)
 
-with st.container(key="jarvis_core"):
-    left, right = st.columns([1.15, .85], gap="large")
+with st.container(key="faithbloom_home_hero"):
+    left, right = st.columns([1.2, .8], gap="large")
     with left:
         st.html(
-            f'<span class="j-kicker">FaithBloom Intelligence · Jarvis Core</span>'
-            f'<div class="j-title">JARVIS</div>'
-            f'<div class="j-copy">{_greeting()} Briefing e voz automática ficam sob seu controle. Fale, escreva ou envie arquivos; eu preparo a rota para o especialista certo.</div>'
-            f'<div class="j-pills"><span class="j-pill">🟢 Online</span><span class="j-pill">{active_cfg["label"]}</span><span class="j-pill">☀️ Briefing sob demanda</span><span class="j-pill">❤️ Coração-microfone</span><span class="j-pill">📎 Multimodal</span><span class="j-pill">🔊 Voz Charon</span><span class="j-pill">⚡ Rotas rápidas</span><span class="j-pill">📅 Calendar seguro</span><span class="j-pill">🔐 Security by Default</span></div>'
-            f'<div class="j-status">● {st.session_state.get("jarvis_status_message", "Online")}</div>'
-            + (f'<div class="j-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
+            f'<span class="fbh-kicker">🌸 FaithBloom Book Studio · Jarvis Orchestrator</span>'
+            f'<div class="fbh-title">Oi, Erica! ✨<br>O que você quer fazer hoje?</div>'
+            f'<div class="fbh-copy">Conte sua ideia, envie um livro ou escolha uma opção. Eu entendo o objetivo, monto a equipe certa e acompanho o trabalho até a próxima decisão que realmente precisa de você.</div>'
+            f'<div class="fbh-tagline">Você sonha. Nós orquestramos. Deus floresce. 💜</div>'
+            f'<div class="fbh-pills"><span class="fbh-pill">🟢 Jarvis online</span><span class="fbh-pill">{active_cfg["label"]}</span><span class="fbh-pill">📎 PDF, imagens e áudio</span><span class="fbh-pill">🔐 Masters protegidos</span></div>'
+            + (f'<div class="fbh-reply"><strong>Jarvis:</strong> {reply}</div>' if reply else "")
         )
     with right:
         heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply, reply_audio="", reply_token=reply_token)
+
+st.html('<div class="fb-home-section"><h2>Comece por aqui</h2><p>Escolha o objetivo. O Jarvis e o Orchestrator cuidam da rota e dos especialistas por trás.</p></div>')
+action_rows = [
+    [
+        ("📖","Criar um livro","Comece uma história do zero com storytelling, personagens, fé e direção editorial.","pages/39_✍️_Historia_4_Estilos.py","Criar livro →"),
+        ("🔄","Continuar / Atualizar","Revise, melhore ou remasterize um livro existente sem alterar o original.","pages/16_🩺_Book_Doctor.py","Atualizar livro →"),
+        ("👥","Personagens","Crie e gerencie Character Masters, DNA, Color Master e referências.","pages/14_👥_Character_Universe.py","Abrir personagens →"),
+    ],
+    [
+        ("🎨","Imagens & ilustrações","Encontre Masters, restaure imagens e prepare novas cenas com consistência.","pages/31_🖼️_Asset_Library_Media_Manager.py","Abrir imagens →"),
+        ("✍️","Texto & revisão","Analise texto, coerência, linguagem, moral, fé e qualidade editorial.","pages/5_🔍_Analisar_Livro.py","Revisar texto →"),
+        ("🚀","Publicar","Prepare formatos, plataformas, QA e distribuição para a nova edição.","pages/26_🌐_Publishing_Distribution_Center.py","Preparar publicação →"),
+    ],
+]
+for row in action_rows:
+    cols = st.columns(3, gap="medium")
+    for col, (icon, title, desc, page, label) in zip(cols, row):
+        with col:
+            st.html(f'<div class="fb-action-card"><div class="fb-action-icon">{icon}</div><h3>{title}</h3><p>{desc}</p></div>')
+            st.page_link(page, label=label, use_container_width=True)
+
+st.html('<div class="fb-assistant-box"><strong>💡 Prefere só contar o que precisa?</strong><br><span style="color:#63717e">Converse com o Jarvis em linguagem natural. Você pode escrever, falar ou anexar seu livro inteiro.</span></div>')
 
 if audio_path and os.path.exists(audio_path) and reply_token and reply_token != st.session_state.get("jarvis_autoplayed_token"):
     st.audio(audio_path, format=_audio_mime(audio_path), autoplay=True)
@@ -575,7 +634,8 @@ if heart is None:
 if st.session_state.get("jarvis_last_transcript"):
     st.caption(f"🎙️ Você disse: {st.session_state['jarvis_last_transcript']}")
 
-st.markdown("### Converse ou envie arquivos para o Jarvis")
+st.markdown("### 💬 Converse ou envie arquivos para o Jarvis")
+st.caption("Ex.: “Quero remasterizar completamente este livro preservando o original” ou “Crie uma nova história sobre aprender a lidar com frustrações.”")
 uploads = st.file_uploader(
     "📎 Anexar imagens, PDF, documentos ou áudio", type=list(SUPPORTED_UPLOAD_TYPES),
     accept_multiple_files=True, key="jarvis_multimodal_uploads",
@@ -634,16 +694,40 @@ page_key = destination.get("destination") or destination.get("id")
 if page_key in NAV_PAGES and st.button(f"Abrir {destination.get('label') or page_key}", type="primary", use_container_width=True):
     st.switch_page(NAV_PAGES[page_key])
 
-st.markdown("### Ações rápidas")
-cols = st.columns(5)
-for col, (label, page) in zip(cols, [
-    ("🏠 Dashboard", "pages/02_🏠_Dashboard_do_Estudio.py"),
-    ("📖 Criar", "pages/1_📖_Criar_do_Zero.py"),
-    ("📚 Retomar", "pages/2_📚_Retomar_Livro.py"),
-    ("👥 Personagens", "pages/14_👥_Character_Universe.py"),
-    ("🚀 Project Hub", "pages/27_🚀_Project_Hub.py"),
-]):
-    col.page_link(page, label=label, use_container_width=True)
+st.html('<div class="fb-home-section"><h2>Projetos recentes</h2><p>Retome rapidamente livros e universos já salvos no FaithBloom.</p></div>')
+recent = [{"kind": "story", **x} for x in listar_livros()] + [{"kind": "coloring", **x} for x in listar_livros_colorir()]
+if recent:
+    recent = recent[-4:][::-1]
+    cols = st.columns(min(4, len(recent)), gap="medium")
+    for col, item in zip(cols, recent):
+        with col:
+            icon = "📖" if item.get("kind") == "story" else "🖍️"
+            status = "✅ Pacote pronto" if item.get("pacote_pronto") else "📝 Em andamento"
+            title = str(item.get("titulo") or item.get("tema_geral") or "Projeto FaithBloom")
+            collection = str(item.get("colecao") or item.get("tema_geral") or "")
+            st.html(f'<div class="fb-project-card"><div class="t">{icon} {title}</div><div class="m">{collection}<br>{status}</div></div>')
+    st.page_link("pages/02_🏠_Dashboard_do_Estudio.py", label="📚 Ver todos os projetos", use_container_width=False)
+else:
+    st.caption("Seus projetos aparecerão aqui assim que forem salvos.")
+
+if isinstance(current_state, dict):
+    history_done = bool(current_state.get("cenas_texto") or current_state.get("historia") or current_state.get("texto_final"))
+    characters_done = bool(current_state.get("personagens"))
+    images_done = bool(current_state.get("imagens") or current_state.get("imagens_geradas"))
+    review_done = bool(current_state.get("revisao_aprovada") or current_state.get("revisao_final"))
+    publish_done = bool(current_state.get("pacote_pronto"))
+    chips = [
+        ("História", history_done), ("Personagens", characters_done), ("Ilustrações", images_done),
+        ("Revisão", review_done), ("Publicação", publish_done),
+    ]
+    html = '<div class="fb-home-section"><h2>Status da produção</h2><p>Uma visão rápida do projeto ativo nesta sessão.</p></div><div class="fb-status-row">'
+    for label, done in chips:
+        html += f'<span class="fb-status-chip {"done" if done else ""}>{"✓" if done else "○"} {label}</span>'
+    html += '</div>'
+    st.html(html)
+
+with st.expander("⚙️ Preferências do Jarvis e modo de IA", expanded=False):
+    _render_ai_controls()
 
 with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown("""
