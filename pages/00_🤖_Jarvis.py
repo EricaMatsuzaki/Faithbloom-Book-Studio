@@ -792,7 +792,7 @@ if page_key in NAV_PAGES and st.button(f"Abrir {destination.get('label') or page
     st.switch_page(NAV_PAGES[page_key])
 
 st.html('<div class="fb-home-section"><h2>Projetos recentes</h2><p>Seus livros e histórias em um só lugar.</p></div>')
-recent = home_catalog[-4:][::-1]
+recent = home_catalog[:4]
 
 projects_col, status_col = st.columns([3.15, 1], gap="medium")
 with projects_col:
