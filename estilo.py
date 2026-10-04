@@ -275,9 +275,39 @@ CSS = f"""
 
     /* SIDEBAR */
     section[data-testid="stSidebar"] {{
-        background:
-            linear-gradient(180deg, rgba(246,251,250,.98) 0%, rgba(250,248,255,.98) 100%);
-        border-right: 1px solid rgba(31,87,105,.08);
+        background:#FFFFFF;
+        border-right:1px solid rgba(53,68,108,.08);
+        box-shadow:6px 0 20px rgba(70,76,115,.025);
+    }}
+    section[data-testid="stSidebar"] > div:first-child {{ padding-top:.65rem; }}
+    section[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] {{
+        background:transparent !important;
+        border:0 !important;
+        min-height:2.45rem;
+        color:#25375d !important;
+        box-shadow:none !important;
+        font-weight:560;
+    }}
+    section[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]:hover {{
+        background:#F6F1FF !important;
+        color:#6744D5 !important;
+        transform:none;
+    }}
+    section[data-testid="stSidebar"] div[data-testid="stExpander"] {{
+        background:transparent !important;
+        border:0 !important;
+        border-top:1px solid rgba(53,68,108,.08) !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        margin-top:.28rem;
+    }}
+    section[data-testid="stSidebar"] div[data-testid="stExpander"] summary {{
+        font-size:.74rem !important;
+        text-transform:uppercase;
+        letter-spacing:.055em;
+        font-weight:800 !important;
+        color:#41547B !important;
+        padding:.55rem .12rem !important;
     }}
     /* Esconde a lista automática de dezenas de páginas; o menu FaithBloom abaixo
        mantém apenas rotas de usuário e coloca ferramentas técnicas recolhidas. */
@@ -311,12 +341,13 @@ def render_sidebar_navigation() -> None:
     with st.sidebar:
         st.markdown(
             """
-            <div style="padding:.15rem .1rem .7rem;line-height:1">
-                <div style="font-size:1.28rem;font-weight:850;letter-spacing:-.035em;color:#183951">
-                    🌸 <span style="background:linear-gradient(90deg,#1c8fb0,#7459d9,#f176ad);
+            <div style="padding:.25rem .12rem 1rem;text-align:center;line-height:1">
+                <div style="font-size:1.52rem;font-weight:900;letter-spacing:-.055em;color:#183951">
+                    <span style="font-size:1.35rem">💜</span>
+                    <span style="font-family:Georgia,serif;font-style:italic;background:linear-gradient(90deg,#19558f,#6b4cd6,#ee719f);
                     -webkit-background-clip:text;background-clip:text;color:transparent">FaithBloom</span>
                 </div>
-                <div style="font-size:.58rem;letter-spacing:.22em;color:#8872c8;margin:.3rem 0 0 1.85rem;font-weight:800">BOOK STUDIO</div>
+                <div style="font-size:.59rem;letter-spacing:.30em;color:#283f70;margin:.42rem 0 0 1.5rem;font-weight:850">BOOK STUDIO</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -360,12 +391,12 @@ def render_sidebar_navigation() -> None:
 
         st.markdown(
             """
-            <div style="margin-top:1rem;padding:1rem;border-radius:18px;
-                        background:linear-gradient(145deg,#fff0f5,#f3edff,#eefcf7);
-                        border:1px solid rgba(133,93,204,.10);
-                        text-align:center;color:#6d557f;line-height:1.35">
-                <div style="font-size:1.35rem">🌸📚💗</div>
-                <strong>Mais histórias para um futuro ainda mais brilhante!</strong>
+            <div style="margin-top:1rem;padding:1.1rem .75rem;border-radius:16px;
+                        background:linear-gradient(150deg,#fff2f5,#ffe9ef 55%,#f5edff);
+                        border:1px solid rgba(211,104,156,.10);
+                        text-align:center;color:#8a4268;line-height:1.38">
+                <div style="font-size:1.7rem;margin-bottom:.35rem">👧🏻 🐱 💗</div>
+                <strong style="font-family:Georgia,serif;font-style:italic;font-weight:650">Mais histórias para um futuro<br>ainda mais brilhante!</strong>
             </div>
             """,
             unsafe_allow_html=True,
