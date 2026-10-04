@@ -310,22 +310,25 @@ def render_sidebar_navigation() -> None:
     """Menu de usuário enxuto; módulos técnicos continuam acessíveis sem poluir."""
     with st.sidebar:
         st.markdown("### 🌸 FaithBloom")
-        _sidebar_link("app.py", "🏠 Início")
-        _sidebar_link("pages/00_🤖_Jarvis.py", "🤖 Jarvis")
-        _sidebar_link("pages/27_🚀_Project_Hub.py", "🚀 Project Hub")
+        _sidebar_link("pages/00_🤖_Jarvis.py", "🏠 Início")
+        _sidebar_link("pages/02_🏠_Dashboard_do_Estudio.py", "📚 Meus projetos")
 
-        with st.expander("📚 Criar & transformar", expanded=True):
-            _sidebar_link("pages/39_✍️_Historia_4_Estilos.py", "✍️ Criar história")
-            _sidebar_link("pages/2_📚_Retomar_Livro.py", "📚 Retomar livro")
+        with st.expander("🌷 Criar & transformar", expanded=True):
+            _sidebar_link("pages/39_✍️_Historia_4_Estilos.py", "📖 Criar um livro")
+            _sidebar_link("pages/16_🩺_Book_Doctor.py", "🔄 Continuar / Atualizar")
+            _sidebar_link("pages/14_👥_Character_Universe.py", "👥 Personagens")
+            _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🎨 Imagens & ilustrações")
+            _sidebar_link("pages/5_🔍_Analisar_Livro.py", "✍️ Texto & revisão")
+            _sidebar_link("pages/26_🌐_Publishing_Distribution_Center.py", "🚀 Publicar")
+
+        with st.expander("📚 Biblioteca & derivados", expanded=False):
+            _sidebar_link("pages/27_🚀_Project_Hub.py", "🚀 Project Hub")
+            _sidebar_link("pages/15_📚_Biblioteca_Editorial.py", "📚 Biblioteca Editorial")
+            _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🖼️ Assets & Masters")
             _sidebar_link("pages/3_🖍️_Livros_de_Colorir.py", "🖍️ Livro de colorir")
             _sidebar_link("pages/23_🧩_Activity_Book_Studio.py", "🧩 Livro de atividades")
             _sidebar_link("pages/24_🎧_Audiobook_Studio.py", "🎧 Audiobook")
             _sidebar_link("pages/21_Translation_Localization_Studio.py", "🌍 Traduzir / localizar")
-
-        with st.expander("👥 Universo & biblioteca", expanded=False):
-            _sidebar_link("pages/14_👥_Character_Universe.py", "👥 Character Universe")
-            _sidebar_link("pages/15_📚_Biblioteca_Editorial.py", "📚 Biblioteca Editorial")
-            _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🖼️ Assets & Masters")
 
         with st.expander("✅ Qualidade & publicação", expanded=False):
             _sidebar_link("pages/25_🛡️_Quality_Guardian.py", "🛡️ Quality Guardian")
