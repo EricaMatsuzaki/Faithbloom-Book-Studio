@@ -322,6 +322,10 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
     from emotional_color_director import construir_mapa_emocional
     from prompt_master_compliance import avaliar_prompt_mestre
     from biblical_reference_validator import reference_gate
+    from story_experience_biblical_harmony import (
+        bible_final_text_gate,
+        review_story_experience_harmony,
+    )
 
     work = deepcopy(state)
     metadata_info = {"inferred": False, "fields": []}
@@ -348,7 +352,24 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
 
         compliance = avaliar_prompt_mestre(dict(revisado))
         bible = reference_gate(dict(revisado))
-        pronto = bool(aprovado and compliance.get("ok_para_finalizar"))
+        harmony = review_story_experience_harmony(dict(revisado), chamar_llm) if aprovado else {
+            "schema": "faithbloom.story-experience-biblical-harmony.v1",
+            "ok": False,
+            "checks": {},
+            "blockers": ["revisao_editorial_nao_aprovada"],
+            "strengths": [],
+            "recommendations": [],
+            "summary": "A auditoria de experiência/harmonia aguarda revisão editorial aprovada.",
+            "rewrote_story": False,
+        }
+        bible_text = bible_final_text_gate(dict(revisado))
+        pronto = bool(
+            aprovado
+            and compliance.get("ok_para_finalizar")
+            and bible.get("ok")
+            and harmony.get("ok")
+            and bible_text.get("ok")
+        )
 
         novo = deepcopy(work)
         novo["revisao_aprovada"] = aprovado
@@ -361,6 +382,8 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
             novo["analise_emocional_automatica"] = deepcopy(revisado.get("analise_emocional_automatica") or {})
         novo["prompt_master_compliance_remaster"] = compliance
         novo["bible_reference_gate_remaster"] = bible
+        novo["bible_final_text_gate_remaster"] = bible_text
+        novo["story_experience_biblical_harmony"] = harmony
         novo["necessita_intervencao_estrutural_roteirista"] = not aprovado
         novo["status"] = "texto_aprovado_pronto_para_visual" if pronto else "texto_ainda_em_revisao"
         novo = salvar_estado_remaster(novo)
@@ -372,6 +395,8 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
             "analise_emocional_automatica": deepcopy(novo.get("analise_emocional_automatica") or {}),
             "prompt_mestre": compliance,
             "bible_reference": bible,
+            "bible_final_text": bible_text,
+            "story_experience_biblical_harmony": harmony,
             "necessita_roteirista": not aprovado,
             "pronto_para_visual": pronto,
             "metadata_inference": deepcopy(metadata_info),
@@ -392,6 +417,8 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
         "mapa_emocional": [],
         "prompt_mestre": {},
         "bible_reference": {},
+        "bible_final_text": {},
+        "story_experience_biblical_harmony": {},
         "necessita_roteirista": True,
         "pronto_para_visual": False,
         "metadata_inference": metadata_info,
