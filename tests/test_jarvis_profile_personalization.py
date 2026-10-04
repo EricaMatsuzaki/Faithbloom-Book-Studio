@@ -33,3 +33,11 @@ def test_jarvis_home_keeps_jarvis_inside_approved_banner_layout():
     assert 'Oi! Eu sou o Jarvis.' in source
     assert 'home_action_{key}' in source
     assert 'jarvis_compose' in source
+
+
+def test_jarvis_home_uses_compact_interactive_jarvis_and_master_sidebar_card():
+    source = JARVIS_PAGE.read_text(encoding="utf-8")
+    assert "compact=True" in source
+    assert "Manu Master" in source
+    assert "Mel Master" in source
+    assert "Plano Profissional" in source
