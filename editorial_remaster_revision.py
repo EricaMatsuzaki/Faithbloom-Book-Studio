@@ -226,6 +226,89 @@ def _inferir_metadados_editoriais_faltantes(state: dict, chamar_llm: Callable) -
     return salvar_estado_remaster(novo), {"inferred": bool(aplicados), "fields": aplicados, **registro}
 
 
+def _normalize_ws(value: object) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _recover_bible_text_from_published_original(state: dict, chamar_llm: Callable) -> tuple[dict, dict]:
+    """Recupera apenas texto bíblico que já esteja literalmente no original publicado.
+
+    O modelo atua como localizador, não como fonte bíblica. A resposta só é aceita
+    quando o trecho retornado pode ser comprovado no texto extraído de uma página
+    do PDF original. Assim o Remaster preserva a Palavra de Deus já publicada sem
+    inventar, completar ou traduzir versículos.
+    """
+    if any(str(state.get(k) or "").strip() for k in ("versiculo_texto_original", "versiculo_texto", "bible_verse_text")):
+        return deepcopy(state), {"recovered": False, "reason": "texto_biblico_ja_presente"}
+
+    reference = str(state.get("versiculo_referencia") or "").strip()
+    pages = [
+        {"pagina": int(p.get("pagina") or 0), "texto": str(p.get("texto_extraido") or "").strip()}
+        for p in (state.get("paginas_texto_extraido") or [])
+        if isinstance(p, dict) and str(p.get("texto_extraido") or "").strip()
+    ]
+    if not reference or not pages:
+        return deepcopy(state), {"recovered": False, "reason": "referencia_ou_paginas_ausentes"}
+
+    ref_key = _normalize_ws(reference).casefold()
+    candidates = [p for p in pages if ref_key in _normalize_ws(p["texto"]).casefold()]
+    if not candidates:
+        candidates = pages[-5:]
+
+    raw = chamar_llm(
+        sistema=(
+            "Você é um LOCALIZADOR de texto em um livro já publicado. NÃO forneça conhecimento bíblico externo, "
+            "não complete, não corrija e não traduza versículos. Encontre somente um trecho que esteja literalmente "
+            "nas páginas fornecidas e que corresponda à referência informada. Se não puder provar, retorne found=false."
+        ),
+        instrucao=(
+            "Referência: " + reference + "\n"
+            "Páginas: " + json.dumps(candidates, ensure_ascii=False) + "\n"
+            "Retorne JSON {found:boolean,pagina:inteiro,texto_exato:string}. "
+            "texto_exato deve ser copiado do material fornecido, sem alteração."
+        ),
+    )
+    if not isinstance(raw, dict) or raw.get("found") is not True:
+        return deepcopy(state), {"recovered": False, "reason": "nao_localizado"}
+
+    try:
+        page_no = int(raw.get("pagina"))
+    except (TypeError, ValueError):
+        return deepcopy(state), {"recovered": False, "reason": "pagina_invalida"}
+    quote = str(raw.get("texto_exato") or "").strip()
+    page = next((p for p in candidates if p["pagina"] == page_no), None)
+    if not page or not quote:
+        return deepcopy(state), {"recovered": False, "reason": "evidencia_incompleta"}
+
+    normalized_quote = _normalize_ws(quote)
+    normalized_page = _normalize_ws(page["texto"])
+    if normalized_quote not in normalized_page:
+        return deepcopy(state), {
+            "recovered": False,
+            "reason": "trecho_nao_comprovado_no_original",
+            "pagina": page_no,
+        }
+
+    novo = deepcopy(state)
+    novo["versiculo_texto_original"] = normalized_quote
+    novo["versiculo_texto_source_page"] = page_no
+    novo["versiculo_texto_source"] = "original_published_book"
+    novo.setdefault("historico_bible_guard", []).append({
+        "em": _now_iso(),
+        "acao": "recover_exact_scripture_from_published_original",
+        "referencia": reference,
+        "pagina": page_no,
+        "verified_literal_source": True,
+        "ai_generated_scripture": False,
+    })
+    return salvar_estado_remaster(novo), {
+        "recovered": True,
+        "reference": reference,
+        "pagina": page_no,
+        "source": "original_published_book",
+    }
+
+
 def _normalizar_cenas_reparo(raw: object, atuais: list[dict]) -> list[dict]:
     if not isinstance(raw, list) or not raw:
         raise RuntimeError("Especialista editorial não retornou cenas revisadas válidas.")
@@ -336,8 +419,10 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
 
     work = deepcopy(state)
     metadata_info = {"inferred": False, "fields": []}
+    bible_text_recovery = {"recovered": False, "reason": "not_attempted"}
     if _autopilot_ativo(work):
         work, metadata_info = _inferir_metadados_editoriais_faltantes(work, chamar_llm)
+        work, bible_text_recovery = _recover_bible_text_from_published_original(work, chamar_llm)
 
     max_ciclos = 3 if _autopilot_ativo(work) else 1
     repairs = []
@@ -410,6 +495,7 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
             "necessita_roteirista": not aprovado,
             "pronto_para_visual": pronto,
             "metadata_inference": deepcopy(metadata_info),
+            "bible_text_recovery": deepcopy(bible_text_recovery),
             "auto_repair_cycles": deepcopy(repairs),
             "estado": novo,
         }
@@ -432,6 +518,7 @@ def rodar_revisao_final_textual(state: dict, chamar_llm: Callable) -> dict:
         "necessita_roteirista": True,
         "pronto_para_visual": False,
         "metadata_inference": metadata_info,
+        "bible_text_recovery": bible_text_recovery,
         "auto_repair_cycles": repairs,
         "estado": salvar_estado_remaster(work),
     }
