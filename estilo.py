@@ -309,7 +309,18 @@ def _sidebar_link(path: str, label: str) -> None:
 def render_sidebar_navigation() -> None:
     """Menu de usuário enxuto; módulos técnicos continuam acessíveis sem poluir."""
     with st.sidebar:
-        st.markdown("### 🌸 FaithBloom")
+        st.markdown(
+            """
+            <div style="padding:.15rem .1rem .7rem;line-height:1">
+                <div style="font-size:1.28rem;font-weight:850;letter-spacing:-.035em;color:#183951">
+                    🌸 <span style="background:linear-gradient(90deg,#1c8fb0,#7459d9,#f176ad);
+                    -webkit-background-clip:text;background-clip:text;color:transparent">FaithBloom</span>
+                </div>
+                <div style="font-size:.58rem;letter-spacing:.22em;color:#8872c8;margin:.3rem 0 0 1.85rem;font-weight:800">BOOK STUDIO</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         _sidebar_link("pages/00_🤖_Jarvis.py", "🏠 Início")
         _sidebar_link("pages/02_🏠_Dashboard_do_Estudio.py", "📚 Meus projetos")
 
