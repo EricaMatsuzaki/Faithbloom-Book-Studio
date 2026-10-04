@@ -70,12 +70,16 @@ def _scene_payload(state: dict) -> list[dict]:
 def bible_final_text_gate(state: dict) -> dict:
     """Exige Palavra de Deus no fechamento sem deixar IA inventar/traduzir Bíblia.
 
-    PASS ocorre quando:
+    PASS ocorre somente quando:
     - existe referência bíblica; e
-    - existe Bible Record com texto aprovado pela autora, OU texto bíblico legado
-      explicitamente armazenado no projeto (compatibilidade com livros publicados).
+    - existe Bible Record com texto bíblico aprovado pela autora; e
+    - o Bible Record identifica claramente a versão e a fonte bíblica.
 
-    A validação de fonte/licença/contexto continua pertencendo ao Bible Guard.
+    O texto precisa vir de uma Bíblia/edição real (por exemplo, King James Version
+    para inglês quando escolhida), nunca de paráfrase livre, memória do modelo ou
+    tradução gerada pela IA. Texto legado extraído de livro publicado é apenas
+    evidência para conferência e precisa ser reconciliado com um Bible Record
+    aprovado antes do fechamento.
     """
     reference = _text(state.get("versiculo_referencia"))
     if not reference:
@@ -94,6 +98,8 @@ def bible_final_text_gate(state: dict) -> dict:
             and text
             and bool(record.get("aprovado_pela_autora"))
             and _text(record.get("referencia") or reference) == reference
+            and _text(record.get("versao"))
+            and _text(record.get("fonte"))
         ):
             return {
                 "ok": True,
@@ -104,24 +110,14 @@ def bible_final_text_gate(state: dict) -> dict:
                 "text_source": "bible_record",
             }
 
-    for key in ("versiculo_texto_original", "versiculo_texto", "bible_verse_text"):
-        if _text(state.get(key)):
-            return {
-                "ok": True,
-                "status": "LEGACY_APPROVED_TEXT_PRESENT",
-                "reference": reference,
-                "text_source": key,
-                "notice": "Compatibilidade com obra publicada; migrar para Bible Record aprovado antes de nova localização.",
-            }
-
     return {
         "ok": False,
         "status": "TEXT_APPROVAL_REQUIRED",
         "reference": reference,
         "reason": (
-            "A referência existe, mas o fechamento ainda não possui texto bíblico "
-            "fornecido/selecionado e aprovado. O FaithBloom não deve inventar nem traduzir "
-            "livremente o versículo."
+            "A referência existe, mas o fechamento ainda não possui um Bible Record "
+            "com texto bíblico, versão, fonte e aprovação. O FaithBloom não deve inventar, "
+            "parafrasear nem traduzir livremente o versículo."
         ),
     }
 
@@ -157,15 +153,14 @@ def bible_closing_payload(state: dict) -> dict:
             "status": gate.get("status"),
         }
 
-    source = gate.get("text_source")
     return {
-        "ok": True,
+        "ok": False,
         "reference": reference,
-        "text": _text(state.get(source)),
-        "version": _text(state.get("versiculo_versao") or state.get("bible_version")),
-        "source": source,
-        "status": gate.get("status"),
-        "notice": gate.get("notice", ""),
+        "text": "",
+        "version": "",
+        "source": "",
+        "status": "BIBLE_RECORD_REQUIRED",
+        "reason": "O fechamento exige Bible Record aprovado com texto, versão e fonte bíblica.",
     }
 
 
