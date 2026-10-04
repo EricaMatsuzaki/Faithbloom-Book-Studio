@@ -49,3 +49,11 @@ def test_jarvis_home_has_mobile_specific_layout_contract():
     assert 'grid-template-areas:"chars copy" "bot bot"' in source
     assert 'active_workspace_name.split()[0]' in source
     assert "Diagnóstico de velocidade" in source
+
+
+def test_jarvis_home_matches_approved_compact_composer_contract():
+    source = JARVIS_PAGE.read_text(encoding="utf-8")
+    assert 'with st.popover("📎"' in source
+    assert 'Plano Profissional' in source
+    assert 'Enviar para o Jarvis' in source
+    assert 'max-width:1500px' in source
