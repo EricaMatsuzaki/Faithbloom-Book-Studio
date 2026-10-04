@@ -631,8 +631,8 @@ def _render_ai_controls() -> None:
 
 
 with st.container(key="faithbloom_home_topbar"):
-        top_search, gift_col, plan_col, bell_col, top_profile = st.columns([4.9, .38, 1.18, .38, 1.15], gap="small")
-        with top_search:
+    top_search, gift_col, plan_col, bell_col, top_profile = st.columns([4.9, .38, 1.18, .38, 1.15], gap="small")
+    with top_search:
         home_search = st.text_input(
             "Buscar no FaithBloom",
             placeholder="🔎  Buscar projetos, personagens, histórias…",
