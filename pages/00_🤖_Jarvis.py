@@ -630,29 +630,30 @@ def _render_ai_controls() -> None:
 
 
 
-top_search, gift_col, plan_col, bell_col, top_profile = st.columns([4.9, .38, 1.18, .38, 1.15], gap="small")
-with top_search:
-    home_search = st.text_input(
-        "Buscar no FaithBloom",
-        placeholder="🔎  Buscar projetos, personagens, histórias…",
-        label_visibility="collapsed",
-        key="faithbloom_home_search",
-    )
-with gift_col:
-    st.html('<div class="fb-top-icon" title="Novidades">🎁</div>')
-with plan_col:
-    st.html('<div class="fb-plan-chip">👑 <strong>Plano Profissional</strong></div>')
-with bell_col:
-    st.html('<div class="fb-top-icon" title="Notificações">🔔</div>')
-with top_profile:
-    safe_profile_name = html_lib.escape(active_workspace_name or "Perfil")
-    safe_profile_role = html_lib.escape(active_workspace_role.title() if active_workspace_role else "Perfil do workspace")
-    initial = safe_profile_name[:1].upper() if safe_profile_name else "🌸"
-    st.html(
-        '<div class="fb-profile-chip"><span class="fb-profile-avatar">'+initial+'</span>'
-        f'<span><strong>{safe_profile_name}</strong><small>{safe_profile_role}</small></span>'
-        '<span class="fb-profile-chevron">⌄</span></div>'
-    )
+with st.container(key="faithbloom_home_topbar"):
+        top_search, gift_col, plan_col, bell_col, top_profile = st.columns([4.9, .38, 1.18, .38, 1.15], gap="small")
+        with top_search:
+        home_search = st.text_input(
+            "Buscar no FaithBloom",
+            placeholder="🔎  Buscar projetos, personagens, histórias…",
+            label_visibility="collapsed",
+            key="faithbloom_home_search",
+        )
+    with gift_col:
+        st.html('<div class="fb-top-icon" title="Novidades">🎁</div>')
+    with plan_col:
+        st.html('<div class="fb-plan-chip">👑 <strong>Plano Profissional</strong></div>')
+    with bell_col:
+        st.html('<div class="fb-top-icon" title="Notificações">🔔</div>')
+    with top_profile:
+        safe_profile_name = html_lib.escape(active_workspace_name or "Perfil")
+        safe_profile_role = html_lib.escape(active_workspace_role.title() if active_workspace_role else "Perfil do workspace")
+        initial = safe_profile_name[:1].upper() if safe_profile_name else "🌸"
+        st.html(
+            '<div class="fb-profile-chip"><span class="fb-profile-avatar">'+initial+'</span>'
+            f'<span><strong>{safe_profile_name}</strong><small>{safe_profile_role}</small></span>'
+            '<span class="fb-profile-chevron">⌄</span></div>'
+        )
 
 if home_search.strip():
     q = home_search.strip().casefold()
@@ -676,15 +677,17 @@ active_cfg = mode_config()
 
 st.html("""
 <style>
-header[data-testid="stHeader"]{height:0!important;min-height:0!important;background:transparent!important}div[data-testid="stToolbar"]{display:none!important}.block-container{padding-top:.7rem!important}
+header[data-testid="stHeader"]{height:0!important;min-height:0!important;background:transparent!important}div[data-testid="stToolbar"]{display:none!important}.block-container{padding-top:.55rem!important;padding-bottom:2.4rem!important}
+div.st-key-faithbloom_home_topbar{margin-bottom:.45rem}
+div.st-key-faithbloom_home_topbar [data-testid="stHorizontalBlock"]{align-items:center!important}
 .fb-profile-chip{height:46px;display:flex;align-items:center;justify-content:flex-end;gap:.65rem;padding:.35rem .65rem;border-radius:16px;background:rgba(255,255,255,.90);border:1px solid rgba(102,90,185,.10);box-shadow:0 7px 22px rgba(59,72,101,.05);color:#20394f}
 .fb-profile-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#ffd6e7,#e8dfff);font-size:.9rem;font-weight:850;color:#6c4ec7}.fb-profile-chip small{display:block;color:#7a8490;font-size:.68rem;margin-top:.05rem}.fb-profile-chevron{color:#8469d9;font-weight:800}
 .fb-top-icon{height:46px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;color:#7356d6}
 .fb-plan-chip{height:46px;display:flex;align-items:center;justify-content:center;gap:.34rem;padding:0 .7rem;border-radius:14px;background:linear-gradient(135deg,#fff7f8,#f5ecff);border:1px solid rgba(124,88,205,.10);font-size:.78rem;color:#3a315f;white-space:nowrap}
 div[data-testid="stTextInput"] input{border-radius:15px!important;border:1px solid rgba(75,98,131,.13)!important;background:#fff!important;box-shadow:0 5px 18px rgba(59,72,101,.04)!important}
 div.st-key-faithbloom_home_hero{
-  position:relative;overflow:hidden;border-radius:20px;padding:16px 18px 10px;
-  min-height:214px;
+  position:relative;overflow:hidden;border-radius:17px;padding:10px 14px 8px;
+  min-height:204px;
   background:
     radial-gradient(circle at 7% 78%,rgba(255,174,204,.34),transparent 25%),
     radial-gradient(circle at 20% 22%,rgba(255,232,149,.45),transparent 28%),
@@ -695,12 +698,12 @@ div.st-key-faithbloom_home_hero{
 div.st-key-faithbloom_home_hero:after{
   content:"✝";position:absolute;right:15.5%;top:7px;font-size:42px;color:rgba(188,137,77,.24);z-index:0
 }
-.fb-master-stage{height:190px;position:relative;overflow:visible}
+.fb-master-stage{height:184px;position:relative;overflow:visible}
 .fb-master-stage:after{content:"🌸  🌼   🌷";position:absolute;left:0;right:0;bottom:0;font-size:24px;letter-spacing:12px;opacity:.72;white-space:nowrap}
 .fb-master{position:absolute;object-fit:contain;filter:drop-shadow(0 8px 10px rgba(73,56,63,.11));-webkit-mask-image:radial-gradient(ellipse at center,#000 63%,rgba(0,0,0,.94) 76%,transparent 99%);mask-image:radial-gradient(ellipse at center,#000 63%,rgba(0,0,0,.94) 76%,transparent 99%)}
-.fb-master-manu{width:190px;height:200px;left:-18px;bottom:-10px;z-index:2}
-.fb-master-mel{width:132px;height:142px;left:128px;bottom:-4px;z-index:3}
-.fb-master-teo{width:65px;height:70px;left:240px;bottom:16px;z-index:4}
+.fb-master-manu{width:186px;height:194px;left:-16px;bottom:-9px;z-index:2}
+.fb-master-mel{width:128px;height:138px;left:126px;bottom:-4px;z-index:3}
+.fb-master-teo{width:58px;height:63px;left:236px;bottom:18px;z-index:4}
 .fb-master-fallback{font-size:86px;padding-top:56px;text-align:center}
 .fbh-copy-wrap{padding:.2rem .25rem 0 .4rem;position:relative;z-index:2}
 .fbh-title{font-size:clamp(1.85rem,2.8vw,2.9rem);line-height:1.02;letter-spacing:-.04em;font-weight:880;color:#172a67;margin:.18rem 0 .35rem}
@@ -719,14 +722,54 @@ div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"]{width:40px
 div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"] p{font-size:1.28rem!important;margin:0!important;color:#6e51dd!important}
 .fb-assistant-box{margin-top:.65rem;padding:.75rem 1rem;border-radius:17px;background:#fff;border:1px solid rgba(91,78,160,.10);box-shadow:0 7px 20px rgba(50,74,103,.045)}
 div.st-key-jarvis_compose{padding:.8rem 1rem;border:1px solid rgba(91,78,160,.10);border-radius:18px;background:#fff;box-shadow:0 7px 20px rgba(50,74,103,.04);margin-top:.35rem}
-div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"]{padding:.38rem .55rem!important;min-height:42px!important;border-radius:13px!important;background:#fafbff!important}
-div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] small{display:none!important}
+div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"]{padding:.2rem .4rem!important;min-height:38px!important;border-radius:12px!important;background:#fafbff!important}
+div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] small,
+div.st-key-jarvis_compose div[data-testid="stFileUploaderDropzone"] span{font-size:.72rem!important}
+div.st-key-jarvis_compose [data-testid="stFileUploader"] section{min-height:44px!important;padding:.2rem .35rem!important}
+div.st-key-jarvis_compose [data-testid="stFileUploader"] button{min-height:34px!important;padding:.2rem .7rem!important}
 div.st-key-jarvis_compose textarea{min-height:54px!important;border-radius:13px!important}
 div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{border:0!important;border-radius:13px!important;background:linear-gradient(90deg,#ff91b9,#b66cff 55%,#745cf5)!important;color:white!important;font-weight:820!important;min-height:48px!important;box-shadow:0 8px 20px rgba(143,83,223,.18)!important}
 .fb-project-card{padding:.56rem;border-radius:14px;background:#fff;border:1px solid rgba(57,87,118,.08);min-height:190px;box-shadow:0 7px 18px rgba(50,74,103,.04);overflow:hidden}.fb-project-card .t{font-weight:790;color:#17324b;font-size:.82rem;line-height:1.22;margin:.48rem .12rem .15rem}.fb-project-card .m{font-size:.72rem;color:#7a8490;margin:.12rem}.fb-project-thumb-wrap{height:118px;border-radius:11px;overflow:hidden;position:relative;background:linear-gradient(135deg,#fff2f6,#eef8ff,#effcf7);border:1px solid rgba(105,89,183,.07)}.fb-project-thumb{width:100%;height:100%;object-fit:cover;display:block}.fb-project-cover-placeholder{height:100%;display:flex;align-items:center;justify-content:center;font-size:2.2rem}.fb-project-badge{position:absolute;left:7px;bottom:7px;padding:.24rem .48rem;border-radius:999px;background:rgba(255,255,255,.93);box-shadow:0 3px 10px rgba(42,56,82,.12);font-size:.68rem;font-weight:820}.fb-badge-published{color:#16835d;background:#eafaf2}.fb-badge-progress{color:#704fd1;background:#f1ebff}.fb-badge-draft{color:#c77810;background:#fff3d8}
 .fb-status-panel{padding:.82rem;border-radius:17px;background:#fff;border:1px solid rgba(57,87,118,.08);box-shadow:0 8px 20px rgba(50,74,103,.045)}
 .fb-status-line{display:flex;align-items:center;gap:.5rem;padding:.44rem .55rem;border-radius:11px;margin:.3rem 0;background:#f8f9fc;color:#43576b;font-size:.78rem}.fb-status-line.done{background:#effbf6;color:#167c67}.fb-status-line.active{background:#f2ecff;color:#7652c9}.fb-status-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:white;border:1px solid rgba(84,100,120,.10);font-size:.68rem;font-weight:800}
-@media(max-width:900px){.fb-master-stage{height:160px}.fb-master-manu{width:150px;height:165px}.fb-master-mel{width:110px;height:118px;left:100px}.fb-master-teo{width:62px;height:68px;left:188px}.fbh-title{font-size:2rem}}
+@media(max-width:900px){
+  .block-container{padding:.35rem .7rem 1.2rem!important}
+  div.st-key-faithbloom_home_topbar [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:1fr auto!important;gap:.35rem!important}
+  div.st-key-faithbloom_home_topbar [data-testid="stColumn"]:nth-child(2),
+  div.st-key-faithbloom_home_topbar [data-testid="stColumn"]:nth-child(3),
+  div.st-key-faithbloom_home_topbar [data-testid="stColumn"]:nth-child(4){display:none!important}
+  div.st-key-faithbloom_home_topbar [data-testid="stColumn"]:nth-child(5){min-width:170px!important}
+  .fb-profile-chip{height:42px;padding:.25rem .45rem;gap:.45rem}.fb-profile-chip small{display:none}
+  div.st-key-faithbloom_home_hero{padding:8px 9px 10px;min-height:auto;border-radius:15px}
+  div.st-key-faithbloom_home_hero [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:42% 58%!important;grid-template-areas:"chars copy" "bot bot"!important;gap:.15rem .2rem!important;align-items:start!important}
+  div.st-key-faithbloom_home_hero [data-testid="stColumn"]:nth-child(1){grid-area:chars!important;width:auto!important}
+  div.st-key-faithbloom_home_hero [data-testid="stColumn"]:nth-child(2){grid-area:copy!important;width:auto!important}
+  div.st-key-faithbloom_home_hero [data-testid="stColumn"]:nth-child(3){grid-area:bot!important;width:auto!important}
+  .fb-master-stage{height:132px}.fb-master-stage:after{font-size:14px;letter-spacing:4px}
+  .fb-master-manu{width:110px;height:125px;left:-8px;bottom:-3px}.fb-master-mel{width:76px;height:84px;left:72px;bottom:0}.fb-master-teo{width:42px;height:46px;left:132px;bottom:12px}
+  .fbh-copy-wrap{padding:.15rem .1rem 0}.fbh-title{font-size:1.38rem;line-height:1.02;margin:.12rem 0 .28rem}.fbh-copy{font-size:.73rem;line-height:1.35}.fbh-tagline{font-size:.76rem;margin-top:.35rem}
+  .fb-jarvis-bubble{max-width:190px;padding:.38rem .55rem;font-size:.75rem;margin:.1rem auto -.1rem}
+  div[class*="st-key-home_action_"]{margin-bottom:.35rem}
+  .fb-action-card{min-height:84px;padding:.65rem 3.15rem .62rem .72rem;grid-template-columns:44px 1fr;column-gap:.58rem;border-radius:15px}
+  .fb-action-icon{width:42px;height:42px;border-radius:12px;font-size:1.3rem}.fb-action-card h3{font-size:.9rem}.fb-action-card p{font-size:.72rem;line-height:1.22}
+  div[class*="st-key-home_action_"] div[data-testid="stPageLink"]{right:9px;width:34px}
+  div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"]{width:34px!important;height:34px!important;min-height:34px!important}
+  .fb-assistant-box{padding:.65rem .72rem;border-radius:14px}.fb-assistant-box strong{font-size:.92rem}
+  div.st-key-jarvis_compose{padding:.6rem .65rem;border-radius:15px}
+  div.st-key-jarvis_compose [data-testid="stHorizontalBlock"]{display:grid!important;grid-template-columns:1fr!important}
+  div.st-key-jarvis_compose textarea{min-height:48px!important}
+  div.st-key-jarvis_compose div[data-testid="stFormSubmitButton"] button{min-height:44px!important}
+  .fb-project-card{min-height:150px}.fb-project-thumb-wrap{height:94px}
+  .fb-status-panel{margin-top:.4rem}
+}
+@media(max-width:560px){
+  div.st-key-faithbloom_home_topbar [data-testid="stHorizontalBlock"]{grid-template-columns:1fr!important}
+  div.st-key-faithbloom_home_topbar [data-testid="stColumn"]:nth-child(5){display:none!important}
+  div.st-key-faithbloom_home_hero [data-testid="stHorizontalBlock"]{grid-template-columns:40% 60%!important}
+  .fb-master-stage{height:116px}.fb-master-manu{width:96px;height:110px}.fb-master-mel{width:68px;height:74px;left:61px}.fb-master-teo{width:36px;height:39px;left:116px;bottom:10px}
+  .fbh-title{font-size:1.18rem}.fbh-copy{font-size:.68rem}.fbh-tagline{font-size:.69rem}
+  .fb-action-card{min-height:78px}
+}
 </style>
 """)
 
@@ -746,7 +789,7 @@ with st.container(key="faithbloom_home_hero"):
         else:
             st.html('<div class="fb-master-fallback">👧🏻 🐱 🐦</div>')
     with copy:
-        safe_name = html_lib.escape(active_workspace_name) if active_workspace_name else "bem-vindo(a)"
+        safe_name = html_lib.escape((active_workspace_name.split()[0] if active_workspace_name else "") or "bem-vindo(a)")
         st.html(
             f'<div class="fbh-copy-wrap"><div class="fbh-title">Oi, {safe_name}! ✨<br>O que você quer fazer hoje?</div>'
             f'<div class="fbh-copy">O Jarvis entende seu objetivo, monta a equipe certa de especialistas e guia todo o processo, do começo ao fim.</div>'
@@ -915,11 +958,6 @@ if engenheiro_resultados:
                 if item.get("motivo_bloqueio"):
                     st.caption(item["motivo_bloqueio"])
 
-with st.expander("⚡ Diagnóstico de velocidade", expanded=False):
-    metrics = dict(st.session_state.get("jarvis_latency_metrics") or {})
-    if metrics: st.json(metrics)
-    else: st.caption("As medições aparecem depois do primeiro pedido ou briefing manual.")
-
 destination = st.session_state.get("jarvis_suggested_destination") or {}
 page_key = destination.get("destination") or destination.get("id")
 if page_key in NAV_PAGES and st.button(f"Abrir {destination.get('label') or page_key}", type="primary", use_container_width=True):
@@ -990,6 +1028,10 @@ with status_col:
 
 with st.expander("⚙️ Preferências do Jarvis e modo de IA", expanded=False):
     _render_ai_controls()
+    metrics = dict(st.session_state.get("jarvis_latency_metrics") or {})
+    if metrics:
+        with st.expander("⚡ Diagnóstico de velocidade", expanded=False):
+            st.json(metrics)
 
 with st.expander("🧠 O que este Jarvis já coordena", expanded=False):
     st.markdown("""
