@@ -79,6 +79,8 @@ def test_final_compliance_matrix_fails_closed_when_storyteller_dropped_scenes():
         "prompt_master_compliance_remaster": {"ok_para_finalizar": True},
         "licao_final": "Cuidar. Confiar. Esperar.",
         "versiculo_referencia": "Eclesiastes 3:1",
+        "versiculo_texto_original": "Tudo tem o seu tempo determinado.",
+        "story_experience_biblical_harmony": {"ok": True, "blockers": []},
         "metadata_emocional_confirmada": True,
         "mapa_emocional": [{"numero": i} for i in range(1, 10)],
     }
