@@ -708,11 +708,11 @@ div.st-key-faithbloom_home_hero:after{
 .fbh-tagline{margin-top:.55rem;font-size:clamp(.96rem,1.35vw,1.12rem);font-weight:760;color:#7655c8;font-style:italic}
 .fb-jarvis-bubble{margin:.1rem auto .2rem;max-width:205px;padding:.62rem .75rem;border-radius:17px;background:rgba(255,255,255,.88);border:1px solid rgba(126,93,204,.12);color:#7652c9;font-weight:780;text-align:center;box-shadow:0 7px 16px rgba(92,72,136,.07)}
 .fb-home-section{margin:.72rem 0 .42rem}.fb-home-section h2{margin:0;color:#17305f;font-size:1.24rem;letter-spacing:-.02em}.fb-home-section p{margin:.18rem 0 0;color:#69778a;font-size:.83rem}
-.fb-action-card{min-height:92px;padding:.82rem 3.65rem .76rem .92rem;border-radius:18px;border:1px solid rgba(57,87,118,.06);box-shadow:0 8px 20px rgba(50,74,103,.045);transition:.16s ease;margin:0}
+.fb-action-card{min-height:92px;padding:.76rem 3.65rem .72rem .9rem;border-radius:18px;border:1px solid rgba(57,87,118,.06);box-shadow:0 8px 20px rgba(50,74,103,.045);transition:.16s ease;margin:0;display:grid;grid-template-columns:54px 1fr;grid-template-rows:auto auto;column-gap:.72rem;align-items:center}
 .fb-card-pink{background:linear-gradient(135deg,#fff3f7,#ffe8f0)}.fb-card-blue{background:linear-gradient(135deg,#eff9ff,#dff1ff)}.fb-card-mint{background:linear-gradient(135deg,#effdf7,#dcfaeb)}.fb-card-gold{background:linear-gradient(135deg,#fffaf0,#fff0c9)}.fb-card-lilac{background:linear-gradient(135deg,#f8f1ff,#eadfff)}.fb-card-rose{background:linear-gradient(135deg,#fff2f7,#ffe2ed)}
 .fb-action-card:hover{transform:translateY(-2px);box-shadow:0 13px 27px rgba(50,74,103,.09)}
-.fb-action-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.55rem;margin-bottom:.45rem;background:rgba(255,255,255,.64);box-shadow:inset 0 0 0 1px rgba(255,255,255,.65)}
-.fb-action-card h3{font-size:.96rem;margin:0 0 .14rem;color:#152a62}.fb-action-card p{margin:0;color:#445779;font-size:.78rem;line-height:1.28}
+.fb-action-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.55rem;background:rgba(255,255,255,.64);box-shadow:inset 0 0 0 1px rgba(255,255,255,.65);grid-column:1;grid-row:1/3}
+.fb-action-card h3{font-size:.96rem;margin:0;color:#152a62;grid-column:2;grid-row:1;align-self:end}.fb-action-card p{margin:.08rem 0 0;color:#445779;font-size:.78rem;line-height:1.28;grid-column:2;grid-row:2;align-self:start}
 div[class*="st-key-home_action_"]{position:relative;margin-bottom:.55rem}
 div[class*="st-key-home_action_"] div[data-testid="stPageLink"]{position:absolute;right:14px;top:50%;transform:translateY(-50%);z-index:5;width:40px}
 div[class*="st-key-home_action_"] a[data-testid="stPageLink-NavLink"]{width:40px!important;height:40px!important;min-height:40px!important;border-radius:50%!important;padding:0!important;justify-content:center!important;background:rgba(255,255,255,.55)!important;border:1px solid rgba(91,78,160,.08)!important;box-shadow:none!important}
@@ -756,7 +756,6 @@ with st.container(key="faithbloom_home_hero"):
         st.html('<div class="fb-jarvis-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
         heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply, reply_audio="", reply_token=reply_token, compact=True)
 
-st.html('<div class="fb-home-section"><h2>Comece por aqui</h2><p>Escolha o objetivo. O Jarvis e o Orchestrator cuidam da rota e dos especialistas por trás.</p></div>')
 action_rows = [
     [
         ("create","📖","Criar um livro","Do zero, com a equipe certa para a sua história.","pages/39_✍️_Historia_4_Estilos.py","fb-card-pink"),
