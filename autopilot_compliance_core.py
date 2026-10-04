@@ -159,6 +159,9 @@ def evaluate_autopilot_compliance(state: dict) -> dict:
     prompt_master = bool((state.get("prompt_master_compliance_remaster") or {}).get("ok_para_finalizar"))
     moral = bool(str(state.get("licao_final") or "").strip())
     bible = bool(str(state.get("versiculo_referencia") or "").strip())
+    from story_experience_biblical_harmony import bible_final_text_gate
+    bible_text = bible_final_text_gate(state)
+    harmony = state.get("story_experience_biblical_harmony") or {}
     emotional_map = [x for x in (state.get("mapa_emocional") or []) if isinstance(x, dict)]
     emotional_ok = bool(state.get("metadata_emocional_confirmada") and len(emotional_map) == len(current) and current)
 
@@ -168,6 +171,11 @@ def evaluate_autopilot_compliance(state: dict) -> dict:
         "prompt_master_gate": {"ok": prompt_master},
         "moral_gate": {"ok": moral},
         "bible_reference_gate": {"ok": bible},
+        "bible_final_text_gate": bible_text,
+        "story_experience_biblical_harmony_gate": {
+            "ok": bool(harmony.get("ok")),
+            "blockers": deepcopy(harmony.get("blockers") or []),
+        },
         "emotional_map_gate": {"ok": emotional_ok, "scene_count": len(current), "map_count": len(emotional_map)},
     }
     failures = [name for name, result in checks.items() if not result.get("ok")]
