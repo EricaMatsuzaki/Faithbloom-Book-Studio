@@ -29,7 +29,10 @@ if not livros:
 
 section_title("1. Escolha o projeto", "O Hub lê evidências já salvas nos outros módulos; ele não inventa qualidade nem aprova conteúdo sozinho.", "Project")
 options = {f"{x.get('titulo','(sem título)')} · {x.get('colecao','')}": x for x in livros}
-selected = st.selectbox("Book Master", list(options))
+active_path = (st.session_state.get("faithbloom_active_project") or {}).get("storage_path")
+labels = list(options)
+active_index = next((i for i, label in enumerate(labels) if options[label].get("storage_path") == active_path), 0)
+selected = st.selectbox("Book Master", labels, index=active_index)
 info = options[selected]
 state = carregar_livro(info.get("colecao", ""), info.get("storage_path") or info["arquivo"])
 st.session_state["faithbloom_active_project"] = make_project_context(info, state)

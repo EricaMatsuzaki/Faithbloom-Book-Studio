@@ -308,6 +308,16 @@ CSS = f"""
 
 def aplicar_estilo():
     st.markdown(CSS, unsafe_allow_html=True)
+    from painel_visual import aplicar_visual, render_sidebar
+    aplicar_visual()
+    # Standalone apps have their own entrypoint and cannot link to app.py.
+    # Keep their automatic navigation; use the shared artwork for the main app.
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    ctx = get_script_run_ctx()
+    if ctx and ctx.main_script_path.endswith("/app.py"):
+        render_sidebar()
+    else:
+        st.markdown('<style>[data-testid="stSidebarNav"] { display:block; }</style>', unsafe_allow_html=True)
 
 
 def hero(titulo: str, subtitulo: str = "", eyebrow: str = "FaithBloom AI · Editorial Studio"):

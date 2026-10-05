@@ -161,6 +161,7 @@ elif st.session_state.etapa == "entrada":
     if modo == "Só tenho um tema ou resumo livre":
         entrada = st.text_area(
             "Descreva o tema ou um resumo curto da ideia",
+            value=st.session_state.get("faithbloom_jarvis_idea", ""),
             placeholder="ex: uma gatinha impaciente que precisa aprender a esperar...",
         )
         if st.button("Sugerir versículo, emoção e lição") and entrada:

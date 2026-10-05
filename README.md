@@ -127,13 +127,25 @@ Reports).
 
 ## Identidade visual
 
-`.streamlit/config.toml` define o tema de cores (teal + dourado + creme,
-baseado no selo/faixa que a Erica já usa) e `estilo.py` traz o CSS
-compartilhado (cabeçalho com gradiente, cards de navegação, badges de
-status, sidebar estilizada) aplicado em todas as páginas via
-`aplicar_estilo()` e `hero(titulo, subtitulo)`. Pra manter a
-identidade consistente ao criar novas páginas, sempre chamar essas
-duas funções logo depois do `st.set_page_config(...)`.
+`.streamlit/config.toml` e `painel_visual.py` definem a identidade
+ilustrada em lilás, rosa, azul, menta e amarelo, com texto azul-marinho.
+O dashboard usa a arte de boas-vindas fornecida pela autora: banner
+compacto no desktop e composição completa no celular. Pétalas,
+borboletas, estrelas e o brilho do coração do Jarvis têm movimento
+decorativo em CSS; o controle **Movimento** permite pausar e a preferência
+do dispositivo por reduzir movimento é respeitada.
+
+Os seis cartões e o menu lateral usam navegação real para os Studios.
+**Meus projetos** lista os livros salvos do perfil, a busca inclui títulos,
+coleções e personagens, e o status de produção lê evidências salvas.
+Uma capa disponível não significa aprovação e um pacote pronto não
+significa publicado.
+
+A entrada do Jarvis sugere atalhos locais para o pedido, sem executar
+geração automaticamente. Os arquivos enviados são salvos na biblioteca
+de assets e a ideia fica disponível ao iniciar uma história nova.
+`estilo.py` mantém os componentes compartilhados das demais telas;
+continue chamando `aplicar_estilo()` após `st.set_page_config(...)`.
 
 ## Como rodar a interface (menu lateral com todas as ferramentas)
 

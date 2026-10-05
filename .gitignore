@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+.faithbloom_data/
+.faithbloom_cache/
+.streamlit/secrets.toml
+livros_salvos/
+livros_colorir_salvos/
+bibliotecas_personagens/
+marca_colecoes/
+galeria_imagens/
+saida_imagens/
+saida_audio/
+saida_pdf/
+book_doctor_projects/
+*.log
