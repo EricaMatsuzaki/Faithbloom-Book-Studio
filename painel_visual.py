@@ -56,13 +56,16 @@ section[data-testid="stSidebar"] {
   min-height:34px; padding:6px 10px !important; gap:12px; border-radius:10px !important;
   color:var(--fb-ink); font-size:.79rem;
 }
-[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] p { font-size:.79rem; font-weight:500; }
+[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] p { font-size:.79rem; }
 [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]:hover {
   transform:none; background:#f0e9ff !important;
 }
 [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"][aria-current="page"],
 [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"][aria-selected="true"] {
   color:#7d28e5; background:#eee4ff !important;
+}
+[data-testid="stSidebar"] [class*="st-key-fb_side_nav_"][class*="_current"] a[data-testid="stPageLink-NavLink"] {
+  color:#7d28e5 !important; background:#eee4ff !important;
 }
 [data-testid="stSidebar"] [data-testid="stExpander"] {
   border:0 !important; background:transparent; border-radius:0 !important;
@@ -80,8 +83,8 @@ section[data-testid="stSidebar"] {
 .st-key-fb_side_text [data-testid="stPageLink-NavLink"] span { color:#8d39f4; }
 .st-key-fb_side_publish [data-testid="stPageLink-NavLink"] span { color:#f62c92; }
 .fb-brand-frame,.fb-promo-frame { position:relative; overflow:hidden; }
-.fb-brand-frame { width:180px; max-width:100%; aspect-ratio:173 / 49; margin:0 auto .9rem; }
-.fb-brand-frame img { position:absolute; width:739.885%; max-width:none; left:-9.827%; top:-20.408%; }
+.fb-brand-frame { width:180px; max-width:100%; aspect-ratio:173 / 58; margin:0 auto .6rem; }
+.fb-brand-frame img { position:absolute; width:739.885%; max-width:none; left:-9.827%; top:-17.241%; }
 .fb-promo-frame { width:100%; aspect-ratio:196 / 128; border-radius:12px; margin-top:1.4rem; }
 .fb-promo-frame img { position:absolute; width:653.061%; max-width:none; left:-6.633%; top:-449.219%; }
 .fb-brand-frame.fb-brand-inline { width:170px; margin:0; }
@@ -92,6 +95,8 @@ section[data-testid="stSidebar"] {
 .fb-banner-desktop { aspect-ratio:1032 / 175; }
 .fb-banner-desktop > img { position:absolute; width:124.031%; height:auto; max-width:none;
   left:-22.674%; top:-33.143%; object-fit:initial; }
+.fb-banner-desktop-full { aspect-ratio:1280 / 575; }
+.fb-banner-desktop-full > img { position:static; width:100%; height:100%; object-fit:contain; }
 .fb-banner-mobile { display:none; }
 .fb-greeting { position:absolute; left:37%; top:12.65%; width:22%; height:11.25%; display:flex;
   align-items:center; background:linear-gradient(110deg,#c4e9ff,#d9ecfd 80%,#e9f0fc); border-radius:3px;
@@ -257,7 +262,13 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 .st-key-fb_jarvis [data-testid="stFormSubmitButton"] button { background:linear-gradient(105deg,#fb88b5,#bb55ed 60%,#8b68ff) !important; color:white !important; border:0 !important; border-radius:10px; }
 .st-key-fb_jarvis [data-testid="stTextInput"] input { font-size:.75rem; }
 .st-key-fb_recent [data-testid="stButton"] button { font-size:.78rem; }
-.st-key-fb_mobile_jarvis { display:none; }
+[class*="st-key-fb_live_jarvis_"] { padding:16px !important; border-radius:20px;
+  background:linear-gradient(125deg,#fff5d8,#e6f3fc 50%,#fdeafd); border:1px solid #ece3f0;
+  overflow:hidden; margin-top:-.25rem; }
+.fb-live-jarvis-bubble,.fb-jarvis-bubble { width:max-content; max-width:90%; margin:0 auto 8px;
+  padding:10px 18px; border-radius:22px; background:#ffffffdf; color:#8d42df; text-align:center;
+  font-size:1.03rem; font-weight:750; line-height:1.45; }
+@media (min-width:769px) { .st-key-fb_live_jarvis_closed { display:none; } }
 @media (min-width: 1100px) {
   .st-key-fb_dashboard_actions [data-testid="stHorizontalBlock"] { gap:12px; }
   [class*="st-key-fb_action_"] { min-height:74px; }
@@ -277,19 +288,12 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
   [data-testid="stMainBlockContainer"],.block-container { padding:2.8rem .8rem 2rem; }
   section[data-testid="stSidebar"] { width:240px !important; min-width:240px !important; }
   .fb-banner-frame { border-radius:14px; }
-  .fb-banner-desktop { display:none; }
+  .fb-banner-desktop,.fb-banner-desktop-full { display:none; }
   .fb-banner-mobile { display:block; }
   .fb-action { min-height:87px; }
   .fb-action-copy h3 { font-size:.99rem; }
   .fb-action-copy p { font-size:.82rem; }
-  .st-key-fb_mobile_jarvis { display:block; position:relative; border-radius:0 0 20px 20px;
-    background:linear-gradient(125deg,#fff5d8,#e6f3fc 50%,#fdeafd); border:1px solid #ece3f0; overflow:hidden;
-    margin-top:-.8rem; margin-bottom:.4rem; padding-bottom:13px !important; }
-  .fb-mobile-jarvis-art { position:relative; overflow:hidden; aspect-ratio:682 / 582; }
-  .fb-mobile-jarvis-art img { position:absolute; width:105.572%; max-width:none; left:-2.933%; top:-87.629%; }
-  .st-key-fb_mobile_jarvis [data-testid="stButton"] { margin:0 auto; width:max-content; max-width:90%; }
-  .st-key-fb_mobile_jarvis [data-testid="stButton"] button { border-radius:999px !important; background:#35586b !important;
-    color:#fff !important; min-height:38px; padding:.4rem 1rem; }
+  [class*="st-key-fb_live_jarvis_"] { display:block; padding:15px 10px !important; margin-top:-.75rem; }
   .st-key-fb_topbar [data-testid="stHorizontalBlock"] { flex-wrap:nowrap; gap:.5rem; }
   .st-key-fb_topbar [data-testid="stColumn"] { min-width:0; }
   .st-key-fb_topbar [data-testid="stColumn"]:nth-child(2),
@@ -307,6 +311,13 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
   [class*="st-key-fb_action_"]:hover { transform:none; }
   .fb-banner-motion { display:none; }
 }
+.fb-action-copy h3,.fb-action-copy p,.fb-panel-heading h2,.fb-panel-heading p,.fb-project-title { padding:0!important; margin:0!important; }
+[data-testid="stSidebar"] [data-testid="stExpander"] details { border:0!important; border-radius:0!important; }
+[data-testid="stSidebarHeader"] { padding:.2rem .3rem 0!important; height:1.1rem!important; }
+.st-key-fb_banner_controls [data-testid="stVerticalBlock"] { align-items:flex-end; }
+[data-testid="stToolbar"] { display:none!important; }
+@media(min-width:769px) { [data-testid="stHeader"] { height:0!important; min-height:0!important; } }
+
 </style>
 """
 
@@ -325,7 +336,7 @@ def render_brand(sidebar: bool = True) -> None:
     )
 
 
-def render_banner(display_name: str = "Erica") -> None:
+def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True) -> None:
     """Reference dashboard artwork on desktop, complete garden on mobile."""
     name = str(display_name or "Erica").strip() or "Erica"
     # The supplied artwork includes Erica's greeting. Other profiles get a
@@ -351,14 +362,17 @@ def render_banner(display_name: str = "Erica") -> None:
             help="Ativa ou pausa o movimento do banner. Respeita a preferência de reduzir movimento do seu dispositivo.",
         )
     motion = _banner_motion() if enabled else ""
+    desktop_class = "fb-banner-desktop" if compact_desktop else "fb-banner-desktop-full"
+    desktop_asset = "faithbloom-dashboard-reference.jpg" if compact_desktop else "faithbloom-welcome.jpg"
+    desktop_greeting = personal_desktop if compact_desktop else personal
     st.markdown(
         '<section class="fb-banner" aria-label="Boas-vindas">'
         f'<h1 class="fb-sr-only">Oi, {escape(name)}! O que você quer fazer hoje?</h1>'
         '<p class="fb-sr-only">O Jarvis entende seu objetivo, monta a equipe certa de especialistas '
         'e guia todo o processo, do começo ao fim. Você sonha. Nós orquestramos. Deus floresce. '
         'Oi! Eu sou o Jarvis! Vamos criar juntos?</p>'
-        '<div class="fb-banner-frame fb-banner-desktop" aria-hidden="true">'
-        f'<img src="{_asset("faithbloom-dashboard-reference.jpg")}" alt="">{personal_desktop}{motion}</div>'
+        f'<div class="fb-banner-frame {desktop_class}" aria-hidden="true">'
+        f'<img src="{_asset(desktop_asset)}" alt="">{desktop_greeting}{motion}</div>'
         '<div class="fb-banner-frame fb-banner-mobile" aria-hidden="true">'
         f'<img src="{_asset("faithbloom-welcome.jpg")}" alt="">{personal}{motion}</div>'
         '</section>',
@@ -433,43 +447,72 @@ def render_action_card(title: str, description: str, route: str, color: str, ico
         st.page_link(route, label=f"{title} — {description}", use_container_width=True)
 
 
-def render_jarvis_mobile() -> bool:
-    """Return True when the mobile conversation entry button is pressed."""
-    with st.container(key="fb_mobile_jarvis"):
-        st.markdown(
-            '<div class="fb-mobile-jarvis-art" role="img" aria-label="Jarvis, o assistente do FaithBloom: vamos criar juntos!">'
-            f'<img src="{_asset("faithbloom-mobile-reference.jpg")}" alt=""></div>',
-            unsafe_allow_html=True,
-        )
-        return st.button("💗 Conversar com o Jarvis", key="fb_mobile_jarvis_start")
-
-
-# IDs follow the existing pages folder, including legacy filenames. New pages
-# are discovered and stay reachable under Ferramentas avançadas automatically.
+# Exact paths preserve leading zeros and duplicate numeric prefixes: pages
+# 00/0, 01/1, 02/2 and both 45s are distinct registered Streamlit pages.
 PAGE_LABELS = {
-    1: "Criar um livro", 2: "Continuar / Atualizar", 3: "Livros de colorir",
-    4: "Ir direto para uma etapa", 5: "Analisar um livro", 6: "Galeria de personagens",
-    7: "Lançamento", 8: "Galeria e armazenamento", 9: "Testes End-to-End",
-    10: "Piloto visual", 11: "Custos e segurança", 12: "Fila de produção",
-    13: "QA final e release", 14: "Personagens", 15: "Biblioteca editorial",
-    16: "Texto e revisão", 17: "Emoção e cores", 18: "Style DNA Lab",
-    19: "Restaurar ilustrações", 20: "Revisar livro de colorir", 21: "Traduzir e localizar",
-    22: "Formatos de publicação", 23: "Livros de atividades", 24: "Audiobooks",
-    25: "Revisão de qualidade", 26: "Publicar", 27: "Central de projetos",
-    28: "Estabilidade da versão", 29: "Produção em nuvem", 30: "Validação para lançamento",
-    31: "Imagens & ilustrações", 32: "Autores e colaboradores", 33: "Integração e UX",
-    34: "Perfis e dashboard", 35: "Piloto real e correções", 36: "Revisão pré-lançamento",
-    37: "Skills e análise editorial", 38: "Meus projetos",
+    "pages/00_🤖_Jarvis.py": "Início",
+    "pages/01_🎙️_Jarvis_Voz.py": "Jarvis por voz",
+    "pages/02_🏠_Dashboard_do_Estudio.py": "Dashboard do estúdio",
+    "pages/0_🤖_Orquestrador_FaithBloom.py": "Orquestrador FaithBloom",
+    "pages/39_✍️_Historia_4_Estilos.py": "Criar um livro",
+    "pages/16_🩺_Book_Doctor.py": "Continuar / Atualizar",
+    "pages/14_👥_Character_Universe.py": "Personagens",
+    "pages/31_🖼️_Asset_Library_Media_Manager.py": "Imagens & ilustrações",
+    "pages/5_🔍_Analisar_Livro.py": "Texto & revisão",
+    "pages/26_🌐_Publishing_Distribution_Center.py": "Publicar",
+    "pages/27_🚀_Project_Hub.py": "Central de projetos",
+    "pages/15_📚_Biblioteca_Editorial.py": "Biblioteca editorial",
+    "pages/3_🖍️_Livros_de_Colorir.py": "Livros de colorir",
+    "pages/23_🧩_Activity_Book_Studio.py": "Livros de atividades",
+    "pages/24_🎧_Audiobook_Studio.py": "Audiobooks",
+    "pages/21_Translation_Localization_Studio.py": "Traduzir / localizar",
+    "pages/25_🛡️_Quality_Guardian.py": "Revisão de qualidade",
+    "pages/13_✅_QA_Final_e_Release.py": "QA final e release",
+    "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py": "Engenharia & Skills",
+    "pages/38_🪄_Prompt_Mestre_Studio.py": "Prompt Mestre Studio",
+    "pages/52_✨_Autopilot_Editorial_Remaster.py": "Autopilot Editorial Remaster",
+    "pages/17_🎭_Emotional_Color_Director.py": "Emoção e cores",
+    "pages/18_🎨_Style_DNA_Lab.py": "Style DNA Lab",
+    "pages/19_✨_Restoration_Studio.py": "Restaurar ilustrações",
+    "pages/20_🖍️_Coloring_Book_Doctor.py": "Revisar livro de colorir",
+    "pages/11_🛡️_Custos_e_Seguranca.py": "Custos & segurança",
+    "pages/12_🏭_Fila_de_Producao.py": "Fila de produção",
+    "pages/33_🧭_Integration_UX_Center.py": "Integração e UX",
+    "pages/34_🏠_Perfis_e_Dashboard.py": "Perfis e dashboard",
+    "pages/32_✍️_Autores_e_Colaboradores.py": "Autores e colaboradores",
+    "pages/53_📁_Meus_Projetos.py": "Meus projetos",
 }
 
 
-def _routes() -> dict[int, str]:
-    routes = {}
-    for path in (ROOT / "pages").glob("*.py"):
-        match = re.match(r"(\d+)_", path.name)
-        if match:
-            routes[int(match.group(1))] = f"pages/{path.name}"
-    return routes
+def _route_label(path: str) -> str:
+    name = re.sub(r"^\d+_", "", Path(path).stem).replace("_", " ")
+    return PAGE_LABELS.get(path, re.sub(r"^[^\w]+", "", name).strip())
+
+
+def _routes() -> dict[str, str]:
+    """Inventory native top-level pages without numeric ID collisions."""
+    files = sorted((ROOT / "pages").glob("*.py"), key=lambda path: path.name)
+    return {f"pages/{path.name}": _route_label(f"pages/{path.name}") for path in files}
+
+
+def _sidebar_page_link(path: str, *, label: str, icon: str) -> None:
+    """Add the reference's selected-page treatment without replacing links."""
+    selected = False
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+        context = get_script_run_ctx(suppress_warning=True)
+        if context is not None:
+            page = context.pages_manager.get_pages().get(context.page_script_hash, {})
+            selected = Path(page.get("script_path", "")).resolve() == (ROOT / path).resolve()
+    except (AttributeError, TypeError, ValueError):
+        # Native Streamlit page links still convey the active page when a
+        # runtime does not expose its registry to presentation helpers.
+        pass
+    key = "fb_side_nav_" + re.sub(r"[^a-zA-Z0-9_]", "_", path)
+    if selected:
+        key += "_current"
+    with st.container(key=key):
+        st.page_link(path, label=label, icon=icon, use_container_width=True)
 
 
 def render_sidebar() -> None:
@@ -477,37 +520,53 @@ def render_sidebar() -> None:
     routes = _routes()
     with st.sidebar:
         render_brand()
+        home_page = "pages/00_🤖_Jarvis.py"
         with st.container(key="fb_side_home"):
-            st.page_link("app.py", label="Início", icon=":material/home:", use_container_width=True)
-        projects_page = 38 if 38 in routes else 34
+            _sidebar_page_link(home_page, label="Início", icon=":material/home:")
+        projects_page = "pages/53_📁_Meus_Projetos.py"
+        if projects_page not in routes:
+            projects_page = "pages/02_🏠_Dashboard_do_Estudio.py"
         if projects_page in routes:
-            st.page_link(routes[projects_page], label="Meus projetos", icon=":material/folder_open:", use_container_width=True)
-        used = {projects_page}
+            _sidebar_page_link(projects_page, label="Meus projetos", icon=":material/folder_open:")
+        used = {home_page, projects_page}
         with st.expander("CRIAR & TRANSFORMAR", expanded=True):
             quick = [
-                (1, "create", ":material/menu_book:"), (2, "continue", ":material/sync:"),
-                (14, "characters", ":material/group:"), (31, "images", ":material/image:"),
-                (16, "text", ":material/description:"), (26, "publish", ":material/rocket_launch:"),
+                ("pages/39_✍️_Historia_4_Estilos.py", "create", ":material/menu_book:"),
+                ("pages/16_🩺_Book_Doctor.py", "continue", ":material/sync:"),
+                ("pages/14_👥_Character_Universe.py", "characters", ":material/group:"),
+                ("pages/31_🖼️_Asset_Library_Media_Manager.py", "images", ":material/image:"),
+                ("pages/5_🔍_Analisar_Livro.py", "text", ":material/description:"),
+                ("pages/26_🌐_Publishing_Distribution_Center.py", "publish", ":material/rocket_launch:"),
             ]
-            for number, name, icon in quick:
-                if number in routes:
+            for path, name, icon in quick:
+                if path in routes:
                     with st.container(key=f"fb_side_{name}"):
-                        st.page_link(routes[number], label=PAGE_LABELS[number], icon=icon, use_container_width=True)
-                    used.add(number)
+                        _sidebar_page_link(path, label=routes[path], icon=icon)
+                    used.add(path)
         groups = [
-            ("UNIVERSO & BIBLIOTECA", [6, 8, 15, 17, 18, 23, 24, 27, 32, 34], ":material/auto_stories:"),
-            ("QUALIDADE & PUBLICAÇÃO", [3, 5, 7, 13, 19, 20, 21, 22, 25, 37], ":material/verified_user:"),
+            ("UNIVERSO & BIBLIOTECA", [
+                "pages/27_🚀_Project_Hub.py", "pages/15_📚_Biblioteca_Editorial.py",
+                "pages/3_🖍️_Livros_de_Colorir.py", "pages/23_🧩_Activity_Book_Studio.py",
+                "pages/24_🎧_Audiobook_Studio.py", "pages/21_Translation_Localization_Studio.py",
+                "pages/02_🏠_Dashboard_do_Estudio.py", "pages/34_🏠_Perfis_e_Dashboard.py",
+                "pages/32_✍️_Autores_e_Colaboradores.py", "pages/6_👤_Personagens.py",
+                "pages/8_🖼️_Galeria_e_Armazenamento.py",
+            ], ":material/auto_stories:"),
+            ("QUALIDADE & PUBLICAÇÃO", [
+                "pages/25_🛡️_Quality_Guardian.py", "pages/13_✅_QA_Final_e_Release.py",
+                "pages/22_📐_Publishing_Platform_Engine.py", "pages/7_🚀_Lançamento.py",
+                "pages/19_✨_Restoration_Studio.py", "pages/20_🖍️_Coloring_Book_Doctor.py",
+            ], ":material/verified_user:"),
         ]
-        for label, numbers, icon in groups:
+        for label, paths, icon in groups:
             with st.expander(label, expanded=False):
-                for number in numbers:
-                    if number in routes:
-                        st.page_link(routes[number], label=PAGE_LABELS[number], icon=icon, use_container_width=True)
-                        used.add(number)
+                for path in paths:
+                    if path in routes and path not in used:
+                        _sidebar_page_link(path, label=routes[path], icon=icon)
+                        used.add(path)
         with st.expander("FERRAMENTAS AVANÇADAS", expanded=False):
-            for number in sorted(set(routes) - used):
-                st.page_link(routes[number], label=PAGE_LABELS.get(number, Path(routes[number]).stem.replace("_", " ")),
-                             icon=":material/settings:", use_container_width=True)
+            for path in sorted(set(routes) - used):
+                _sidebar_page_link(path, label=routes[path], icon=":material/settings:")
         st.markdown(
             '<div class="fb-promo-frame" role="img" aria-label="Mais histórias para um futuro ainda mais brilhante">'
             f'<img src="{_asset("faithbloom-dashboard-reference.jpg")}" alt=""></div>',

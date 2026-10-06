@@ -3,7 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 import unittest
 
-from painel_dados import ACTIONS, NAV_GROUPS, filter_actions, filter_projects, production_stages, suggest_actions
+from painel_dados import ACTIONS, NAV_GROUPS, filter_actions, filter_projects, production_stages, suggest_actions, project_status, jarvis_project_progress, project_session_updates
 
 
 class DashboardDataTests(unittest.TestCase):
@@ -112,6 +112,48 @@ class DashboardDataTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         for action in ACTIONS + [item for group in NAV_GROUPS for item in group["items"]]:
             self.assertTrue((root / action["route"]).is_file(), action["route"])
+
+    def test_project_badge_and_jarvis_separate_ready_from_published(self):
+        card = {"kind": "story", "titulo": "Jardim"}
+        self.assertEqual(project_status(card, {"titulo": "Jardim"}), ("Rascunho", "draft"))
+        state = {"titulo": "Jardim", "pacote_pronto": True, "publicado": "false"}
+        self.assertEqual(project_status(card, state), ("Pacote pronto", "progress"))
+        progress = jarvis_project_progress(state)
+        self.assertTrue(progress["package_ready"])
+        self.assertFalse(progress["published"])
+        self.assertEqual(progress["next_step"], "publish_or_distribute")
+        state["publicado"] = True
+        self.assertEqual(project_status(card, state), ("Publicado", "published"))
+        self.assertTrue(jarvis_project_progress(state)["published"])
+
+    def test_open_story_keeps_shared_state_without_mutating_original(self):
+        card = {"kind": "story", "storage_path": "fb://livros/jardim.json"}
+        state = {"titulo": "Jardim", "cenas_texto": [{"numero": 1, "texto": "Mel sorriu."}],
+                 "personagens": {"Mel": {"imagem_referencia": "mel.png", "aparencia_aprovada": True}}}
+        before = deepcopy(state)
+        updates = project_session_updates(card, state)
+        self.assertEqual(updates["etapa_r"], "cenas")
+        self.assertEqual(updates["caminho_salvo_r"], "livros/jardim.json")
+        self.assertIs(updates["state"], updates["state_r"])
+        updates["state_r"]["personagens"]["Mel"]["aparencia_aprovada"] = False
+        self.assertEqual(state, before)
+        self.assertFalse(updates["state"]["personagens"]["Mel"]["aparencia_aprovada"])
+
+    def test_open_coloring_uses_canonical_keys_and_rejects_unknown_kind(self):
+        card = {"kind": "coloring", "storage_path": "fb://livros_colorir/jardim.json"}
+        state = {"titulo": "Flores", "paginas": [{"nome": "Rosa", "personagem_nome": "Mel"}]}
+        updates = project_session_updates(card, state)
+        self.assertIs(updates["state"], updates["state_c"])
+        self.assertEqual(updates["etapa_c"], "paginas")
+        self.assertEqual(updates["caminho_salvo_c"], "livros_colorir/jardim.json")
+        self.assertNotIn("state_r", updates)
+        progress = jarvis_project_progress(updates["state"], "coloring")
+        self.assertEqual(progress["title"], "Flores")
+        self.assertEqual(progress["next_step"], "coloring_pages")
+        with self.assertRaises(ValueError):
+            project_session_updates({"kind": "unknown"}, state)
+        with self.assertRaises(ValueError):
+            project_session_updates(card, {})
 
 
 if __name__ == "__main__":

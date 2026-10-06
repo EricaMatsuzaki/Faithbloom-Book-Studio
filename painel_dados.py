@@ -12,18 +12,18 @@ import unicodedata
 
 
 ACTIONS = [
-    {"key": "create", "title": "Criar um livro", "description": "Do zero, com a equipe certa para a sua história.", "route": "pages/1_#L01f4d6_Criar_do_Zero.py", "color": "pink", "icon": "book"},
-    {"key": "continue", "title": "Continuar / Atualizar", "description": "Melhorar um livro existente ou retomar de onde parou.", "route": "pages/2_#L01f4da_Retomar_Livro.py", "color": "blue", "icon": "refresh"},
+    {"key": "create", "title": "Criar um livro", "description": "Do zero, com a equipe certa para a sua história.", "route": "pages/39_✍️_Historia_4_Estilos.py", "color": "pink", "icon": "book"},
+    {"key": "continue", "title": "Continuar / Atualizar", "description": "Melhorar um livro existente ou retomar de onde parou.", "route": "pages/16_🩺_Book_Doctor.py", "color": "blue", "icon": "refresh"},
     {"key": "characters", "title": "Personagens", "description": "Criar, editar e gerenciar os personagens da sua história.", "route": "pages/14_👥_Character_Universe.py", "color": "mint", "icon": "people"},
     {"key": "images", "title": "Imagens & ilustrações", "description": "Organizar imagens, referências e versões das suas ilustrações.", "route": "pages/31_🖼️_Asset_Library_Media_Manager.py", "color": "yellow", "icon": "image"},
-    {"key": "text", "title": "Texto & revisão", "description": "Revisar o texto e melhorar um livro existente.", "route": "pages/16_🩺_Book_Doctor.py", "color": "lilac", "icon": "text"},
+    {"key": "text", "title": "Texto & revisão", "description": "Escrever, revisar e ajustar com apoio da IA.", "route": "pages/5_🔍_Analisar_Livro.py", "color": "lilac", "icon": "text"},
     {"key": "publish", "title": "Publicar", "description": "Preparar formatos, pacotes e distribuição para suas plataformas.", "route": "pages/26_🌐_Publishing_Distribution_Center.py", "color": "pink", "icon": "rocket"},
 ]
 
 NAV_GROUPS = [
     {"label": "CRIAR & TRANSFORMAR", "items": deepcopy(ACTIONS)},
     {"label": "UNIVERSO & BIBLIOTECA", "items": [
-        {"title": "Meus projetos", "route": "pages/27_🚀_Project_Hub.py", "icon": "📁"},
+        {"title": "Meus projetos", "route": "pages/53_📁_Meus_Projetos.py", "icon": "📁"},
         {"title": "Biblioteca editorial", "route": "pages/15_📚_Biblioteca_Editorial.py", "icon": "📚"},
         {"title": "Universo de personagens", "route": "pages/14_👥_Character_Universe.py", "icon": "👥"},
         {"title": "Galeria de imagens", "route": "pages/31_🖼️_Asset_Library_Media_Manager.py", "icon": "🖼️"},
@@ -34,7 +34,7 @@ NAV_GROUPS = [
         {"title": "Preparar publicação", "route": "pages/26_🌐_Publishing_Distribution_Center.py", "icon": "🚀"},
     ]},
     {"label": "FERRAMENTAS AVANÇADAS", "items": [
-        {"title": "Livros de colorir", "route": "pages/3_#L01f58d#Ufe0f_Livros_de_Colorir.py", "icon": "🖍️"},
+        {"title": "Livros de colorir", "route": "pages/3_🖍️_Livros_de_Colorir.py", "icon": "🖍️"},
         {"title": "Atividades", "route": "pages/23_🧩_Activity_Book_Studio.py", "icon": "🧩"},
         {"title": "Tradução", "route": "pages/21_Translation_Localization_Studio.py", "icon": "🌍"},
         {"title": "Audiobook", "route": "pages/24_🎧_Audiobook_Studio.py", "icon": "🎧"},
@@ -134,6 +134,9 @@ def _stage(label: str, complete: bool, started: bool, detail: str) -> dict:
 
 
 def _publication(state: dict) -> dict:
+    raw_status = normalize_text(state.get("status_publicacao") or state.get("status"))
+    if state.get("publicado") is True or raw_status in {"published", "publicado"}:
+        return _stage("Publicação", True, True, "Publicação registrada explicitamente no projeto.")
     summary = state.get("distribution_summary") or {}
     if not isinstance(summary, Mapping):
         summary = {}
@@ -197,3 +200,71 @@ def production_stages(state: dict | None, kind: str = "story") -> list[dict]:
         layout_stage,
         _publication(state),
     ]
+
+
+def project_status(item: dict, state: dict | None = None) -> tuple[str, str]:
+    """Badge do projeto; preparação e aprovação não significam publicação."""
+    state = state or {}
+    if _publication(state)["status"] == "concluido":
+        return "Publicado", "published"
+    if state.get("pacote_pronto") is True or item.get("pacote_pronto") is True:
+        return "Pacote pronto", "progress"
+    raw_status = normalize_text(state.get("status"))
+    started = any(state.get(field) for field in ("cenas_texto", "personagens", "paginas", "cenas_imagem", "texto_final", "layout_paginas", "revisao_aprovada"))
+    if started or raw_status in {"in progress", "in_progress", "em andamento", "remastering"}:
+        return "Em andamento", "progress"
+    return "Rascunho", "draft"
+
+
+def jarvis_project_progress(state: dict | None, kind: str = "story") -> dict:
+    """Mantém o contrato de progresso do Jarvis com evidências do livro ativo."""
+    state = state or {}
+    stages = production_stages(state, kind)
+    flags = [stage["status"] == "concluido" for stage in stages]
+    package_ready = state.get("pacote_pronto") is True
+    if flags[5]:
+        next_step, message = "follow_publication", "A publicação está registrada. Podemos acompanhar suas edições."
+    elif package_ready:
+        next_step, message = "publish_or_distribute", "O pacote está pronto para preparar a distribuição; a publicação na loja ainda precisa ser registrada."
+    elif flags[2]:
+        next_step, message = "layout_and_qa", "As imagens estão aprovadas. O próximo foco é QA, diagramação e preparação de saída."
+    elif flags[3]:
+        next_step, message = "visual_preflight", "A revisão está aprovada. Podemos conferir personagens, cenários e o pré-voo visual."
+    elif flags[0] and flags[1]:
+        next_step, message = "story_review", "Recebi a história e as referências aprovadas. O próximo checkpoint é a revisão editorial."
+    elif flags[0]:
+        next_step, message = "characters", "A história está salva. O próximo passo é confirmar as referências dos personagens."
+    else:
+        next_step, message = "story", "Ainda estamos na construção da história."
+    if kind in {"coloring", "colorir"} and not package_ready and not flags[5]:
+        if flags[2]:
+            next_step, message = "layout_and_qa", "As páginas de colorir estão aprovadas. Vamos conferir o layout e preparar a saída."
+        else:
+            next_step, message = "coloring_pages", "O próximo passo é preparar, revisar e aprovar as páginas de colorir."
+    return {
+        "title": state.get("titulo") or "Projeto atual", "collection": state.get("colecao") or state.get("tema_geral") or "",
+        "story_ready": flags[0], "characters_ready": flags[1], "visuals_ready": flags[2], "review_ready": flags[3],
+        "package_ready": package_ready, "published": flags[5], "next_step": next_step, "message": message,
+    }
+
+
+def project_session_updates(project: dict, state: dict) -> dict:
+    """Prepara somente mudanças de sessão; não gera conteúdo nem publica."""
+    if not state:
+        raise ValueError("Não foi possível carregar o projeto salvo.")
+    kind = project.get("kind")
+    path = str(project.get("storage_path") or project.get("arquivo") or "").removeprefix("fb://").strip("/")
+    loaded = deepcopy(state)
+    if kind == "coloring":
+        loaded.setdefault("paginas", [])
+        return {"state": loaded, "state_c": loaded, "etapa_c": "paginas" if loaded["paginas"] else "entrada", "caminho_salvo_c": path}
+    if kind != "story":
+        raise ValueError("Tipo de projeto desconhecido.")
+    for field in ("cenas_texto", "cenas_imagem", "cenas_imagem_aprovadas"):
+        loaded.setdefault(field, [])
+    for field in ("personagens", "historico_imagens_cenas", "imagens_cenas_enviadas"):
+        loaded.setdefault(field, {})
+    loaded.setdefault("dedicatoria_texto", "")
+    stage = "cenas" if production_stages(loaded)[1]["status"] == "concluido" and loaded["cenas_texto"] else "personagens"
+    # A mesma instância mantém o progresso do Jarvis sincronizado com Retomar.
+    return {"state": loaded, "state_r": loaded, "etapa_r": stage, "caminho_salvo_r": path}

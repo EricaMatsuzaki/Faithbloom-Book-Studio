@@ -24,7 +24,7 @@ section_title("1. Personagens aprovados","O piloto usa somente referências visu
 ok,pend=personagens_aprovados(s)
 if not ok:
     st.warning("Ainda faltam referências aprovadas: "+", ".join(pend)+". Aprove-as primeiro em Retomar Livro.")
-    st.page_link("pages/2_#L01f4da_Retomar_Livro.py",label="👥 Ir para aprovação dos personagens",use_container_width=True)
+    st.page_link("pages/2_📚_Retomar_Livro.py",label="👥 Ir para aprovação dos personagens",use_container_width=True)
 else:
     cols=st.columns(len(s.get("personagens",{})))
     for col,(nome,p) in zip(cols,s["personagens"].items()):
@@ -79,6 +79,6 @@ r=readiness_producao(s)
 st.markdown("---")
 if r["liberado_producao_completa"]:
     st.success("🟢 PRODUÇÃO COMPLETA LIBERADA — personagens + cena crítica + lote de 3 cenas foram aprovados.")
-    st.page_link("pages/2_#L01f4da_Retomar_Livro.py",label="🎨 Continuar produção cena por cena",use_container_width=True)
+    st.page_link("pages/2_📚_Retomar_Livro.py",label="🎨 Continuar produção cena por cena",use_container_width=True)
 else:
     st.info(f"Produção completa ainda protegida. Personagens: {'OK' if r['personagens_ok'] else 'pendente'} · Cena piloto: {'OK' if r['cena_piloto_ok'] else 'pendente'} · Lote: {'OK' if r['lote_piloto_ok'] else 'pendente'}")

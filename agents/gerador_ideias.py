@@ -6,32 +6,31 @@ uma ideia pronta. Diferente do Curador de Tema (que pega UM tema/resumo
 e o transforma em emoção+versículo+lição), este agente parte do zero e
 sugere VÁRIAS ideias de tema, pra autora escolher uma.
 
-Cada ideia sugerida já vem com: um conflito/situação simples do
-cotidiano infantil, a emoção provável envolvida, e uma pista de
-possível lição cristã - o suficiente pra autora decidir se quer seguir
-com aquela ideia (que então passa pelo Curador de Tema ou direto pro
-Roteirista).
+Cada ideia sugerida já vem com: um conflito/situação adequada à faixa
+etária, a emoção provável envolvida, e uma pista de possível lição cristã.
 """
 
-from state import LivroState
 from agent_skills import skill_contract
 from emotion_colors import EMOCOES
+from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
 
 PROMPT_IDEIAS = """\
-Você é o Gerador de Ideias de uma coleção de livros infantis cristãos para 3-8 anos.
+Você é o Gerador de Ideias de uma coleção de livros infantis cristãos.
 Coleção atual: {colecao}. Crédito/autoria atual: {author_credit}.
+
+{instrucao_idade}
+
 Não presuma personagens fixos de outra coleção; proponha situações que possam
 ser adaptadas aos personagens oficiais do projeto.
 
-Gere {quantidade} ideias de tema NOVAS e diferentes entre si. Cada
-ideia deve ter:
-- Uma situação simples do cotidiano de uma criança pequena (brincar,
-  esperar, dividir, ter medo do escuro, mudar de casa, fazer um novo
-  amigo, perder algo, etc.)
-- A emoção central envolvida, escolhida entre: {emocoes_validas}
-- Uma pista da possível lição cristã (sem repetir literalmente lições
-  já usadas, se a lista de temas já usados for informada)
-- Um título curto e poético no estilo "Quando [personagem] aprendeu a/o [lição]"
+Gere {quantidade} ideias de tema NOVAS e diferentes entre si. Cada ideia deve ter:
+- Uma situação adequada à idade escolhida e reconhecível pelo público;
+- Um pequeno desejo, problema ou conflito compatível com a maturidade da faixa;
+- A emoção central envolvida, escolhida entre: {emocoes_validas};
+- Uma pista da possível lição cristã, adequada à faixa etária e sem doutrina complexa;
+- Um título curto e memorável. Para faixas menores, títulos no estilo
+  "Quando [personagem] aprendeu..." são bem-vindos; para leitores maiores,
+  não force esse molde se um título mais natural funcionar melhor.
 
 Temas já usados nesta coleção (não repetir a mesma lição/situação):
 {temas_usados}
@@ -41,13 +40,28 @@ emocao_central, pista_licao.
 """
 
 
-def gerador_ideias_node(quantidade: int, temas_usados: list[str], chamar_llm, colecao: str = "", author_credit: str = "") -> list[dict]:
+def gerador_ideias_node(
+    quantidade: int,
+    temas_usados: list[str],
+    chamar_llm,
+    colecao: str = "",
+    author_credit: str = "",
+    faixa_etaria: str = "3-8",
+) -> list[dict]:
+    faixa = normalizar_faixa_etaria(faixa_etaria)
+    perfil = perfil_etario(faixa)
     prompt = PROMPT_IDEIAS.format(
         quantidade=quantidade,
         emocoes_validas=", ".join(EMOCOES.keys()),
         temas_usados=", ".join(temas_usados) if temas_usados else "(nenhum ainda)",
         colecao=colecao or "coleção atual",
         author_credit=author_credit or "não definido",
+        instrucao_idade=instrucao_faixa_etaria(faixa),
+    )
+    prompt += (
+        f"\nLimites editoriais de legibilidade para esta faixa: até aproximadamente "
+        f"{perfil['max_words_sentence']} palavras por frase e {perfil['max_words_scene']} "
+        "palavras por cena como teto heurístico de revisão, não como meta de enchimento."
     )
     prompt += skill_contract("idea_generator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as ideias em JSON.")

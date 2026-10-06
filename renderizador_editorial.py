@@ -4,12 +4,14 @@ Gera o MIOLO print-ready em PDF a partir do ``LivroState`` já aprovado.
 A capa física continua sendo um arquivo separado, como exige o fluxo KDP.
 
 Princípios:
-- páginas individuais, nunca spreads;
+- páginas individuais, nunca spreads artificiais;
 - trim size e bleed calculados em polegadas -> pontos PDF;
 - ilustrações full-bleed ocupam a página inteira do arquivo;
 - texto permanece dentro de safe area + gutter;
 - páginas de line art ficam dentro de margem segura para não cortar traços;
 - original das imagens nunca é alterado;
+- Boas-vindas, Pais/Educadores e Ficha Pedagógica podem virar páginas físicas;
+- tipografia narrativa respeita a faixa etária oficial do livro;
 - PDF só é exportado quando o preflight automático de assets não tem bloqueios,
   salvo se ``forcar=True`` for escolhido conscientemente para prova interna.
 
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
-from reportlab.lib.colors import HexColor, black
+from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
@@ -33,6 +35,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph
 
+from author_profiles import author_display_from_state
+from age_profiles import perfil_etario
 from qualidade_impressao import (
     BLEED_IN,
     gutter_minimo_in,
@@ -43,8 +47,6 @@ from qualidade_impressao import (
 PT = 72.0
 PASTA_EXPORTACOES = "exportacoes_kdp"
 
-# Fontes não são copiadas/distribuídas pelo projeto. Usamos uma fonte do SO quando
-# disponível e um CIDFont do ReportLab para japonês como fallback.
 _FONT_NORMAL = "Helvetica"
 _FONT_BOLD = "Helvetica-Bold"
 _FONTS_REGISTRADAS = False
@@ -68,7 +70,6 @@ def _registrar_fontes() -> None:
                 break
             except Exception:
                 pass
-    # Fallback CJK para japonês. É registrado só quando necessário.
     try:
         pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
     except Exception:
@@ -86,8 +87,6 @@ def _tem_cjk(texto: str) -> bool:
 def _fontes_para_texto(texto: str) -> tuple[str, str]:
     _registrar_fontes()
     if _tem_cjk(texto):
-        # ReportLab CIDFont renderiza japonês; a auditoria de embedding posterior
-        # informa se esse fallback é adequado para o arquivo final KDP.
         return "HeiseiKakuGo-W5", "HeiseiKakuGo-W5"
     return _FONT_NORMAL, _FONT_BOLD
 
@@ -115,7 +114,6 @@ def _mapear_por_numero(itens: list[dict] | None) -> dict[int, dict]:
 
 
 def _draw_image_cover(c: canvas.Canvas, caminho: str, x: float, y: float, w: float, h: float) -> bool:
-    """Desenha imagem cobrindo o retângulo sem distorcer, com crop central."""
     if not caminho or not os.path.exists(caminho):
         return False
     try:
@@ -138,7 +136,6 @@ def _draw_image_cover(c: canvas.Canvas, caminho: str, x: float, y: float, w: flo
 
 
 def _draw_image_contain(c: canvas.Canvas, caminho: str, x: float, y: float, w: float, h: float) -> bool:
-    """Desenha imagem inteira dentro do retângulo, sem crop nem distorção."""
     if not caminho or not os.path.exists(caminho):
         return False
     try:
@@ -165,10 +162,8 @@ def _placeholder(c: canvas.Canvas, texto: str, page_w: float, page_h: float) -> 
 
 
 def _safe_box(page_w: float, page_h: float, bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> tuple[float, float, float, float]:
-    """Safe box com gutter maior no lado interno da encadernação."""
     margem_ext = margem_externa_minima_in(bleed) * PT
     gutter = gutter_minimo_in(total) * PT
-    # Páginas ímpares = direita (gutter à esquerda), pares = esquerda (gutter à direita).
     left = bleed_pt + (gutter if pagina_num % 2 == 1 else margem_ext)
     right = bleed_pt + (margem_ext if pagina_num % 2 == 1 else gutter)
     top = bleed_pt + margem_ext
@@ -195,8 +190,16 @@ def _paragraph(c: canvas.Canvas, texto: str, x: float, y: float, w: float, h: fl
     )
     seguro = html.escape(texto or "").replace("\n", "<br/>")
     p = Paragraph(seguro, estilo)
-    pw, ph = p.wrap(w, h)
+    _, ph = p.wrap(w, h)
     p.drawOn(c, x, y + h - ph)
+
+
+def _lista_texto(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return "\n".join(f"• {str(x).strip()}" for x in value if str(x).strip())
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _desenhar_rosto(c: canvas.Canvas, state: dict, page_w: float, page_h: float, bleed_pt: float) -> None:
@@ -210,7 +213,8 @@ def _desenhar_rosto(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
     _paragraph(c, autora, x, page_h * 0.26, w, 0.6 * PT, 13, align=TA_CENTER, cor="#65736E")
 
 
-def _desenhar_creditos_dedicatoria(c: canvas.Canvas, state: dict, page_w: float, page_h: float, bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
+def _desenhar_creditos_dedicatoria(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
+                                    bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
     x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
     ded = state.get("dedicatoria_texto", "")
     texto = ded if ded else (
@@ -221,13 +225,37 @@ def _desenhar_creditos_dedicatoria(c: canvas.Canvas, state: dict, page_w: float,
     _paragraph(c, texto, x, y, w, h, 12.5, 19, TA_LEFT, cor="#37433F")
 
 
-def _desenhar_texto_cena(c: canvas.Canvas, cena: dict, page_w: float, page_h: float, bleed_pt: float,
-                         pagina_num: int, total: int, bleed: bool) -> None:
+def _desenhar_boas_vindas(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
+                           bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
     x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
-    # Área de texto um pouco mais estreita para leitura infantil confortável.
+    texto = str(state.get("boas_vindas") or "Bem-vindos a uma nova história FaithBloom, feita para crescer em fé, amor e aprendizado.")
+    faixa = perfil_etario(state.get("faixa_etaria"))["short_label"]
+    referencia = str(state.get("versiculo_referencia") or "").strip()
+    _paragraph(c, "Bem-vindos!", x, y + h * 0.69, w, h * 0.14, 23, 30, TA_CENTER, bold=True, cor="#365C50")
+    _paragraph(c, texto, x + w * 0.06, y + h * 0.28, w * 0.88, h * 0.36, 14.5, 22, TA_CENTER, cor="#33433D")
+    rodape = f"Faixa etária: {faixa}" + (f"  •  Referência bíblica: {referencia}" if referencia else "")
+    _paragraph(c, rodape, x, y + h * 0.12, w, h * 0.08, 9.5, 13, TA_CENTER, cor="#788680")
+
+
+def _desenhar_texto_cena(c: canvas.Canvas, state: dict, cena: dict, page_w: float, page_h: float,
+                         bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
+    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
     inset = min(0.25 * PT, w * 0.04)
-    _paragraph(c, cena.get("texto", ""), x + inset, y + h * 0.18, w - 2 * inset, h * 0.64,
-               font_size=18, leading=28, align=TA_LEFT, cor="#26332E")
+    perfil = perfil_etario(state.get("faixa_etaria"))
+    font_size = float(perfil.get("pdf_font_size") or 18.0)
+    leading = float(perfil.get("pdf_leading") or font_size * 1.5)
+    _paragraph(
+        c,
+        cena.get("texto", ""),
+        x + inset,
+        y + h * 0.16,
+        w - 2 * inset,
+        h * 0.68,
+        font_size=font_size,
+        leading=leading,
+        align=TA_LEFT,
+        cor="#26332E",
+    )
 
 
 def _desenhar_final(c: canvas.Canvas, state: dict, tipo: str, page_w: float, page_h: float,
@@ -247,6 +275,54 @@ def _desenhar_final(c: canvas.Canvas, state: dict, tipo: str, page_w: float, pag
     _paragraph(c, texto, x + w * 0.06, y + h * 0.18, w * 0.88, h * 0.42, 14.5, 22, TA_CENTER, cor="#33433D")
 
 
+def _desenhar_pais_educadores(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
+                              bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
+    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
+    dados = state.get("pais_educadores") if isinstance(state.get("pais_educadores"), dict) else {}
+    blocos = []
+    if dados.get("mensagem"):
+        blocos.append(str(dados["mensagem"]))
+    for rotulo, chave in (
+        ("Tema", "tema"),
+        ("Emoção trabalhada", "emocao_trabalhada"),
+        ("Princípio bíblico", "principio_biblico"),
+        ("Habilidade socioemocional", "habilidade_socioemocional"),
+    ):
+        if dados.get(chave):
+            blocos.append(f"{rotulo}: {dados[chave]}")
+    if dados.get("perguntas"):
+        blocos.append("Perguntas para conversar:\n" + _lista_texto(dados.get("perguntas")))
+    if dados.get("aplicacoes"):
+        blocos.append("Aplicações práticas:\n" + _lista_texto(dados.get("aplicacoes")))
+    texto = "\n\n".join(blocos) or "Conteúdo para pais e educadores ainda não preenchido."
+    _paragraph(c, "Para Pais e Educadores", x, y + h * 0.78, w, h * 0.12, 20, 26, TA_CENTER, bold=True, cor="#365C50")
+    _paragraph(c, texto, x + w * 0.03, y + h * 0.08, w * 0.94, h * 0.66, 11.2, 16.5, TA_LEFT, cor="#33433D")
+
+
+def _desenhar_ficha_pedagogica(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
+                                bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
+    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
+    dados = state.get("ficha_pedagogica") if isinstance(state.get("ficha_pedagogica"), dict) else {}
+    faixa = dados.get("faixa_etaria") or perfil_etario(state.get("faixa_etaria"))["short_label"]
+    blocos = [f"Faixa etária: {faixa}"]
+    for rotulo, chave in (
+        ("Tema central", "tema_central"),
+        ("Emoção principal", "emocao_principal"),
+        ("Habilidade socioemocional", "habilidade_socioemocional"),
+        ("Valor cristão", "valor_cristao"),
+        ("Referência bíblica", "versiculo_referencia"),
+        ("Objetivo pedagógico", "objetivo_pedagogico"),
+        ("Psicologia das cores", "psicologia_das_cores"),
+    ):
+        if dados.get(chave):
+            blocos.append(f"{rotulo}: {dados[chave]}")
+    if dados.get("perguntas_reflexao"):
+        blocos.append("Perguntas de reflexão:\n" + _lista_texto(dados.get("perguntas_reflexao")))
+    texto = "\n\n".join(blocos)
+    _paragraph(c, "Ficha Pedagógica", x, y + h * 0.78, w, h * 0.12, 20, 26, TA_CENTER, bold=True, cor="#365C50")
+    _paragraph(c, texto, x + w * 0.03, y + h * 0.08, w * 0.94, h * 0.66, 10.8, 16, TA_LEFT, cor="#33433D")
+
+
 def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = True,
                           forcar: bool = False) -> dict[str, Any]:
     """Gera o PDF físico do miolo e devolve metadados do arquivo."""
@@ -263,7 +339,6 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
         return {"ok": False, "motivo": "O livro ainda não possui layout_paginas. Rode o Diagramador primeiro.", "preflight": pf}
 
     total = max(int(p.get("pagina", 0)) for p in layout)
-    # O PDF físico precisa ter número par de páginas.
     if total % 2:
         total += 1
 
@@ -292,14 +367,13 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
             _desenhar_creditos_dedicatoria(c, state, page_w, page_h, bleed_pt, pagina_num, total, bleed)
         else:
             item = por_pagina.get(pagina_num)
-            if not item:
-                # Página final em branco adicionada para paridade.
-                pass
-            else:
+            if item:
                 tipo = item.get("tipo")
                 num = item.get("cena_numero")
-                if tipo == "texto":
-                    _desenhar_texto_cena(c, cenas.get(int(num), {}), page_w, page_h, bleed_pt, pagina_num, total, bleed)
+                if tipo == "boas_vindas":
+                    _desenhar_boas_vindas(c, state, page_w, page_h, bleed_pt, pagina_num, total, bleed)
+                elif tipo == "texto":
+                    _desenhar_texto_cena(c, state, cenas.get(int(num), {}), page_w, page_h, bleed_pt, pagina_num, total, bleed)
                 elif tipo == "imagem":
                     caminho = imagens.get(int(num), {}).get("caminho_arquivo", "")
                     if not _draw_image_cover(c, caminho, 0, 0, page_w, page_h):
@@ -313,10 +387,12 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
                         avisos.append(f"Cena {num}: line art ausente no PDF.")
                 elif tipo in ("resolucao", "celebracao", "licao_e_versiculo_fim"):
                     _desenhar_final(c, state, tipo, page_w, page_h, bleed_pt, pagina_num, total, bleed)
-                else:
-                    # Tipos futuros ou páginas explicitamente em branco.
-                    if tipo not in ("pagina_em_branco", "verso_em_branco"):
-                        avisos.append(f"Página {pagina_num}: tipo de layout desconhecido '{tipo}'.")
+                elif tipo == "pais_educadores":
+                    _desenhar_pais_educadores(c, state, page_w, page_h, bleed_pt, pagina_num, total, bleed)
+                elif tipo == "ficha_pedagogica":
+                    _desenhar_ficha_pedagogica(c, state, page_w, page_h, bleed_pt, pagina_num, total, bleed)
+                elif tipo not in ("pagina_em_branco", "verso_em_branco"):
+                    avisos.append(f"Página {pagina_num}: tipo de layout desconhecido '{tipo}'.")
         c.showPage()
 
     c.save()

@@ -22,7 +22,7 @@ STUDIOS = {
     "character_universe": {"page":"pages/14_👥_Character_Universe.py","label":"Character Universe","accepts":["asset"]},
     "emotional": {"page":"pages/17_🎭_Emotional_Color_Director.py","label":"Emotional & Color Director","accepts":["project"]},
     "restoration": {"page":"pages/19_✨_Restoration_Studio.py","label":"Restoration Studio","accepts":["project","asset"]},
-    "coloring": {"page":"pages/3_#L01f58d#Ufe0f_Livros_de_Colorir.py","label":"Coloring Studio","accepts":["asset"]},
+    "coloring": {"page":"pages/3_🖍️_Livros_de_Colorir.py","label":"Coloring Studio","accepts":["asset"]},
     "translation": {"page":"pages/21_Translation_Localization_Studio.py","label":"Translation Studio","accepts":["project"]},
     "activity": {"page":"pages/23_🧩_Activity_Book_Studio.py","label":"Activity Book Studio","accepts":["project","asset"]},
     "audiobook": {"page":"pages/24_🎧_Audiobook_Studio.py","label":"Audiobook Studio","accepts":["project"]},

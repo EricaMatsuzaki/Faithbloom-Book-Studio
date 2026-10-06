@@ -5,7 +5,21 @@ from armazenamento import listar_colecoes
 from character_universe import (
     criar_personagem_oficial, listar_personagens_oficiais, carregar_personagem_oficial,
     adicionar_variacao, salvar_preset, personagem_para_prompt, VARIAVEIS_PADRAO,
-    adicionar_referencia, definir_master_visual
+    adicionar_referencia, detectar_personagens_mesmo_nome, arquivar_personagem,
+    restaurar_personagem, mel_canonica_protegida, MEL_CANONICAL_COLLECTION,
+)
+from collection_management import (
+    archive_collection, collection_summary, filter_active_collection_names,
+    list_archived_collections, restore_collection,
+)
+from asset_library import get_asset, get_thumbnail, list_assets
+from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
+from jarvis_character_handoff_ui import render_character_handoff_inbox
+from openrouter_client import gerar_imagem, OpenRouterFaithBloomError
+from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
+from visual_master_manager import (
+    IDENTITY_REVIEW_NOTICE, REFERENCE_CATEGORIES, approve_candidate, archive_asset, create_candidate,
+    promote_master, promote_reference_color_master, register_upload, current_color_master_details,
 )
 
 st.set_page_config(page_title='Character Universe', page_icon='👥', layout='wide')
@@ -18,9 +32,82 @@ selected_asset_id = st.session_state.get("faithbloom_selected_asset_id", "")
 if selected_asset_path and os.path.exists(selected_asset_path):
     st.success("🖼️ Asset selecionado na Asset Library: você pode adicioná-lo ao Reference Pack ou defini-lo como Master de um personagem abaixo.")
 
+# Navegação segura: nunca assumir silenciosamente a primeira coleção salva.
+colecoes_salvas = [str(c).strip() for c in listar_colecoes() if str(c).strip()]
+indice_personagens = listar_personagens_oficiais(incluir_arquivados=True)
+colecoes_com_personagens = [str(i.get('colecao') or '').strip() for i in indice_personagens if str(i.get('colecao') or '').strip()]
+colecoes = filter_active_collection_names(colecoes_salvas + colecoes_com_personagens)
 
-colecoes = listar_colecoes()
-colecao = st.text_input('Coleção', value=colecoes[0] if colecoes else 'Pequenas Histórias, Grandes Lições')
+with st.expander('🧹 Gerenciar coleções de teste', expanded=False):
+    st.caption('Arquivar é não destrutivo: remove a coleção desta lista e arquiva os Character Masters ativos, preservando livros, assets, DNA, Masters, referências, versões e histórico.')
+    candidatas = [c for c in colecoes if c != MEL_CANONICAL_COLLECTION]
+    if candidatas:
+        alvo_colecao = st.selectbox('Coleção a arquivar/ocultar', candidatas, key='collection_manager_archive_target')
+        resumo_colecao = collection_summary(alvo_colecao)
+        st.caption(
+            f"{resumo_colecao['characters_active']} personagem(ns) ativo(s) · "
+            f"{resumo_colecao['characters_total']} personagem(ns) no histórico"
+        )
+        confirmar_colecao = st.checkbox(
+            f'Confirmo que desejo arquivar/ocultar a coleção “{alvo_colecao}” sem apagar seus dados',
+            key='collection_manager_archive_confirm',
+        )
+        if st.button('🗄️ Arquivar/ocultar coleção', disabled=not confirmar_colecao, key='collection_manager_archive_button'):
+            try:
+                archive_collection(alvo_colecao, confirmed=confirmar_colecao)
+            except (ValueError, PermissionError, KeyError) as exc:
+                st.error(str(exc))
+            else:
+                st.session_state.pop('character_universe_collection_selector', None)
+                st.success(f'Coleção “{alvo_colecao}” arquivada sem exclusão de livros ou assets.')
+                st.rerun()
+    else:
+        st.info('Não há coleções de teste disponíveis para arquivar. A coleção canônica está protegida.')
+
+    arquivadas = list_archived_collections()
+    if arquivadas:
+        st.divider()
+        restaurar_nome = st.selectbox('Coleções arquivadas', sorted(arquivadas, key=str.casefold), key='collection_manager_restore_target')
+        confirmar_restore = st.checkbox(
+            f'Confirmo que desejo restaurar a coleção “{restaurar_nome}”',
+            key='collection_manager_restore_confirm',
+        )
+        if st.button('♻️ Restaurar coleção', disabled=not confirmar_restore, key='collection_manager_restore_button'):
+            try:
+                restore_collection(restaurar_nome, confirmed=confirmar_restore)
+            except (ValueError, PermissionError, KeyError) as exc:
+                st.error(str(exc))
+            else:
+                st.success(f'Coleção “{restaurar_nome}” restaurada.')
+                st.rerun()
+
+colecao_opcao = st.selectbox(
+    'Coleção',
+    ['— Selecione uma coleção —', *colecoes],
+    key='character_universe_collection_selector',
+    help='Escolha uma coleção existente. A lista usa rolagem automaticamente quando houver muitas coleções.',
+)
+colecao = '' if colecao_opcao == '— Selecione uma coleção —' else colecao_opcao
+
+if not colecao:
+    st.info('Escolha uma coleção acima para ver os personagens. Nenhuma coleção é assumida automaticamente.')
+    st.stop()
+
+st.caption(f'📚 Coleção ativa: **{colecao}**')
+render_character_handoff_inbox(colecao)
+mostrar_arquivados = st.checkbox('Mostrar personagens arquivados', value=False)
+
+# Alerta operacional considera somente duplicidades ativas; registros arquivados permanecem no histórico.
+duplicados = detectar_personagens_mesmo_nome(incluir_arquivados=False)
+for grupo in duplicados.values():
+    relacionados = [x for x in grupo if x.get('colecao') == colecao]
+    if relacionados:
+        nome_dup = relacionados[0].get('nome', 'Personagem')
+        resumo = ' · '.join(
+            f"{x.get('colecao') or 'Sem coleção'} — ⭐ oficial/ativo"
+            for x in grupo
+        )
+        st.warning(f"⚠️ Nome duplicado detectado: {nome_dup}. {resumo}")
 
 with st.expander('➕ Criar Character Master oficial', expanded=False):
     nome = st.text_input('Nome do personagem')
@@ -36,23 +123,35 @@ with st.expander('➕ Criar Character Master oficial', expanded=False):
     marcas = f.text_input('Marcas/acessórios permanentes')
     variaveis = st.multiselect('O que PODE variar por cena', VARIAVEIS_PADRAO, default=VARIAVEIS_PADRAO)
     usos = st.multiselect('Pode ser reutilizado em', ['story','coloring','activity','cover'], default=['story','coloring','activity','cover'])
-    color = st.text_input('Caminho do Color Master (opcional)')
-    line = st.text_input('Caminho do Line Art Master (opcional)')
     if st.button('⭐ Salvar como personagem oficial', type='primary', disabled=not nome.strip()):
         campos = {k:v for k,v in {'especie':especie,'olhos':olhos,'paleta_base':paleta,'rosto':rosto,'proporcoes':proporcoes,'marcas_permanentes':marcas}.items() if v.strip()}
         dna = {'descricao_master': descricao, 'campos_bloqueados': campos, 'caracteristicas_bloqueadas': descricao, 'variaveis_permitidas': variaveis}
-        criar_personagem_oficial(colecao, nome.strip(), dna, color, line, metadata={'usos_permitidos': usos})
+        criar_personagem_oficial(colecao, nome.strip(), dna, metadata={'usos_permitidos': usos})
         st.success('Character Master oficial salvo.'); st.rerun()
 
-itens = listar_personagens_oficiais(colecao)
+itens = listar_personagens_oficiais(colecao, incluir_arquivados=mostrar_arquivados)
 if not itens:
-    st.info('Ainda não há personagens oficiais nesta coleção.')
+    st.info('Ainda não há personagens oficiais nesta coleção.' if not mostrar_arquivados else 'Nenhum personagem encontrado nesta coleção.')
+else:
+    personagem_por_id = {str(item.get('id')): item for item in itens}
+    personagem_opcao = st.selectbox(
+        'Personagem',
+        ['__todos__', *personagem_por_id.keys()],
+        format_func=lambda pid: 'Todos os personagens' if pid == '__todos__' else str(personagem_por_id[pid].get('nome') or 'Personagem'),
+        key=f'character_universe_character_selector_{colecao}',
+        help='A lista mostra somente personagens da coleção escolhida e usa rolagem automaticamente quando necessário.',
+    )
+    if personagem_opcao != '__todos__':
+        itens = [personagem_por_id[personagem_opcao]]
+        st.caption(f"📚 {colecao} → ⭐ {personagem_por_id[personagem_opcao].get('nome', 'Personagem')}")
 
 for item in itens:
     p = carregar_personagem_oficial(item['id'])
     with st.container(border=True):
-        st.subheader('⭐ ' + p.get('nome',''))
-        st.caption('Personagem oficial · ' + p.get('colecao','') + ' · usos: ' + ', '.join(p.get('metadata',{}).get('usos_permitidos',[])))
+        status = p.get('status', 'oficial')
+        status_label = '🗄️ ARQUIVADO' if status == 'arquivado' else '⭐ OFICIAL · ATIVO'
+        st.subheader(('🗄️ ' if status == 'arquivado' else '⭐ ') + p.get('nome',''))
+        st.caption(f"{status_label} · Coleção: {p.get('colecao','')} · usos: " + ', '.join(p.get('metadata',{}).get('usos_permitidos',[])))
         dna = p.get('dna',{})
         st.write(dna.get('descricao_master') or dna.get('caracteristicas_bloqueadas') or 'DNA ainda não preenchido.')
         if dna.get('campos_bloqueados'):
@@ -63,18 +162,208 @@ for item in itens:
         c3.metric('Reference Pack',len(p.get('reference_pack',[])))
         c4.metric('Variações preservadas',len(p.get('variacoes',[])))
 
+        if status == 'arquivado':
+            st.info('Arquivado sem excluir DNA, Masters, referências, assets, versões ou histórico.')
+            if st.button('♻️ Restaurar personagem', key=f"restore_character_{p['id']}"):
+                restaurar_personagem(p['id']); st.rerun()
+            continue
+
+        if mel_canonica_protegida(p):
+            st.success('🔒 Mel canônica protegida: coleção Pequenas Histórias, Grandes Lições · Color Master oficial · Reference Pack presente.')
+            st.caption('Esta Character Master permanece ativa. Use o arquivamento apenas na Mel antiga/duplicada.')
+        else:
+            confirmar_arquivo = st.checkbox(
+                'Confirmo que desejo arquivar este personagem sem apagar seu histórico',
+                key=f"confirm_archive_character_{p['id']}",
+            )
+            if st.button('🗄️ Arquivar personagem', key=f"archive_character_{p['id']}", disabled=not confirmar_arquivo):
+                try:
+                    arquivar_personagem(p['id'])
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success('Personagem arquivado. DNA, Masters, referências, assets, versões e histórico foram preservados.')
+                    st.rerun()
+
+        master_details = current_color_master_details(p)
+        current_master = master_details['asset'] if master_details['consistent'] else None
+        current_master_id = current_master.get('id') if current_master else None
+        if p.get('color_master'):
+            if current_master:
+                st.success('🟢 Color Master oficial e protegido')
+                st.caption(f"Master atual: {current_master.get('nome', 'Imagem')} · ID: {current_master_id}")
+                master_thumb = get_thumbnail(current_master_id)
+                if master_thumb: st.image(master_thumb, width=200)
+                if current_master.get('visual_status') != 'COLOR_MASTER':
+                    st.info('Esta imagem está vinculada como Master do personagem. O status do catálogo ainda é ' + str(current_master.get('visual_status') or 'não informado') + '.')
+            else:
+                st.warning('Há um Color Master cadastrado, mas não foi possível confirmar seu vínculo no catálogo.')
+                st.caption('ID registrado: ' + str(master_details['recorded_id'] or 'não informado'))
+        elif any((r.get('metadata') or {}).get('visual_status') == 'MASTER_CANDIDATE' for r in p.get('reference_pack', [])):
+            st.warning('🟡 Master Candidate — aguardando aprovação')
+        elif p.get('reference_pack'):
+            st.warning('🟡 Referência visual recebida — aguardando tratamento/aprovação')
+        else:
+            st.info('🟡 DNA cadastrado — sem referência visual')
+
+        with st.expander('📤 Fazer upload de referências', expanded=not bool(p.get('reference_pack'))):
+            uploads = st.file_uploader('Uma ou várias imagens', type=['png','jpg','jpeg','webp'], accept_multiple_files=True, key=f"uploads_{p['id']}")
+            st.caption('O upload entra como referência. Nunca se torna Master automaticamente.')
+            upload_categories = []
+            for upload_index, upload in enumerate(uploads or []):
+                upload_categories.append(st.selectbox(
+                    f'Categoria de {upload.name} (opcional)', ['Sem categoria', *REFERENCE_CATEGORIES],
+                    key=f"refcat_{p['id']}_{upload_index}_{upload.name}",
+                ))
+            if st.button('Adicionar ao Reference Pack', key=f"saveuploads_{p['id']}", disabled=not uploads):
+                for upload_index, upload in enumerate(uploads):
+                    selected_category = upload_categories[upload_index]
+                    register_upload(p['id'], upload.name, upload.getvalue(), '' if selected_category == 'Sem categoria' else selected_category)
+                st.success('Referências salvas e auditadas, com os originais preservados.'); st.rerun()
+
+        library = list_assets({'media_kind': 'image'}, page_size=100).get('items', [])
+        with st.expander('🖼️ Escolher da Asset Library'):
+            options = assets_by_id(library)
+            chosen_id = st.selectbox(
+                'Imagem', [''] + list(options),
+                format_func=lambda aid: '—' if not aid else asset_option_label(options[aid]),
+                key=f"libpick_{p['id']}",
+            )
+            if chosen_id:
+                chosen = options[chosen_id]
+                thumb = get_thumbnail(chosen['id'])
+                if thumb: st.image(thumb, width=240)
+                st.caption(asset_preview_details(chosen))
+                if chosen.get('visual_status') == 'MASTER_CANDIDATE':
+                    if st.button('✅ Aprovar como variação', key=f"approve_library_{p['id']}_{chosen['id']}"):
+                        approve_candidate(chosen['id']); st.rerun()
+                if st.button('Adicionar como referência', key=f"pickref_{p['id']}"):
+                    adicionar_referencia(p['id'], chosen.get('storage_uri') or chosen.get('caminho_arquivo',''), 'outra', 'asset_library', {'asset_library_id': chosen['id']})
+                    st.success('Adicionada sem substituir o Master.'); st.rerun()
+
+        refs_with_assets = []
+        for ref in p.get('reference_pack', []):
+            aid = (ref.get('metadata') or {}).get('asset_library_id')
+            asset = get_asset(aid) if aid else None
+            if asset: refs_with_assets.append((ref, asset))
+        if refs_with_assets:
+            with st.expander('⭐ Aprovar referência como Color Master', expanded=True):
+                master_options = assets_by_id([asset for _, asset in refs_with_assets
+                    if asset.get('visual_status') in {'REFERENCE', 'AUDITED', 'APPROVED_VARIATION', 'COLOR_MASTER'}
+                    and asset.get('status') != 'archived'])
+                if master_options:
+                    master_id = st.selectbox('Referência para Color Master', list(master_options),
+                        format_func=lambda aid: ('⭐ MASTER ATUAL · ' if aid == current_master_id else '') + asset_option_label(master_options[aid]), key=f"master_reference_{p['id']}")
+                    preview = get_thumbnail(master_id)
+                    if preview: st.image(preview, width=320)
+                    st.caption('Usa a imagem salva, sem gerar outra. O Master anterior permanece no histórico.')
+                    reviewed = st.checkbox('Revisei a imagem e confirmo que ela será o Color Master deste personagem',
+                        key=f"review_master_reference_{p['id']}_{master_id}")
+                    if st.button('⭐ Definir como Color Master', disabled=not reviewed or master_id == current_master_id,
+                            key=f"promote_reference_{p['id']}_{master_id}"):
+                        try:
+                            promote_reference_color_master(p['id'], master_id, confirmed=reviewed)
+                        except (ValueError, PermissionError, RuntimeError) as exc:
+                            st.error(str(exc))
+                        else:
+                            st.rerun()
+                else:
+                    st.info('Adicione uma referência disponível para aprovação.')
+        if refs_with_assets:
+            with st.expander('🛠️ Restaurar / Melhorar', expanded=False):
+                source_options = assets_by_id([asset for _, asset in refs_with_assets])
+                source_id = st.selectbox(
+                    'Imagem original', list(source_options),
+                    format_func=lambda aid: asset_option_label(source_options[aid]),
+                    key=f"source_{p['id']}",
+                )
+                source = source_options[source_id]
+                source_thumb = get_thumbnail(source_id)
+                if source_thumb: st.image(source_thumb, width=240)
+                st.caption(asset_preview_details(source))
+                direct_edit = st.checkbox('Edição direta — somente esta imagem e meu pedido', key=f"direct_edit_{p['id']}")
+                if direct_edit:
+                    st.info('Envia apenas a imagem selecionada e o texto abaixo, como no Playground. Os controles de DNA, cenário, cor e iluminação não são acrescentados. Revise a identidade no resultado.')
+                provider_name = st.selectbox('Fornecedor de imagem', ['Automático', 'Google Vertex', 'Google AI Studio'],
+                    index=1 if direct_edit else 0, key=f"image_provider_{p['id']}_{direct_edit}")
+                provider = {'Automático': None, 'Google Vertex': 'google-vertex', 'Google AI Studio': 'google-ai-studio'}[provider_name]
+                ratio_label = st.selectbox('Proporção da imagem', ['Padrão do modelo', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+                    index=1 if direct_edit else 0, key=f"image_ratio_{p['id']}_{direct_edit}")
+                action_labels = {
+                    'Preparar Master neutra (alta qualidade)': 'neutral_master',
+                    'Restauração leve': 'light', 'Controlled Remaster': 'controlled_remaster',
+                    'DNA Reconstruction': 'dna_reconstruction', '🌷 Melhorar cenário': 'improve_scene',
+                    '🖼️ Trocar cenário': 'replace_scene', 'Modificar somente isto': 'modify_only',
+                    'Gerar Line Art Candidate': 'line_art',
+                }
+                action_name = st.selectbox('Ação', list(action_labels), key=f"action_{p['id']}", disabled=direct_edit)
+                action = action_labels[action_name]
+                scene = st.selectbox('Cenário/preset', ['—'] + list(SCENE_PRESETS), key=f"scene_{p['id']}", disabled=direct_edit)
+                request = st.text_area('O que deseja alterar?', key=f"request_{p['id']}", placeholder='Ex.: Deixe somente o fundo um pouco mais claro.')
+                col1,col2 = st.columns(2)
+                color_treatment = col1.selectbox('🎨 Tratamento de cor', COLOR_TREATMENTS, key=f"color_{p['id']}", disabled=direct_edit)
+                lighting = col2.selectbox('💡 Iluminação', LIGHTING, key=f"light_{p['id']}", disabled=direct_edit)
+                resolution_label = st.selectbox('Resolução de saída', ['Padrão do modelo', '1K', '2K', '4K'], key=f"resolution_{p['id']}")
+                st.caption('2K/4K dependem do modelo e podem consumir mais créditos. Revise a candidata antes de promovê-la a Master.')
+                quantity = st.radio('Resultados independentes', [1] if direct_edit else [1, 3], format_func=lambda n: '1 versão' if n == 1 else '🔄 Criar A/B/C', horizontal=True, key=f"qty_{p['id']}_{direct_edit}")
+                prompt = build_restoration_prompt(action, dna=dna, request=request, scene='' if scene == '—' else scene, color=color_treatment, lighting=lighting)
+                if direct_edit:
+                    prompt = request
+                with st.expander('Pedido que será enviado'):
+                    st.caption('Revise o pedido antes de gerar; a aprovação da candidata continua manual.')
+                    st.code(prompt)
+                if st.button('Gerar candidata(s)', type='primary', key=f"generate_{p['id']}"):
+                    from character_guide import character_reference_paths
+                    references = [] if direct_edit else [path for path in character_reference_paths(p) if path != source.get('caminho_arquivo')]
+                    result_key = f"results_{p['id']}"
+                    st.session_state[result_key] = []
+                    try:
+                        if direct_edit and not source.get('caminho_arquivo'):
+                            raise ValueError('A imagem selecionada não está disponível para edição.')
+                        with st.spinner('Preparando referências e aguardando a OpenRouter. A geração pode levar alguns minutos; aguarde sem clicar novamente.'):
+                            for label in ['A', 'B', 'C'][:quantity]:
+                                path = gerar_imagem(
+                                    prompt, imagem_base=source.get('caminho_arquivo'), imagens_referencia=references,
+                                    resolution=None if resolution_label == 'Padrão do modelo' else resolution_label,
+                                    provider=provider, aspect_ratio=None if ratio_label == 'Padrão do modelo' else ratio_label,
+                                    output_format=None if direct_edit else 'png',
+                                )
+                                candidate = create_candidate(source['id'], path, transformation='direct_edit' if direct_edit else action, prompt=prompt, label=label, dna_version=str(dna.get('version','')))
+                                st.session_state[result_key].append(candidate['id'])
+                        st.rerun()
+                    except (OpenRouterFaithBloomError, RuntimeError, ValueError) as exc:
+                        st.error(str(exc))
+                        if st.session_state[result_key]:
+                            st.info('As candidatas já concluídas foram preservadas abaixo.')
+
+        result_ids = st.session_state.get(f"results_{p['id']}", [])
+        if result_ids:
+            st.markdown('#### ORIGINAL × RESULTADO')
+            cols = st.columns(len(result_ids))
+            for col, aid in zip(cols, result_ids):
+                candidate = get_asset(aid)
+                with col:
+                    st.image(candidate.get('caminho_arquivo'), caption=candidate.get('version_label'), width="stretch")
+                    st.caption(candidate.get('visual_status', 'MASTER_CANDIDATE'))
+                    st.warning(IDENTITY_REVIEW_NOTICE)
+                    if st.button('✅ Aprovar', key=f"approve_{aid}"):
+                        approve_candidate(aid); st.rerun()
+                    confirmed = st.checkbox('Confirmo a promoção humana', key=f"confirm_{aid}")
+                    if st.button('⭐ Tornar Color Master', key=f"master_{aid}", disabled=not confirmed):
+                        promote_master(p['id'], aid, 'color_master', confirmed=confirmed); st.success('Master oficial salvo; histórico anterior preservado.'); st.rerun()
+                    if st.button('🖍️ Tornar Line Art Master', key=f"line_master_{aid}", disabled=not confirmed):
+                        promote_master(p['id'], aid, 'line_art_master', confirmed=confirmed); st.success('Line Art Master oficial salvo com histórico.'); st.rerun()
+                    if st.button('🗄️ Arquivar', key=f"archive_{aid}"):
+                        archive_asset(aid); st.rerun()
+
         if selected_asset_path and os.path.exists(selected_asset_path):
             with st.expander('🖼️ Usar o asset selecionado da Asset Library neste personagem', expanded=False):
                 q1,q2,q3=st.columns(3)
-                if q1.button('➕ Reference Pack', key=f"libref_{p['id']}", use_container_width=True):
+                if q1.button('➕ Reference Pack', key=f"libref_{p['id']}", width="stretch"):
                     adicionar_referencia(p['id'], selected_asset_path, 'asset_library', 'asset_library', {'asset_library_id': selected_asset_id})
                     st.success('Referência adicionada sem substituir Masters.'); st.rerun()
-                if q2.button('⭐ Color Master', key=f"libcolor_{p['id']}", use_container_width=True):
-                    definir_master_visual(p['id'], selected_asset_path, 'color')
-                    st.success('Color Master atualizado com versionamento.'); st.rerun()
-                if q3.button('🖍️ Line Art Master', key=f"libline_{p['id']}", use_container_width=True):
-                    definir_master_visual(p['id'], selected_asset_path, 'line_art')
-                    st.success('Line Art Master atualizado com versionamento.'); st.rerun()
+                q2.caption('Para virar Master, use o fluxo de candidata + aprovação humana.')
+                q3.caption('Line Art também exige candidata, QA e aprovação.')
 
         tab1,tab2,tab3 = st.tabs(['🎭 Variar sem perder identidade','💾 Presets','🧬 Prompt protegido'])
         with tab1:

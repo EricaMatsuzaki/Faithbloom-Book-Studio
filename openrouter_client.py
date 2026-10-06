@@ -1,11 +1,13 @@
 """Cliente OpenRouter do FaithBloom com guardrails de custo/duplicidade (Fase 13).
 
-Refinamento (16/09/2026): a modalidade de TEXTO agora tenta primeiro o Gemini
-(Google AI Studio, gratuito/econômico — ver gemini_client.py) e só cai para a
-OpenRouter se o Gemini não estiver configurado ou falhar. Isso mantém o SaaS
-funcional mesmo sem crédito pago na OpenRouter. Imagem e áudio permanecem
-exclusivamente na OpenRouter por enquanto: a rota Gemini para essas
-modalidades ainda não foi validada com o mesmo nível de QA visual.
+Refinamento (17-24/09/2026): as modalidades de TEXTO, VOZ e IMAGEM agora
+tentam primeiro o Gemini (Google AI Studio, gratuito/econômico — ver
+gemini_client.py) e só caem para a OpenRouter se o Gemini não estiver
+configurado ou falhar. Isso mantém o SaaS funcional mesmo sem crédito pago na
+OpenRouter. A opção `provider` de gerar_imagem (roteamento específico da
+própria OpenRouter) continua funcionando exatamente como antes quando
+informada — nesse caso a intenção de quem chamou é respeitada e o Gemini
+direto não é tentado.
 
 A interface pública deste módulo (chamar_llm, gerar_imagem, gerar_audio) não
 muda para quem já importa daqui — nenhum agente precisa alterar seu import.
@@ -14,9 +16,11 @@ from __future__ import annotations
 
 import base64
 import json
+import mimetypes
 import os
 import time
 import uuid
+import wave
 from typing import Any
 
 import requests
@@ -26,6 +30,8 @@ from controle_geracao import (
     POLITICA,
     extrair_custo_reportado,
     finalizar_requisicao,
+    liberar_requisicao,
+    atualizar_etapa,
     iniciar_requisicao,
     sanitizar_texto,
 )
@@ -40,7 +46,7 @@ VOZ_PADRAO = os.environ.get("OPENROUTER_VOZ_PADRAO", "")
 
 # "auto" (padrão): usa Gemini primeiro se GEMINI_API_KEY/GOOGLE_API_KEY estiver
 # configurada, com fallback para a OpenRouter. "gemini" ou "openrouter" forçam
-# um único provedor de texto (útil para diagnóstico/comparação).
+# um único provedor de texto/voz (útil para diagnóstico/comparação).
 PROVEDOR_TEXTO = os.environ.get("FAITHBLOOM_PROVEDOR_TEXTO", "auto").strip().lower()
 
 PASTA_AUDIO = "saida_audio"
@@ -61,25 +67,36 @@ def _headers() -> dict:
 
 def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
     ultimo: Exception | None = None
-    for tentativa in range(1, POLITICA.tentativas_http + 1):
+    tentativas = 1 if url.rstrip("/").endswith("/images") else max(1, POLITICA.tentativas_http)
+    for tentativa in range(1, tentativas + 1):
         try:
             resp=requests.post(url, headers=_headers(), json=payload, timeout=timeout)
             if resp.status_code == 429 or 500 <= resp.status_code <= 599:
-                if tentativa < POLITICA.tentativas_http:
+                if tentativa < tentativas:
                     time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
                     continue
             resp.raise_for_status()
             return resp
         except requests.RequestException as exc:
             ultimo=exc
-            if tentativa < POLITICA.tentativas_http:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status is not None and 400 <= status < 500 and status != 429:
+                break
+            if tentativa < tentativas:
                 time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa-1)))
     codigo=getattr(getattr(ultimo,"response",None),"status_code",None)
     sufixo=f" (HTTP {codigo})" if codigo else ""
-    raise OpenRouterFaithBloomError(
-        "A OpenRouter não respondeu corretamente após novas tentativas" + sufixo + ". "
-        "Nenhuma chave ou payload foi gravado no log."
-    ) from ultimo
+    orientacao = {
+        400: "A OpenRouter rejeitou os parâmetros da geração. Revise modelo, referências e resolução.",
+        401: "A OpenRouter não aceitou a autenticação. Verifique a chave nas configurações do aplicativo.",
+        402: "A OpenRouter informou saldo ou limite de créditos insuficiente.",
+        403: "A OpenRouter não autorizou esta solicitação. Verifique as permissões do modelo.",
+        404: "O modelo ou serviço solicitado não está disponível na OpenRouter.",
+        422: "A OpenRouter não aceitou o formato ou as opções da imagem.",
+        502: "O provedor de imagem falhou ou excedeu seu prazo. Esta tentativa terminou com erro; nenhuma nova tentativa de imagem foi enviada automaticamente.",
+        429: "A OpenRouter atingiu um limite temporário. Aguarde antes de tentar novamente.",
+    }.get(codigo, "Não foi possível concluir a geração na OpenRouter. Tente novamente mais tarde.")
+    raise OpenRouterFaithBloomError(orientacao + sufixo) from None
 
 
 def _json_resposta(resp: requests.Response) -> dict[str,Any]:
@@ -99,7 +116,6 @@ def texto_provedor_ativo() -> str:
         return "openrouter"
     if PROVEDOR_TEXTO == "gemini":
         return "gemini" if gemini_client.gemini_disponivel() else "indisponível"
-    # modo "auto"
     if gemini_client.gemini_disponivel():
         return "gemini"
     if OPENROUTER_API_KEY:
@@ -111,19 +127,19 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
     """Ponto único chamado por todos os agentes. Decide o provedor de texto
     (Gemini gratuito/econômico primeiro, OpenRouter como fallback pago) sem
     exigir nenhuma mudança nos agentes que já importam esta função.
-    """
-    tentar_gemini = PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel()
-    tentar_openrouter = PROVEDOR_TEXTO != "gemini" and bool(OPENROUTER_API_KEY)
 
-    if tentar_gemini:
+    Quando o Gemini não está disponível, chama _chamar_llm_openrouter()
+    incondicionalmente — exatamente como o código original sempre fez — em vez
+    de checar OPENROUTER_API_KEY antes. Isso preserva o comportamento e as
+    mensagens de erro de sempre, inclusive para testes que simulam falhas de
+    rede ou interrupção do Streamlit.
+    """
+    if PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel():
         try:
             return gemini_client.chamar_llm_gemini(sistema, instrucao)
         except Exception as exc_gemini:
-            if not tentar_openrouter:
+            if PROVEDOR_TEXTO == "gemini":
                 raise
-            # Cai silenciosamente para a OpenRouter; o erro do Gemini fica
-            # registrado no log de gerações (via gemini_client), não é
-            # descartado, só não interrompe o pedido do usuário.
             try:
                 return _chamar_llm_openrouter(sistema, instrucao)
             except Exception as exc_openrouter:
@@ -132,13 +148,13 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
                     f"Gemini: {exc_gemini}. OpenRouter: {exc_openrouter}."
                 ) from exc_openrouter
 
-    if tentar_openrouter:
-        return _chamar_llm_openrouter(sistema, instrucao)
+    if PROVEDOR_TEXTO == "gemini":
+        raise OpenRouterFaithBloomError(
+            "FAITHBLOOM_PROVEDOR_TEXTO=gemini foi definido, mas o Gemini não está "
+            "configurado ou disponível. Defina GEMINI_API_KEY (ou GOOGLE_API_KEY)."
+        )
 
-    raise OpenRouterFaithBloomError(
-        "Nenhum provedor de texto está configurado. Defina GEMINI_API_KEY "
-        "(gratuito/econômico) ou OPENROUTER_API_KEY (pago) nos Secrets do ambiente."
-    )
+    return _chamar_llm_openrouter(sistema, instrucao)
 
 
 def _chamar_llm_openrouter(sistema: str, instrucao: str) -> dict | list:
@@ -162,88 +178,243 @@ def _chamar_llm_openrouter(sistema: str, instrucao: str) -> dict | list:
     except Exception as exc:
         finalizar_requisicao(req_id,assinatura,"texto",MODELO_TEXTO,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
         raise
+    except BaseException:
+        liberar_requisicao(assinatura)
+        raise
 
 
-def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None) -> str:
-    """Gera imagem aceitando cena-base + múltiplas referências visuais oficiais.
+def _ler_referencias_base64(refs: list[str]) -> list[tuple[str, str]]:
+    saida: list[tuple[str, str]] = []
+    for ref in refs:
+        if not ref or not os.path.exists(ref):
+            continue
+        with open(ref, "rb") as f:
+            dados = f.read()
+        mime = mimetypes.guess_type(ref)[0] or "image/png"
+        saida.append((mime, base64.b64encode(dados).decode()))
+    return saida
 
-    `imagem_base` continua compatível com chamadas antigas. `imagens_referencia` é
-    usado pelo Restoration Studio para anexar Character Masters sem substituir a
-    cena original como referência principal.
 
-    Nota: continua exclusivamente na OpenRouter (ver cabeçalho do módulo).
+def _gerar_imagem_gemini_e_salvar(prompt: str, refs: list[str]) -> str:
+    imagens_b64 = _ler_referencias_base64(refs)
+    imagem_bytes, mime_type = gemini_client.gerar_imagem_gemini(prompt, imagens_b64)
+    extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
+    caminho = os.path.join(PASTA_IMAGENS, f"{uuid.uuid4().hex}.{extension}")
+    with open(caminho, "wb") as f:
+        f.write(imagem_bytes)
+    return caminho
+
+
+def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None, provider: str | None = None, aspect_ratio: str | None = None, output_format: str | None = "png") -> str:
+    """Gera/edita imagem. Desde 24/09/2026, tenta primeiro o Gemini direto
+    (gratuito/econômico) quando disponível, com a OpenRouter como reserva —
+    mesmo padrão já usado para texto e voz. Essa tentativa roda ANTES de
+    qualquer chamada à OpenRouter, então quando o Gemini não está configurado
+    (como em todos os testes existentes, que não definem GEMINI_API_KEY), o
+    comportamento abaixo permanece idêntico ao de sempre.
     """
+    if resolution not in {None, "1K", "2K", "4K"}:
+        raise ValueError("Resolução inválida. Escolha 1K, 2K ou 4K.")
+    if provider not in {None, "google-vertex", "google-ai-studio"}:
+        raise ValueError("Fornecedor de imagem inválido.")
+    if aspect_ratio not in {None, "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"}:
+        raise ValueError("Proporção de imagem inválida.")
+    if output_format not in {None, "png"}:
+        raise ValueError("Formato de saída inválido.")
+    if not prompt.strip():
+        raise ValueError("Escreva o pedido de edição antes de gerar.")
     refs=[]
     if imagem_base:
         refs.append(imagem_base)
     for r in imagens_referencia or []:
         if r and r not in refs:
             refs.append(r)
-    ref_sig=""
+    for ref in refs:
+        if not os.path.isfile(ref):
+            raise OpenRouterFaithBloomError("Uma imagem de referência não está disponível. Selecione-a novamente antes de gerar.")
+
+    # "provider" aqui é uma opção de roteamento da própria OpenRouter (pedir a
+    # ela que use o backend google-vertex ou google-ai-studio) — é um conceito
+    # diferente e não relacionado ao Gemini direto abaixo. Só tentamos o
+    # Gemini direto quando quem chamou NÃO pediu um "provider" específico da
+    # OpenRouter (senão a escolha de quem chamou seria ignorada).
+    if provider is None and PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel():
+        try:
+            return _gerar_imagem_gemini_e_salvar(prompt, refs)
+        except Exception as exc_gemini:
+            if PROVEDOR_TEXTO == "gemini":
+                raise
+            # cai silenciosamente para a OpenRouter, fluxo original abaixo.
+
+    if PROVEDOR_TEXTO == "gemini" and provider is None:
+        raise OpenRouterFaithBloomError(
+            "FAITHBLOOM_PROVEDOR_TEXTO=gemini foi definido, mas o Gemini não está "
+            "configurado ou disponível. Defina GEMINI_API_KEY (ou GOOGLE_API_KEY)."
+        )
+
+    ref_sig=f"|resolution:{resolution or 'default'}|provider:{provider}|aspect_ratio:{aspect_ratio}|output_format:{output_format}"
     for ref in refs:
         if os.path.exists(ref):
             st=os.stat(ref)
             ref_sig+=f"|ref:{os.path.basename(ref)}:{st.st_size}:{int(st.st_mtime)}"
     req_id,assinatura,estimativa,inicio=iniciar_requisicao("imagem",MODELO_IMAGEM,prompt+ref_sig)
     try:
-        content=[{"type":"text","text":prompt}]
-        import mimetypes
+        imagens_entrada=[]
         for ref in refs:
             if not ref or not os.path.exists(ref):
                 continue
             with open(ref,"rb") as f:
                 b64_ref=base64.b64encode(f.read()).decode()
             mime=mimetypes.guess_type(ref)[0] or "image/png"
-            content.append({"type":"image_url","image_url":{"url":f"data:{mime};base64,{b64_ref}"}})
-        payload={"model":MODELO_IMAGEM,"messages":[{"role":"user","content":content}],"modalities":["image","text"]}
-        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions",payload,180)
+            imagens_entrada.append(f"data:{mime};base64,{b64_ref}")
+        payload={"model":MODELO_IMAGEM,"prompt":prompt}
+        if output_format:
+            payload["output_format"] = output_format
+        if provider:
+            payload["provider"] = {"only": [provider]}
+        if aspect_ratio:
+            payload["aspect_ratio"] = aspect_ratio
+        if resolution:
+            payload["resolution"] = resolution
+        if imagens_entrada:
+            payload["input_references"] = [{"type": "image_url", "image_url": {"url": url}} for url in imagens_entrada]
+        atualizar_etapa(assinatura, "aguardando OpenRouter")
+        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/images",payload,180)
+        atualizar_etapa(assinatura, "salvando resultado")
         dados=_json_resposta(resp)
-        imagens=dados.get("choices",[{}])[0].get("message",{}).get("images",[])
-        if not imagens:
-            raise OpenRouterFaithBloomError("O modelo não retornou imagem nesta chamada. Tente novamente ou revise o modelo selecionado.")
-        url=imagens[0].get("image_url",{}).get("url","")
-        if "," not in url:
-            raise OpenRouterFaithBloomError("Formato de imagem inesperado na resposta do provedor.")
-        b64_imagem=url.split(",",1)[1]
-        caminho=os.path.join(PASTA_IMAGENS,f"{uuid.uuid4().hex}.png")
+        imagens=dados.get("data") or []
+        b64_imagem=imagens[0].get("b64_json","") if imagens and isinstance(imagens[0],dict) else ""
+        if not b64_imagem:
+            raise OpenRouterFaithBloomError("O provedor não retornou uma imagem nesta chamada. Tente novamente ou revise o modelo selecionado.")
+        media_type = imagens[0].get("media_type", "image/png")
+        extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(media_type)
+        if not extension:
+            raise OpenRouterFaithBloomError("O provedor retornou um formato de imagem não suportado.")
+        caminho=os.path.join(PASTA_IMAGENS,f"{uuid.uuid4().hex}.{extension}")
         with open(caminho,"wb") as f:
-            f.write(base64.b64decode(b64_imagem))
+            f.write(base64.b64decode(b64_imagem,validate=True))
         finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"sucesso",extrair_custo_reportado(dados))
         return caminho
     except Exception as exc:
         finalizar_requisicao(req_id,assinatura,"imagem",MODELO_IMAGEM,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
         raise
+    except BaseException:
+        liberar_requisicao(assinatura)
+        raise
 
 
-def gerar_audio(texto_com_marcacoes: str, nome_arquivo: str, voice: str | None = None) -> str:
-    """Gera MP3 via TTS mantendo compatibilidade com o pipeline legado.
+def _salvar_pcm_como_wav(nome_arquivo: str, pcm_bytes: bytes, sample_rate: int = 24000) -> str:
+    caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.wav")
+    with wave.open(caminho, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_bytes)
+    return caminho
 
-    Marcadores editoriais do FaithBloom são convertidos para pontuação natural
-    antes de enviar ao TTS, evitando que o sintetizador leia ``[pausa curta]``
-    em voz alta. O Voice Profile pode fornecer um ``provider_voice_id``; quando
-    vazio, usa-se a voz padrão configurada no ambiente.
 
-    Nota: continua exclusivamente na OpenRouter (ver cabeçalho do módulo).
+def gerar_audio(
+    texto_com_marcacoes: str,
+    nome_arquivo: str,
+    voice: str | None = None,
+    *,
+    model: str | None = None,
+    instructions: str | None = None,
+    response_format: str = "mp3",
+) -> str:
+    """Gera voz para o Jarvis/Audiobook. Decide o provedor de voz da mesma
+    forma que chamar_llm() decide o provedor de texto: Gemini gratuito/
+    econômico primeiro, OpenRouter como fallback pago — sem exigir nenhuma
+    mudança em quem já chama esta função.
+
+    Tenta o Gemini direto quando ``model`` não foi passado (chamada simples)
+    OU quando ``model`` já pede explicitamente um modelo da família Gemini
+    (ex.: "google/gemini-3.1-flash-tts-preview", usado pelo Jarvis) — nesse
+    caso a intenção de quem chamou já é "voz Gemini", só que apontando para o
+    nome usado na OpenRouter; o cliente direto escolhe o modelo real da conta
+    Google AI Studio internamente. Um ``model`` de outro provedor (ex.:
+    "openai/...") continua indo direto para a OpenRouter, sem substituição
+    silenciosa da escolha de quem chamou.
     """
     texto_tts=converter_marcacoes_para_texto_natural(texto_com_marcacoes)
+    modelo_pede_gemini = model is None or model.startswith("google/gemini-")
+
+    if modelo_pede_gemini and PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel():
+        try:
+            pcm_bytes, taxa = gemini_client.gerar_audio_gemini(texto_tts, voice)
+            return _salvar_pcm_como_wav(nome_arquivo, pcm_bytes, taxa)
+        except Exception as exc_gemini:
+            if PROVEDOR_TEXTO == "gemini":
+                raise
+            try:
+                return _gerar_audio_openrouter(texto_tts, nome_arquivo, voice, model=model, instructions=instructions, response_format=response_format)
+            except Exception as exc_openrouter:
+                raise OpenRouterFaithBloomError(
+                    "Nem o Gemini nem a OpenRouter geraram a voz. "
+                    f"Gemini: {exc_gemini}. OpenRouter: {exc_openrouter}."
+                ) from exc_openrouter
+
+    if PROVEDOR_TEXTO == "gemini" and modelo_pede_gemini:
+        raise OpenRouterFaithBloomError(
+            "FAITHBLOOM_PROVEDOR_TEXTO=gemini foi definido, mas o Gemini não está "
+            "configurado ou disponível. Defina GEMINI_API_KEY (ou GOOGLE_API_KEY)."
+        )
+
+    return _gerar_audio_openrouter(texto_tts, nome_arquivo, voice, model=model, instructions=instructions, response_format=response_format)
+
+
+def _gerar_audio_openrouter(
+    texto_tts: str,
+    nome_arquivo: str,
+    voice: str | None = None,
+    *,
+    model: str | None = None,
+    instructions: str | None = None,
+    response_format: str = "mp3",
+) -> str:
+    """Gera voz usando o endpoint TTS já compartilhado pelo FaithBloom.
+
+    ``model`` e ``instructions`` permitem especializar a identidade sonora do
+    Jarvis sem criar um segundo cliente de áudio nem alterar o Audiobook Studio.
+
+    Para Gemini TTS em PCM, convertemos o fluxo cru 24 kHz/16-bit/mono para WAV.
+    Isso evita que Safari/Streamlit tentem reproduzir bytes PCM como se fossem MP3.
+    """
     palavras=max(1,len(texto_tts.split()))
     mins=max(0.1,palavras/145.0)
     estimativa=POLITICA.estimativa_audio_min_usd*mins
+    selected_model=(model or MODELO_VOZ).strip()
     voice_id=(voice or VOZ_PADRAO or "").strip()
-    assinatura_conteudo=texto_tts+(f"|voice:{voice_id}" if voice_id else "")
-    req_id,assinatura,estimativa,inicio=iniciar_requisicao("audio",MODELO_VOZ,assinatura_conteudo,estimativa)
+    fmt=(response_format or "mp3").strip().lower()
+    if fmt not in {"mp3", "pcm"}:
+        raise ValueError("Formato de voz inválido. Use mp3 ou pcm.")
+    assinatura_conteudo=texto_tts+f"|model:{selected_model}|format:{fmt}"+(f"|voice:{voice_id}" if voice_id else "")
+    req_id,assinatura,estimativa,inicio=iniciar_requisicao("audio",selected_model,assinatura_conteudo,estimativa)
     try:
-        payload={"model":MODELO_VOZ,"input":texto_tts,"response_format":"mp3"}
+        payload={"model":selected_model,"input":texto_tts,"response_format":fmt}
         if voice_id:
             payload["voice"]=voice_id
+        if instructions and instructions.strip():
+            payload["instructions"]=instructions.strip()
         resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/audio/speech",payload,120)
-        caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.mp3")
-        with open(caminho,"wb") as f:
-            f.write(resp.content)
-        finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"sucesso")
+        if not resp.content:
+            raise OpenRouterFaithBloomError("A OpenRouter retornou áudio vazio.")
+
+        if fmt == "pcm" and selected_model.startswith("google/gemini-"):
+            caminho=_salvar_pcm_como_wav(nome_arquivo, resp.content, 24000)
+        else:
+            extension="mp3" if fmt == "mp3" else "pcm"
+            caminho=os.path.join(PASTA_AUDIO,f"{nome_arquivo}.{extension}")
+            with open(caminho,"wb") as f:
+                f.write(resp.content)
+
+        finalizar_requisicao(req_id,assinatura,"audio",selected_model,estimativa,inicio,"sucesso")
         return caminho
     except Exception as exc:
-        finalizar_requisicao(req_id,assinatura,"audio",MODELO_VOZ,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        finalizar_requisicao(req_id,assinatura,"audio",selected_model,estimativa,inicio,"erro",detalhe=sanitizar_texto(str(exc)))
+        raise
+    except BaseException:
+        liberar_requisicao(assinatura)
         raise
 
 
@@ -257,4 +428,3 @@ def converter_marcacoes_para_texto_natural(texto_com_marcacoes: str) -> str:
     texto=re.sub(r"\[(?:emoção|emocao|ritmo|speaker|voz):[^\]]+\]","",texto,flags=re.I)
     texto=re.sub(r"\[pausa:\s*(\d+)\s*ms\]",lambda m:", " if int(m.group(1))<500 else "... ",texto,flags=re.I)
     return re.sub(r"[ \t]+"," ",texto).strip()
-

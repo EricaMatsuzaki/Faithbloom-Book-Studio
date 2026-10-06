@@ -57,8 +57,6 @@ def gerar_referencia_personagem(
     if personagem.get("origem_referencia") == "enviada_pela_autora" and personagem.get(
         "imagem_referencia"
     ):
-        # A autora já enviou a imagem de referência - não gera nada,
-        # só usa a imagem enviada como base pra todas as cenas seguintes.
         return personagem
 
     prompt = prompt_referencia_personagem(
@@ -70,11 +68,22 @@ def gerar_referencia_personagem(
     return personagem
 
 
+def _direcao_da_cena(cena: dict) -> dict:
+    return direcao_emocional(
+        cena.get("emocao", "esperanca"),
+        cena.get("paleta_preset", "Erica Matsuzaki · Pastel Faith"),
+        cena.get("intensidade_emocional", 3),
+        cena.get("emocao_secundaria", cena.get("subemocao", "")),
+        cena.get("transicao_emocional", ""),
+    )
+
+
 def prompt_cena(
     cena: dict, personagens: dict[str, PersonagemDNA], lado_spread: str
 ) -> str:
     protagonista = personagens.get(cena.get("personagem_principal", ""), None)
     dna = protagonista["descricao_fixa"] if protagonista else ""
+    direcao = _direcao_da_cena(cena)
     return (
         f"{ESTILO_VISUAL_FIXO}\n"
         f"DNA fixo do personagem (nunca alterar): {dna}\n"
@@ -83,8 +92,9 @@ def prompt_cena(
         f"Cena: {cena.get('texto', '')}\n"
         f"Contexto visual: {cena.get('contexto_visual', '')}\n"
         f"{paleta_para_prompt(cena.get('emocao', 'esperanca'))}\n"
-        f"{prompt_direcao_visual({'direcao': direcao_emocional(cena.get('emocao', 'esperanca'), cena.get('paleta_preset', 'Erica Matsuzaki · Pastel Faith'), cena.get('intensidade_emocional', 3)), 'expressao': cena.get('expressao', cena.get('emocao','')), 'instrucao_autora': cena.get('instrucao_emocional','')})}\n"
+        f"{prompt_direcao_visual({'direcao': direcao, 'expressao': cena.get('expressao', cena.get('emocao','')), 'instrucao_autora': cena.get('instrucao_emocional','')})}\n"
         "REGRA DE CONSISTÊNCIA: emoção muda expressão, pose, luz e atmosfera; não muda a identidade, cores canônicas ou proporções fundamentais do personagem.\n"
+        "REGRA DE CONTINUIDADE EMOCIONAL: quando houver transição, faça a luz/paleta evoluir gradualmente dentro do cenário; não troque toda a cena de cor de forma brusca e não a torne monocromática.\n"
         f"Layout: página {lado_spread} do spread, sem texto embutido na "
         "imagem (texto vai em página separada) - deixar composição "
         "plena, respeitando margem de segurança para a dobra central."
@@ -92,22 +102,13 @@ def prompt_cena(
 
 
 def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
-    # Passo 1: gerar/confirmar referência de cada personagem, uma vez só
     for nome, personagem in state["personagens"].items():
         if not personagem.get("imagem_referencia"):
             state["personagens"][nome] = gerar_referencia_personagem(
                 personagem, gerar_imagem
             )
-            # Em produção: pausar aqui e pedir aprovação humana da
-            # referência antes de seguir para as cenas.
 
-    # Passo 2: gerar cada cena usando a referência aprovada como imagem-base
-    # - EXCETO cenas cuja imagem já foi enviada pela autora (ver
-    # state["imagens_cenas_enviadas"]) - essas são usadas direto, sem
-    # gastar créditos gerando de novo.
     imagens_enviadas = state.get("imagens_cenas_enviadas", {})
-    # Se o estado veio de um arquivo JSON salvo, as chaves viram string -
-    # normaliza pra sempre comparar como string.
     imagens_enviadas = {str(k): v for k, v in imagens_enviadas.items()}
     cenas_imagem: list[CenaImagem] = []
     for i, cena in enumerate(state["cenas_texto"]):
@@ -124,7 +125,7 @@ def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
             )
             continue
 
-        lado = "esquerda" if i % 2 == 0 else "direita"  # alterna por spread
+        lado = "esquerda" if i % 2 == 0 else "direita"
         protagonista = state["personagens"].get(
             cena.get("personagem_principal", "")
         )
@@ -236,6 +237,7 @@ def criar_variacao_cena(state: dict, numero: int, gerar_imagem, instrucao: str =
         f"{ESTILO_VISUAL_FIXO}\n"
         f"Cena original: {cena.get('texto', '')}\n"
         f"Contexto: {cena.get('contexto_visual', '')}\n"
+        f"{prompt_direcao_visual({'direcao': _direcao_da_cena(cena), 'expressao': cena.get('expressao', cena.get('emocao','')), 'instrucao_autora': cena.get('instrucao_emocional','')})}\n"
         "Use a imagem-base como referência visual principal. NÃO descarte a identidade visual já aprovada.\n"
         f"Pedido da autora: {pedido}\n"
         "Gerar uma NOVA versão; não colocar texto na imagem."

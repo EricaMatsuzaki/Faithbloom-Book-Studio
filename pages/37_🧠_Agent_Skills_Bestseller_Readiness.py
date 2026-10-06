@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import streamlit as st
+import json
+from pathlib import Path
+from agents.engenheiro_saas_automacao import run_diagnostic
+from ai_provider_router import chamar_llm
 
 from agent_skills import all_agent_profiles, get_agent_profile, validate_registry
 from bestseller_readiness import evaluate_bestseller_readiness
@@ -39,16 +43,16 @@ def persist(msg: str):
         st.success(msg)
 
 
-t1, t2, t3, t4 = st.tabs(["🤖 Skills dos agentes", "📈 Bestseller Readiness", "📖 Referência bíblica", "🔎 Evidência de mercado"])
+t1, t2, t3, t4, t5 = st.tabs(["🤖 Skills dos agentes", "📈 Bestseller Readiness", "📖 Referência bíblica", "🔎 Evidência de mercado", "🛠️ Engenharia"])
 
 with t1:
     audit = validate_registry()
     c1, c2, c3 = st.columns(3)
     c1.metric("Papéis especializados", audit.get("role_count", 0))
-    c2.metric("Módulos agents/", audit.get("module_count", 0))
+    c2.metric("Módulos com perfil", audit.get("module_count", 0))
     c3.metric("Registry", "PASS" if audit.get("ok") else "BLOCKED")
     if audit.get("ok"):
-        st.success("Todos os papéis possuem missão, skills, critérios, limites e handoffs formais.")
+        st.success("Cadastro, contratos e destinos de encaminhamento conferidos. A qualidade das entregas exige testes e revisão do resultado.")
     else:
         st.error("O registry possui inconsistências.")
         st.json(audit.get("errors", []))
@@ -78,7 +82,7 @@ with t1:
             st.markdown("**Evidências necessárias**")
             for x in p["evidence_requirements"]:
                 st.write("•", x)
-    st.caption(f"Módulo: agents/{p['module']} · execução: {p['execution']}")
+    st.caption(f"Módulo: {p.get('module_directory', 'agents')}/{p['module']} · execução: {p['execution']}")
 
 with t2:
     if state is None:
@@ -201,3 +205,29 @@ with t4:
 
 st.divider()
 st.caption("FaithBloom 2.0 · Refinamento 21 · Skill contracts não substituem revisão humana especializada; Bestseller Readiness não é previsão de vendas.")
+
+
+with t5:
+    st.subheader("Diagnóstico técnico")
+    st.caption("A auditoria local não usa IA. A revisão profunda envia os módulos selecionados ao provedor de texto configurado. Os resultados são diagnósticos e propostas; não alteram código nem fazem deploy.")
+    request = st.text_area("Problema ou objetivo", key="engineering_request", placeholder="Ex.: O app falha ao retomar a geração de imagens.")
+    root = Path(__file__).resolve().parents[1]
+    options = sorted({p.relative_to(root).as_posix() for folder in (root, root / "agents", root / "pages") for p in folder.glob("*.py") if not p.is_symlink()})
+    modules = st.multiselect("Módulos para revisão profunda", options, key="engineering_modules")
+    deep = st.checkbox("Incluir revisão profunda por IA dos módulos selecionados", key="engineering_deep")
+    persistent_failure = st.checkbox("A falha persiste mesmo com testes aprovados", key="engineering_runtime_failure")
+    if st.button("Executar diagnóstico", disabled=not request.strip() or (deep and not modules), key="engineering_run"):
+        try:
+            with st.spinner("Analisando o código e seus contratos..."):
+                report = run_diagnostic(request, modules=modules,
+                    context={"tests_pass_but_feature_broken": persistent_failure},
+                    chamar_llm=chamar_llm if deep else None)
+            st.session_state["engineering_report"] = report
+        except Exception as exc:
+            st.error(f"O diagnóstico não foi concluído ({type(exc).__name__}). Verifique a seleção de módulos, o provedor e tente novamente. O relatório anterior foi preservado.")
+    report = st.session_state.get("engineering_report")
+    if report:
+        st.write("**Pedido analisado:**", report["plan"]["request"])
+        st.write("Auditoria:", report["audit"]["status"])
+        st.json(report)
+        st.download_button("Baixar diagnóstico", data=json.dumps(report, ensure_ascii=False, indent=2), file_name="faithbloom_engineering_diagnostic.json", mime="application/json")

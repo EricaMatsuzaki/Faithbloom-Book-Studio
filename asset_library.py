@@ -28,6 +28,12 @@ from armazenamento import _ler_indice_galeria, _salvar_indice_galeria
 from storage_backend import BACKEND, is_storage_uri, materializar, storage_uri, uri_to_path
 
 ASSET_SCHEMA_VERSION = 2
+ASSET_USAGES = {"story", "coloring", "activity", "cover", "marketing", "printable"}
+ASSET_SCOPES = {"reusable", "collection", "book_specific"}
+ASSET_ROLES = {
+    "character_reference", "approved_variation", "scene", "cover_art",
+    "line_art", "activity_asset", "background",
+}
 COLLECTIONS_INDEX = "asset_library/collections.json"
 USAGE_INDEX = "asset_library/usage.json"
 THUMB_PREFIX = "asset_library/thumbnails"
@@ -111,6 +117,16 @@ def normalize_asset(item: dict) -> dict:
     out["media_kind"] = infer_media_kind(out)
     meta = dict(out.get("metadata") or {})
     meta.setdefault("origem", meta.get("source", ""))
+    # Defaults are additive: old assets stay valid and unknown metadata survives.
+    usages = meta.get("usos", meta.get("usage", []))
+    if isinstance(usages, str):
+        usages = [usages]
+    usages = _unique(usages or [])
+    meta["usos"] = usages
+    meta["usage"] = usages[0] if usages else str(meta.get("usage") or "")
+    meta.setdefault("scope", "reusable")
+    meta.setdefault("asset_role", "")
+    meta.setdefault("contains_text", False)
     out["metadata"] = meta
     return out
 
@@ -144,6 +160,29 @@ def get_asset(asset_id: str, materialize_file: bool = True) -> dict | None:
             except Exception:
                 item["caminho_arquivo"] = uri
     return item
+
+
+def get_asset_by_uri(uri: str, materialize_file: bool = False) -> dict | None:
+    """Resolve referências legadas que guardavam somente a URI/caminho."""
+    if not uri:
+        return None
+    item = next((x for x in _all_assets() if uri in {x.get("storage_uri"), x.get("caminho_arquivo")}), None)
+    # Character Universe materializa fb:// ao carregar. Reconhece o nome
+    # determinístico do cache sem persistir nem baixar novamente o arquivo.
+    if not item and not is_storage_uri(uri):
+        incoming_name = Path(uri).name
+        for candidate in _all_assets():
+            candidate_uri = candidate.get("storage_uri") or ""
+            if not is_storage_uri(candidate_uri):
+                continue
+            storage_path = uri_to_path(candidate_uri)
+            expected = hashlib.sha256(storage_path.encode("utf-8")).hexdigest()[:24] + (Path(storage_path).suffix or ".bin")
+            if incoming_name == expected:
+                item = candidate
+                break
+    if not item:
+        return None
+    return get_asset(item["id"], materialize_file=materialize_file)
 
 
 def _search_blob(item: dict) -> str:
@@ -258,7 +297,23 @@ def set_favorite(asset_id: str, value: bool = True) -> dict | None:
 
 
 def set_archived(asset_id: str, archived: bool = True) -> dict | None:
-    return update_asset(asset_id, status="archived" if archived else "active")
+    """Arquiva/restaura com uma única gravação, preservando identidade e versões."""
+    asset = get_asset(asset_id, materialize_file=False)
+    if not asset:
+        return None
+    if archived:
+        previous = asset.get("visual_status") or (asset.get("metadata") or {}).get("visual_status") or "REFERENCE"
+        return update_asset(
+            asset_id, status="archived", visual_status="ARCHIVED",
+            metadata={"visual_status": "ARCHIVED", "visual_status_before_archive": previous},
+        )
+    previous = (asset.get("metadata") or {}).get("visual_status_before_archive")
+    if not previous:
+        previous = "APPROVED_VARIATION" if asset.get("approved") else "REFERENCE"
+    return update_asset(
+        asset_id, status="active", visual_status=previous,
+        metadata={"visual_status": previous},
+    )
 
 
 def set_approved(asset_id: str, approved: bool = True) -> dict | None:

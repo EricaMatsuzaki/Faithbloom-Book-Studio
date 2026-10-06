@@ -275,17 +275,43 @@ CSS = f"""
 
     /* SIDEBAR */
     section[data-testid="stSidebar"] {{
-        background:
-            linear-gradient(180deg, rgba(246,251,250,.98) 0%, rgba(250,248,255,.98) 100%);
-        border-right: 1px solid rgba(31,87,105,.08);
+        background:#FFFFFF;
+        border-right:1px solid rgba(53,68,108,.08);
+        box-shadow:6px 0 20px rgba(70,76,115,.025);
     }}
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
-        border-radius: 11px;
-        margin: 2px 8px;
+    section[data-testid="stSidebar"] > div:first-child {{ padding-top:.65rem; }}
+    section[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] {{
+        background:transparent !important;
+        border:0 !important;
+        min-height:2.45rem;
+        color:#25375d !important;
+        box-shadow:none !important;
+        font-weight:560;
     }}
-    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
-        background: rgba(34,168,153,.07);
+    section[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]:hover {{
+        background:#F6F1FF !important;
+        color:#6744D5 !important;
+        transform:none;
     }}
+    section[data-testid="stSidebar"] div[data-testid="stExpander"] {{
+        background:transparent !important;
+        border:0 !important;
+        border-top:1px solid rgba(53,68,108,.08) !important;
+        border-radius:0 !important;
+        box-shadow:none !important;
+        margin-top:.28rem;
+    }}
+    section[data-testid="stSidebar"] div[data-testid="stExpander"] summary {{
+        font-size:.74rem !important;
+        text-transform:uppercase;
+        letter-spacing:.055em;
+        font-weight:800 !important;
+        color:#41547B !important;
+        padding:.55rem .12rem !important;
+    }}
+    /* Esconde a lista automática de dezenas de páginas; o menu FaithBloom abaixo
+       mantém apenas rotas de usuário e coloca ferramentas técnicas recolhidas. */
+    section[data-testid="stSidebar"] [data-testid="stSidebarNav"] {{ display:none !important; }}
     section[data-testid="stSidebar"] .stMarkdown h3 {{ color: {TEAL_ESCURO}; }}
 
     /* ALERTS */
@@ -306,18 +332,22 @@ CSS = f"""
 """
 
 
+def _sidebar_link(path: str, label: str) -> None:
+    st.page_link(path, label=label, use_container_width=True)
+
+
+def render_sidebar_navigation() -> None:
+    """Menu visual FaithBloom; mantém todas as rotas registradas acessíveis."""
+    from painel_visual import render_sidebar
+    render_sidebar()
+
+
+
 def aplicar_estilo():
     st.markdown(CSS, unsafe_allow_html=True)
-    from painel_visual import aplicar_visual, render_sidebar
+    from painel_visual import aplicar_visual
     aplicar_visual()
-    # Standalone apps have their own entrypoint and cannot link to app.py.
-    # Keep their automatic navigation; use the shared artwork for the main app.
-    from streamlit.runtime.scriptrunner import get_script_run_ctx
-    ctx = get_script_run_ctx()
-    if ctx and ctx.main_script_path.endswith("/app.py"):
-        render_sidebar()
-    else:
-        st.markdown('<style>[data-testid="stSidebarNav"] { display:block; }</style>', unsafe_allow_html=True)
+    render_sidebar_navigation()
 
 
 def hero(titulo: str, subtitulo: str = "", eyebrow: str = "FaithBloom AI · Editorial Studio"):
