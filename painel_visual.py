@@ -33,7 +33,7 @@ CSS = """
 }
 .stApp { background: linear-gradient(125deg,#fff 45%,#fdfbff 100%); color:var(--fb-ink); }
 [data-testid="stMainBlockContainer"], .block-container {
-  max-width:1600px; padding: .85rem 1.2rem 2.6rem;
+  max-width:1600px; padding: .65rem .85rem 1.5rem;
 }
 [data-testid="stMain"] > div > div > [data-testid="stVerticalBlock"] { gap:.7rem; }
 h1,h2,h3,h4,p { color:inherit; }
@@ -160,7 +160,7 @@ section[data-testid="stSidebar"] {
 .fb-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 [class*="st-key-fb_action_"] {
   position:relative; border-radius:14px; padding:0 !important; overflow:visible;
-  border:1px solid rgba(255,255,255,.75); min-height:90px;
+  border:1px solid rgba(255,255,255,.75); min-height:74px;
   transition:transform .15s ease,box-shadow .15s ease;
 }
 [class*="st-key-fb_action_"]:hover { transform:translateY(-2px); box-shadow:0 7px 18px #2730680d; }
@@ -175,8 +175,8 @@ section[data-testid="stSidebar"] {
 }
 [class*="st-key-fb_action_"] a[data-testid="stPageLink-NavLink"] p { opacity:0; }
 [class*="st-key-fb_action_"] a[data-testid="stPageLink-NavLink"]:hover { transform:none; }
-.fb-action { display:flex; align-items:center; gap:14px; padding:13px 12px; min-height:88px; border-radius:14px; }
-.fb-action-icon { flex:0 0 56px; width:56px; height:58px; border-radius:13px;
+.fb-action { display:flex; align-items:center; gap:14px; padding:10px 12px; min-height:72px; border-radius:14px; }
+.fb-action-icon { flex:0 0 52px; width:52px; height:52px; border-radius:13px;
   display:flex; align-items:center; justify-content:center; background:var(--action-icon-bg); color:var(--action-color); }
 .fb-action-icon svg { width:39px; height:39px; }
 .fb-action-copy { flex:1; min-width:0; }
@@ -313,9 +313,10 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 }
 .fb-action-copy h3,.fb-action-copy p,.fb-panel-heading h2,.fb-panel-heading p,.fb-project-title { padding:0!important; margin:0!important; }
 [data-testid="stSidebar"] [data-testid="stExpander"] details { border:0!important; border-radius:0!important; }
-[data-testid="stSidebarHeader"] { padding:.2rem .3rem 0!important; height:1.1rem!important; }
+[data-testid="stSidebarHeader"] { padding:.2rem .3rem 0!important; height:1.1rem!important; min-height:0!important; }
 .st-key-fb_banner_controls [data-testid="stVerticalBlock"] { align-items:flex-end; }
 [data-testid="stToolbar"] { display:none!important; }
+.st-key-fb_topbar [data-testid="stPopoverButton"] svg { display:none; }
 @media(min-width:769px) { [data-testid="stHeader"] { height:0!important; min-height:0!important; } }
 
 </style>
@@ -336,7 +337,7 @@ def render_brand(sidebar: bool = True) -> None:
     )
 
 
-def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True) -> None:
+def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True, show_motion_control: bool = True) -> None:
     """Reference dashboard artwork on desktop, complete garden on mobile."""
     name = str(display_name or "Erica").strip() or "Erica"
     # The supplied artwork includes Erica's greeting. Other profiles get a
@@ -354,13 +355,16 @@ def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True) 
             f'<div class="fb-greeting" style="--greeting-size:{desktop_size:.2f}cqw" '
             f'aria-hidden="true">Oi, {escape(name)}!</div>'
         )
-    with st.container(key="fb_banner_controls"):
-        enabled = st.toggle(
-            "Movimento",
-            value=True,
-            key="fb_banner_motion",
-            help="Ativa ou pausa o movimento do banner. Respeita a preferência de reduzir movimento do seu dispositivo.",
-        )
+    if show_motion_control:
+        with st.container(key="fb_banner_controls"):
+            enabled = st.toggle(
+                "Movimento",
+                value=True,
+                key="fb_banner_motion",
+                help="Ativa ou pausa o movimento do banner. Respeita a preferência de reduzir movimento do seu dispositivo.",
+            )
+    else:
+        enabled = bool(st.session_state.get("fb_banner_motion", True))
     motion = _banner_motion() if enabled else ""
     desktop_class = "fb-banner-desktop" if compact_desktop else "fb-banner-desktop-full"
     desktop_asset = "faithbloom-dashboard-reference.jpg" if compact_desktop else "faithbloom-welcome.jpg"

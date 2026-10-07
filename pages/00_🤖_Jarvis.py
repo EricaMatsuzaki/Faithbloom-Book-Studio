@@ -539,18 +539,19 @@ with st.container(key="fb_topbar"):
         home_search = st.text_input("Buscar no FaithBloom", placeholder="🔎 Buscar projetos, personagens, histórias…",
                                     label_visibility="collapsed", key="faithbloom_home_search")
     with gift_col:
-        with st.popover("🎁", help="Uma ideia para começar"):
+        with st.popover("", icon=":material/featured_seasonal_and_gifts:", help="Inspiração e movimento do banner"):
             st.write("Uma pequena história pode florescer em uma grande lição. 💜")
+            st.toggle("Movimento do banner", key="fb_banner_motion", value=True)
             st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="Criar uma nova história →")
     with plan_col:
         with st.popover("👑 Plano Profissional"):
             st.write("Seu estúdio reúne criação, personagens, ilustrações, revisão e publicação.")
             st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="Abrir Prompt-Mestre Studio →")
     with bell_col:
-        with st.popover("🔔", help="Acompanhar seu projeto"):
+        with st.popover("", icon=":material/notifications:", help="Acompanhar seu projeto"):
             st.write((project_progress or {}).get("message") or "Escolha um projeto para acompanhar sua produção.")
     with top_profile:
-        with st.popover((active_workspace_name.split()[0] if active_workspace_name else "Perfil") + " ⌄"):
+        with st.popover((active_workspace_name.split()[0] if active_workspace_name else "Erica") + " ⌄", icon=":material/account_circle:"):
             profiles = list_workspace_profiles()
             if profiles:
                 ids = [str(profile["id"]) for profile in profiles]
@@ -576,7 +577,7 @@ div.st-key-fb_live_jarvis_closed{display:none}
 div[class*="st-key-fb_live_jarvis_"]{border-radius:20px;border:1px solid #ece5f4;padding:.8rem;background:radial-gradient(ellipse at 30% 20%,#fff6dc,transparent 60%),linear-gradient(120deg,#fff0f4,#eafaff 55%,#f6efff)}
 .fb-live-bubble{width:fit-content;max-width:95%;margin:0 auto;padding:.7rem 1.4rem;text-align:center;border-radius:24px;background:#ffffffed;color:#8b3edb;font-size:1.15rem;font-weight:750}
 .st-key-fb_assistant_heading{margin-top:.3rem}.st-key-fb_assistant_heading [data-testid="stHorizontalBlock"]{align-items:center}
-.st-key-jarvis_compose{border:1px solid #ececf6;border-radius:16px;padding:.6rem .8rem;background:white}
+.st-key-jarvis_compose{border:1px solid #ececf6;border-radius:16px;padding:.4rem .8rem;background:white}
 .st-key-jarvis_compose [data-testid="stForm"]{border:0;padding:0}
 .st-key-jarvis_compose textarea{min-height:48px!important;border-radius:12px!important}
 .st-key-jarvis_compose [data-testid="stFormSubmitButton"] button{min-height:48px;border:0;background:linear-gradient(110deg,#ff90b7,#b35cf6 60%,#8677ff);color:white;border-radius:12px}
@@ -592,7 +593,7 @@ div[class*="st-key-fb_live_jarvis_"]{border-radius:20px;border:1px solid #ece5f4
 </style>
 """)
 
-render_banner(active_workspace_name or "Erica")
+render_banner(active_workspace_name or "Erica", show_motion_control=False)
 voice_open = bool(st.session_state.get("fb_voice_open", False))
 with st.container(key="fb_live_jarvis_open" if voice_open else "fb_live_jarvis_closed"):
     st.html('<div class="fb-live-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')

@@ -14,10 +14,10 @@ import unicodedata
 ACTIONS = [
     {"key": "create", "title": "Criar um livro", "description": "Do zero, com a equipe certa para a sua história.", "route": "pages/39_✍️_Historia_4_Estilos.py", "color": "pink", "icon": "book"},
     {"key": "continue", "title": "Continuar / Atualizar", "description": "Melhorar um livro existente ou retomar de onde parou.", "route": "pages/16_🩺_Book_Doctor.py", "color": "blue", "icon": "refresh"},
-    {"key": "characters", "title": "Personagens", "description": "Criar, editar e gerenciar os personagens da sua história.", "route": "pages/14_👥_Character_Universe.py", "color": "mint", "icon": "people"},
-    {"key": "images", "title": "Imagens & ilustrações", "description": "Organizar imagens, referências e versões das suas ilustrações.", "route": "pages/31_🖼️_Asset_Library_Media_Manager.py", "color": "yellow", "icon": "image"},
+    {"key": "characters", "title": "Personagens", "description": "Criar, editar e gerenciar personagens (ex.: Mel).", "route": "pages/14_👥_Character_Universe.py", "color": "mint", "icon": "people"},
+    {"key": "images", "title": "Imagens & ilustrações", "description": "Gerar, melhorar ou restaurar ilustrações.", "route": "pages/31_🖼️_Asset_Library_Media_Manager.py", "color": "yellow", "icon": "image"},
     {"key": "text", "title": "Texto & revisão", "description": "Escrever, revisar e ajustar com apoio da IA.", "route": "pages/5_🔍_Analisar_Livro.py", "color": "lilac", "icon": "text"},
-    {"key": "publish", "title": "Publicar", "description": "Preparar formatos, pacotes e distribuição para suas plataformas.", "route": "pages/26_🌐_Publishing_Distribution_Center.py", "color": "pink", "icon": "rocket"},
+    {"key": "publish", "title": "Publicar", "description": "Formatar e preparar para KDP e outras plataformas.", "route": "pages/26_🌐_Publishing_Distribution_Center.py", "color": "pink", "icon": "rocket"},
 ]
 
 NAV_GROUPS = [

@@ -815,6 +815,6 @@ O Orquestrador deverá entender a intenção, montar o fluxo apropriado e conduz
 
 ## Interface ilustrada e Jarvis
 
-A entrada oficial continua sendo `pages/00_🤖_Jarvis.py`. O painel usa a arte de boas-vindas fornecida pela autora, com banner compacto no desktop e cena completa no celular, seis ações, busca por projetos e personagens, projetos do perfil e etapas reais da produção. `Movimento` pausa pétalas, borboletas e brilhos; a preferência de movimento reduzido do dispositivo também é respeitada.
+A entrada oficial continua sendo `pages/00_🤖_Jarvis.py`. O painel usa a arte de boas-vindas fornecida pela autora, com banner compacto no desktop e cena completa no celular, seis ações, busca por projetos e personagens, projetos do perfil e etapas reais da produção. No presente da barra superior, `Movimento do banner` pausa pétalas, borboletas e brilhos; a preferência de movimento reduzido do dispositivo também é respeitada.
 
 O coração do Jarvis mantém a captura de voz original. No desktop, use `Falar` para abrir esse controle; no celular, ele aparece abaixo do banner. Texto, anexos, encaminhamentos com confirmação e respostas de voz continuam usando os módulos existentes. As respostas escritas aparecem na tela. `Meus projetos` abre o catálogo da página 53, sem ocupar a página 38 do Prompt-Mestre. Um pacote pronto continua separado do registro de publicação.
