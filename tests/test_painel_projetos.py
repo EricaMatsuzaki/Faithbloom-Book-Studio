@@ -1,5 +1,7 @@
 """Contratos de seleção e abertura com dependências de storage/UI substituídas."""
 from copy import deepcopy
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -89,6 +91,35 @@ class ProjectNavigationTests(unittest.TestCase):
         with patch.object(projects, "materializar", side_effect=lambda value: value) as materialize:
             self.assertEqual(projects.project_cover_path(cover_state), "https://example.org/preview.png")
         materialize.assert_called_once_with("https://example.org/preview.png")
+
+    def test_configured_profile_thumbnail_precedes_saved_cover(self):
+        card = {"kind": "story", "storage_path": "fb://livros/current.json"}
+        links = [{"kind": "story", "storage_path": "livros/other.json", "thumbnail_asset_id": "other-cover"},
+                 {"kind": "story", "storage_path": "livros/current.json", "thumbnail_asset_id": "chosen-cover"}]
+        with tempfile.TemporaryDirectory() as directory:
+            thumb = Path(directory) / "chosen.png"
+            # Cabeçalho PNG: a fixture representa o arquivo retornado pela Asset Library.
+            thumb.write_bytes(b"\x89PNG\r\n\x1a\n")
+            with patch.object(projects, "project_links_for_profile", return_value=links) as profile_links, \
+                 patch.object(projects, "get_thumbnail", return_value=str(thumb)) as thumbnail, \
+                 patch.object(projects, "materializar", side_effect=lambda value: value):
+                cover = projects.project_cover_path({"capa_ebook": "https://example.org/saved.png"}, card, "erica")
+            self.assertEqual(cover, str(thumb))
+            profile_links.assert_called_once_with("erica")
+            thumbnail.assert_called_once_with("chosen-cover", max_px=360)
+
+    def test_broken_profile_thumbnail_falls_back_without_inventing_cover(self):
+        card = {"kind": "coloring", "storage_path": "livros_colorir/flowers.json"}
+        link = {**card, "thumbnail_asset_id": "missing-cover"}
+        saved_cover = "https://example.org/saved.png"
+        with patch.object(projects, "project_links_for_profile", return_value=[link]), \
+             patch.object(projects, "materializar", side_effect=lambda value: value):
+            for thumbnail in (None, "/tmp/faithbloom-thumbnail-that-does-not-exist.png"):
+                with self.subTest(thumbnail=thumbnail), patch.object(projects, "get_thumbnail", return_value=thumbnail):
+                    self.assertEqual(projects.project_cover_path({"capa_ebook": saved_cover}, card, "erica"), saved_cover)
+                    self.assertEqual(projects.project_cover_path({}, card, "erica"), "")
+            with patch.object(projects, "get_thumbnail", side_effect=OSError("Asset indisponível")):
+                self.assertEqual(projects.project_cover_path({"capa_ebook": saved_cover}, card, "erica"), saved_cover)
 
 
 if __name__ == "__main__":

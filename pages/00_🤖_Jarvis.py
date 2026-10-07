@@ -491,8 +491,14 @@ def _change_home_profile() -> None:
 
 
 def _heading(title: str, subtitle: str, icon: str) -> None:
+    icons = {
+        "▣": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h7l2 2h9v13H3z"/><path fill="#ffffff88" d="M3 8h18v2H3z"/></svg>',
+        "▥": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 13h4v8H3zM10 8h4v13h-4zM17 3h4v18h-4z"/></svg>',
+        "💬": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3C6 3 2 6.4 2 11c0 2.7 1.5 5 4 6.4L4 22l6-3h2c6 0 10-3.4 10-8S18 3 12 3z"/><path fill="#fff" d="M6 10h2v2H6zM11 10h2v2h-2zM16 10h2v2h-2z"/></svg>',
+    }
+    icon_markup = icons.get(icon, html_lib.escape(icon))
     st.markdown(
-        f'<div class="fb-panel-heading"><span class="fb-panel-icon" aria-hidden="true">{icon}</span>'
+        f'<div class="fb-panel-heading"><span class="fb-panel-icon" aria-hidden="true">{icon_markup}</span>'
         f'<div><h2>{html_lib.escape(title)}</h2><p>{html_lib.escape(subtitle)}</p></div></div>',
         unsafe_allow_html=True,
     )
@@ -795,19 +801,21 @@ with projects_col:
                     path = project_path(item)
                     data = project_snapshot(path)
                     with st.container(key=f"fb_project_{uuid.uuid5(uuid.NAMESPACE_URL, path).hex}"):
-                        cover = project_cover_path(data)
+                        cover = project_cover_path(data, item, active_workspace_profile_id)
                         if cover:
                             st.image(cover, use_container_width=True)
                         else:
                             st.markdown(f'<div class="fb-book-placeholder" aria-hidden="true"><span>✦</span><b>{html_lib.escape(item.get("titulo") or "Meu livro")}</b><span>📖</span></div>', unsafe_allow_html=True)
                         status_label, status_kind = project_status(item, data)
-                        st.markdown(f'<span class="fb-project-badge">{html_lib.escape(status_label)}</span><h3 class="fb-project-title">{html_lib.escape(item.get("titulo") or "Sem título")}</h3>', unsafe_allow_html=True)
+                        st.markdown(f'<span class="fb-project-badge fb-project-badge-{status_kind}">{html_lib.escape(status_label)}</span><h3 class="fb-project-title">{html_lib.escape(item.get("titulo") or "Sem título")}</h3>', unsafe_allow_html=True)
                         st.caption(item.get("colecao") or item.get("tema_geral") or "Projeto FaithBloom")
-                        if st.button("✓ Selecionado" if path == context_path else "Selecionar", key=f"fb_select_{path}", use_container_width=True):
-                            activate_project(item, active_workspace_profile_id)
-                            st.rerun()
-                        if st.button("Abrir →", key=f"fb_open_{path}", use_container_width=True):
-                            open_project(item, active_workspace_profile_id)
+                        with st.container(key=f"fb_book_menu_{uuid.uuid5(uuid.NAMESPACE_URL, path).hex}"):
+                            with st.popover("", icon=":material/more_vert:", help=f"Opções de {item.get('titulo') or 'projeto'}"):
+                                if st.button("✓ Selecionado" if path == context_path else "Selecionar", key=f"fb_select_{path}", use_container_width=True):
+                                    activate_project(item, active_workspace_profile_id)
+                                    st.rerun()
+                                if st.button("Abrir →", key=f"fb_open_{path}", use_container_width=True):
+                                    open_project(item, active_workspace_profile_id)
 
 with status_col:
     with st.container(key="fb_production"):

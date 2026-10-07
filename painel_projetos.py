@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from armazenamento import carregar_livro, carregar_livro_colorir, listar_livros, listar_livros_colorir
+from asset_library import get_thumbnail
 from family_profiles import project_links_for_profile, touch_project, visible_project_cards
 from integration_ux import PROJECT_CONTEXT_KEY, make_project_context
 from painel_dados import project_session_updates
@@ -97,10 +98,19 @@ def open_project(project: dict, profile_id: str = "") -> None:
     st.switch_page(COLORING_PAGE if project["kind"] == "coloring" else STORY_PAGE)
 
 
-def project_cover_path(state: dict) -> str:
-    """Retorna uma capa de imagem real; PDFs/wraps não viram thumbnails."""
-    for field in ("arte_capa_frontal", "capa_ebook", "capa_fisica_preview", "imagem_capa", "cover_image"):
-        value = state.get(field)
+def project_cover_path(state: dict, project: dict | None = None, profile_id: str = "") -> str:
+    """Prefere a thumbnail configurada no perfil; usa uma capa salva como fallback."""
+    candidates = []
+    if project and profile_id:
+        try:
+            linked = next((link for link in project_links_for_profile(profile_id)
+                           if link.get("kind") == project.get("kind") and project_path(link) == project_path(project)), {})
+            if linked.get("thumbnail_asset_id"):
+                candidates.append(get_thumbnail(linked["thumbnail_asset_id"], max_px=360))
+        except Exception:
+            pass
+    candidates.extend(state.get(field) for field in ("arte_capa_frontal", "capa_ebook", "capa_fisica_preview", "imagem_capa", "cover_image"))
+    for value in candidates:
         if not isinstance(value, str) or not value.strip():
             continue
         value = value.strip()

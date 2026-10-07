@@ -48,7 +48,7 @@ else:
         for column, card in zip(columns, cards[offset:offset + 4]):
             path = project_path(card)
             state = project_snapshot(path)
-            cover = project_cover_path(state)
+            cover = project_cover_path(state, card, profile_id)
             status, _ = project_status(card, state)
             with column:
                 with st.container(border=True):
