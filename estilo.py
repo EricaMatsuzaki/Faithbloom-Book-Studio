@@ -344,7 +344,7 @@ def render_sidebar_navigation() -> None:
 
 
 def aplicar_estilo():
-    st.markdown(CSS, unsafe_allow_html=True)
+    st.html(CSS)
     from painel_visual import aplicar_visual
     aplicar_visual()
     render_sidebar_navigation()
