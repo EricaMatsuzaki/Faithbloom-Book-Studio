@@ -35,7 +35,7 @@ CSS = """
 [data-testid="stMainBlockContainer"], .block-container {
   max-width:1600px; padding: .65rem .85rem 1.5rem;
 }
-[data-testid="stMain"] > div > div > [data-testid="stVerticalBlock"] { gap:.7rem; }
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] { gap:.5rem; }
 h1,h2,h3,h4,p { color:inherit; }
 .stMarkdown h1,.stMarkdown h2,.stMarkdown h3,.stMarkdown h4 { color:var(--fb-ink); }
 [data-testid="stHeader"] { background:transparent; height:2.7rem; }
@@ -45,8 +45,8 @@ section[data-testid="stSidebar"] {
   background:linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%);
   border-right:1px solid #ececf6;
 }
-[data-testid="stSidebarContent"] { padding:.3rem .7rem 1rem; }
-[data-testid="stSidebarUserContent"] { padding:0; }
+[data-testid="stSidebarContent"] { padding:0 .7rem 1rem!important; gap:0!important; }
+[data-testid="stSidebarUserContent"] { padding:0; margin-top:-12px; }
 [data-testid="stSidebarHeader"] { padding:.3rem .3rem 0; height:1.6rem; }
 [data-testid="stSidebarNav"] { display:none; }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap:.18rem; }
@@ -83,9 +83,9 @@ section[data-testid="stSidebar"] {
 .st-key-fb_side_text [data-testid="stPageLink-NavLink"] span { color:#8d39f4; }
 .st-key-fb_side_publish [data-testid="stPageLink-NavLink"] span { color:#f62c92; }
 .fb-brand-frame,.fb-promo-frame { position:relative; overflow:hidden; }
-.fb-brand-frame { width:180px; max-width:100%; aspect-ratio:173 / 58; margin:0 auto .6rem; }
-.fb-brand-frame img { position:absolute; width:739.885%; max-width:none; left:-9.827%; top:-17.241%; }
-.fb-promo-frame { width:100%; aspect-ratio:196 / 128; border-radius:12px; margin-top:1.4rem; }
+.fb-brand-frame { width:180px; max-width:100%; aspect-ratio:178 / 58; margin:0 auto 1.5rem; }
+.fb-brand-frame img { position:absolute; width:719.101%; max-width:none; left:-8.427%; top:-17.241%; }
+.fb-promo-frame { width:100%; aspect-ratio:196 / 128; border-radius:12px; margin-top:2.5rem; }
 .fb-promo-frame img { position:absolute; width:653.061%; max-width:none; left:-6.633%; top:-449.219%; }
 .fb-brand-frame.fb-brand-inline { width:170px; margin:0; }
 .fb-banner { position:relative; margin:.2rem 0 .1rem; }
@@ -214,6 +214,8 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 .fb-topbar-user { color:#3a4775; text-align:right; font-size:.85rem; line-height:2.6rem; white-space:nowrap; }
 .fb-topbar-user strong { font-weight:650; }
 .st-key-fb_topbar [data-testid="stTextInput"] input { font-size:.8rem; }
+.st-key-fb_topbar [data-testid="stTextInputRootElement"] { min-height:36px; height:36px; }
+.st-key-fb_topbar [data-testid="stTextInput"] input { height:36px; }
 .st-key-fb_topbar [data-testid="stTextInput"] { max-width:360px; }
 .st-key-fb_topbar [data-testid="stHorizontalBlock"] { align-items:center; }
 .st-key-fb_topbar [data-testid="stPopoverButton"],
@@ -241,7 +243,8 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 .fb-empty-project h3 { font-size:.98rem; margin:0 0 6px; }
 .fb-empty-project p { font-size:.84rem; color:#717b99; margin:0; line-height:1.5; }
 .fb-stage-list { list-style:none; margin:8px 0; padding:0; }
-.fb-stage { display:flex; align-items:center; gap:9px; padding:2px 6px; border-bottom:1px solid #f1eff8; border-radius:8px; font-size:.75rem; }
+.fb-stage { display:flex; align-items:center; gap:9px; padding:2px 6px; margin:0!important; min-height:24px; line-height:1.4; border-bottom:1px solid #f1eff8; border-radius:8px; font-size:.75rem; }
+.st-key-fb_production[data-testid="stVerticalBlock"] { gap:4px; }
 .fb-stage-number { display:grid; place-items:center; width:20px; height:20px; flex:0 0 20px; border-radius:50%; background:#e8e8f2; color:#68738f; font-weight:700; }
 .fb-stage-label { flex:1; font-weight:600; }
 .fb-stage-status { font-size:.68rem; color:#8790a7; white-space:nowrap; }
@@ -313,15 +316,20 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 }
 .fb-action-copy h3,.fb-action-copy p,.fb-panel-heading h2,.fb-panel-heading p,.fb-project-title { padding:0!important; margin:0!important; }
 [data-testid="stSidebar"] [data-testid="stExpander"] details { border:0!important; border-radius:0!important; }
-[data-testid="stSidebarHeader"] { padding:.2rem .3rem 0!important; height:1.1rem!important; min-height:0!important; }
+[data-testid="stSidebarHeader"] { padding:0 .3rem!important; height:.45rem!important; min-height:0!important; }
 .st-key-fb_banner_controls [data-testid="stVerticalBlock"] { align-items:flex-end; }
-[data-testid="stToolbar"] { display:none!important; }
+[data-testid="stToolbarActions"],[data-testid="stAppDeployButton"],[data-testid="stMainMenu"] { display:none!important; }
 .st-key-fb_topbar [data-testid="stPopoverButton"] svg { display:none; }
 @media(min-width:769px) { [data-testid="stHeader"] { height:0!important; min-height:0!important; } }
+@media(max-width:768px) {
+  .st-key-fb_topbar { padding-right:34px; }
+  [data-testid="stExpandSidebarButton"] { position:fixed; top:.65rem; right:.65rem; left:auto; width:30px; height:30px; border:1px solid #ececf6; border-radius:8px; background:white; }
+}
 
 .fb-panel-icon svg { width:22px; height:22px; }
 .st-key-fb_recent .fb-panel-icon,.st-key-fb_production .fb-panel-icon { background:transparent; width:22px; height:22px; flex-basis:22px; }
 .st-key-fb_recent .fb-panel-heading h2,.st-key-fb_recent .fb-panel-heading p { display:inline; }
+.st-key-fb_recent .fb-panel-heading [data-testid="stHeadingWithActionElements"] { display:inline; }
 .st-key-fb_recent .fb-panel-heading p { margin-left:12px!important; }
 .st-key-fb_recent a[data-testid="stPageLink-NavLink"] { border:0!important; background:transparent!important; padding:0!important; min-height:24px; color:#913ae8; box-shadow:none; }
 [class*="st-key-fb_book_menu_"] { position:absolute; right:3px; bottom:3px; width:26px!important; }
@@ -330,7 +338,10 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 [class*="st-key-fb_project_"] [data-testid="stCaptionContainer"] { padding-right:23px; }
 .fb-project-badge-published { color:#168b65; background:#dbf9ed; }
 .fb-project-badge-draft { color:#bb780a; background:#fff0cf; }
-@media(min-width:769px) { [class*="st-key-fb_project_"] [data-testid="stImage"] img { width:100%; height:98px!important; object-fit:cover; } }
+@media(min-width:769px) {
+  [class*="st-key-fb_project_"] [data-testid="stImage"] img { width:100%; height:98px!important; object-fit:cover; }
+  [class*="st-key-fb_project_"] .fb-project-badge { position:absolute; top:-18px; left:0; z-index:1; }
+}
 
 </style>
 """
@@ -338,7 +349,7 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 
 def aplicar_visual() -> None:
     """Call after the existing estilo.CSS so the shared palette is updated."""
-    st.markdown(CSS, unsafe_allow_html=True)
+    st.html(CSS)
 
 
 def render_brand(sidebar: bool = True) -> None:
