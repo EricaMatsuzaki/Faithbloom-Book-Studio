@@ -585,8 +585,8 @@ div[class*="st-key-fb_live_jarvis_"]{border-radius:20px;border:1px solid #ece5f4
 .st-key-fb_assistant_heading{margin-top:.3rem}.st-key-fb_assistant_heading [data-testid="stHorizontalBlock"]{align-items:center}
 .st-key-jarvis_compose{border:1px solid #ececf6;border-radius:16px;padding:.4rem .8rem;background:white}
 .st-key-jarvis_compose [data-testid="stForm"]{border:0;padding:0}
-.st-key-jarvis_compose textarea{min-height:48px!important;border-radius:12px!important}
-.st-key-jarvis_compose [data-testid="stFormSubmitButton"] button{min-height:48px;border:0;background:linear-gradient(110deg,#ff90b7,#b35cf6 60%,#8677ff);color:white;border-radius:12px}
+.st-key-jarvis_compose textarea{min-height:40px!important;height:40px!important;border-radius:12px!important}
+.st-key-jarvis_compose [data-testid="stFormSubmitButton"] button{min-height:40px;border:0;background:linear-gradient(110deg,#ff90b7,#b35cf6 60%,#8677ff);color:white;border-radius:12px}
 .st-key-jarvis_compose [data-testid="stHorizontalBlock"]{align-items:center}
 .st-key-fb_voice_toggle [data-testid="stCheckbox"] p{font-size:.75rem;color:#7b43ca}
 .st-key-fb_home_responses{border:1px solid #ececf6;border-radius:16px;padding:.65rem;background:white}
