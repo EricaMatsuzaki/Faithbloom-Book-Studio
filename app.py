@@ -9,7 +9,7 @@ from family_profiles import list_workspace_profiles, get_workspace_profile, visi
 from integration_ux import PROJECT_CONTEXT_KEY, make_project_context
 from asset_library import get_thumbnail
 
-st.set_page_config(page_title="FaithBloom Book Studio", page_icon="📖", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="FaithBloom Book Studio", page_icon="📖", layout="wide", initial_sidebar_state="auto")
 aplicar_estilo()
 
 # Jarvis é a porta de entrada oficial. O dashboard completo permanece abaixo

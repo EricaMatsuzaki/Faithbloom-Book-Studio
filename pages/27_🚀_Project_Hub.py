@@ -13,6 +13,7 @@ from publishing_distribution import list_distribution_plans, load_distribution_p
 from project_hub import same_project, build_project_overview, build_edition_matrix, build_project_snapshot
 from integration_ux import make_project_context
 from author_profiles import authorship_summary
+from painel_projetos import available_projects, project_path
 
 st.set_page_config(page_title="Project Hub", page_icon="🚀", layout="wide")
 aplicar_estilo()
@@ -22,17 +23,20 @@ hero(
     "Refinamento 12 · Single-project command center",
 )
 
-livros = listar_livros()
+livros = [item for item in available_projects(str(st.session_state.get("faithbloom_workspace_profile_id") or "")) if item["kind"] == "story"]
 if not livros:
     st.info("Nenhum Book Master salvo ainda. Crie ou salve uma obra para usar o Project Hub.")
     st.stop()
 
 section_title("1. Escolha o projeto", "O Hub lê evidências já salvas nos outros módulos; ele não inventa qualidade nem aprova conteúdo sozinho.", "Project")
-options = {f"{x.get('titulo','(sem título)')} · {x.get('colecao','')}": x for x in livros}
-selected = st.selectbox("Book Master", list(options))
-info = options[selected]
+active_path = str((st.session_state.get("faithbloom_active_project") or {}).get("storage_path") or "").removeprefix("fb://").strip("/")
+default_index = next((index for index, item in enumerate(livros) if project_path(item) == active_path), 0)
+selected = st.selectbox("Book Master", range(len(livros)), index=default_index,
+                        format_func=lambda index: f"{livros[index].get('titulo','(sem título)')} · {livros[index].get('colecao','')}")
+info = livros[selected]
 state = carregar_livro(info.get("colecao", ""), info.get("storage_path") or info["arquivo"])
 st.session_state["faithbloom_active_project"] = make_project_context(info, state)
+st.session_state["faithbloom_active_project"]["kind"] = "story"
 title, collection = state.get("titulo", ""), state.get("colecao", "")
 
 # Reúne somente registros que realmente correspondem ao projeto.

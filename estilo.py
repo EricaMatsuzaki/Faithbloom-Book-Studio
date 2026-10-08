@@ -337,62 +337,16 @@ def _sidebar_link(path: str, label: str) -> None:
 
 
 def render_sidebar_navigation() -> None:
-    """Menu de usuário enxuto; módulos técnicos continuam acessíveis sem poluir."""
-    with st.sidebar:
-        st.markdown(
-            """
-            <div style="padding:.25rem .12rem 1rem;text-align:center;line-height:1">
-                <div style="font-size:1.52rem;font-weight:900;letter-spacing:-.055em;color:#183951">
-                    <span style="font-size:1.35rem">💜</span>
-                    <span style="font-family:Georgia,serif;font-style:italic;background:linear-gradient(90deg,#19558f,#6b4cd6,#ee719f);
-                    -webkit-background-clip:text;background-clip:text;color:transparent">FaithBloom</span>
-                </div>
-                <div style="font-size:.59rem;letter-spacing:.30em;color:#283f70;margin:.42rem 0 0 1.5rem;font-weight:850">BOOK STUDIO</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        _sidebar_link("pages/00_🤖_Jarvis.py", "🏠 Início")
-        _sidebar_link("pages/02_🏠_Dashboard_do_Estudio.py", "📚 Meus projetos")
-
-        with st.expander("🌷 Criar & transformar", expanded=True):
-            _sidebar_link("pages/39_✍️_Historia_4_Estilos.py", "📖 Criar um livro")
-            _sidebar_link("pages/16_🩺_Book_Doctor.py", "🔄 Continuar / Atualizar")
-            _sidebar_link("pages/14_👥_Character_Universe.py", "👥 Personagens")
-            _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🎨 Imagens & ilustrações")
-            _sidebar_link("pages/5_🔍_Analisar_Livro.py", "✍️ Texto & revisão")
-            _sidebar_link("pages/26_🌐_Publishing_Distribution_Center.py", "🚀 Publicar")
-
-        with st.expander("👥 Universo & biblioteca", expanded=False):
-            _sidebar_link("pages/27_🚀_Project_Hub.py", "🚀 Project Hub")
-            _sidebar_link("pages/15_📚_Biblioteca_Editorial.py", "📚 Biblioteca Editorial")
-            _sidebar_link("pages/31_🖼️_Asset_Library_Media_Manager.py", "🖼️ Assets & Masters")
-            _sidebar_link("pages/3_🖍️_Livros_de_Colorir.py", "🖍️ Livro de colorir")
-            _sidebar_link("pages/23_🧩_Activity_Book_Studio.py", "🧩 Livro de atividades")
-            _sidebar_link("pages/24_🎧_Audiobook_Studio.py", "🎧 Audiobook")
-            _sidebar_link("pages/21_Translation_Localization_Studio.py", "🌍 Traduzir / localizar")
-
-        with st.expander("✅ Qualidade & publicação", expanded=False):
-            _sidebar_link("pages/25_🛡️_Quality_Guardian.py", "🛡️ Quality Guardian")
-            _sidebar_link("pages/26_🌐_Publishing_Distribution_Center.py", "🌐 Distribuição")
-            _sidebar_link("pages/13_✅_QA_Final_e_Release.py", "✅ QA final")
-
-        with st.expander("🧰 Ferramentas avançadas", expanded=False):
-            _sidebar_link("pages/37_🧠_Agent_Skills_Bestseller_Readiness.py", "🛠️ Engenharia & Skills")
-            _sidebar_link("pages/16_🩺_Book_Doctor.py", "🩺 Book Doctor")
-            _sidebar_link("pages/52_✨_Autopilot_Editorial_Remaster.py", "✨ Autopilot Editorial Remaster")
-            _sidebar_link("pages/17_🎭_Emotional_Color_Director.py", "🎭 Emotional Color")
-            _sidebar_link("pages/18_🎨_Style_DNA_Lab.py", "🎨 Style DNA")
-            _sidebar_link("pages/19_✨_Restoration_Studio.py", "✨ Restoration Studio")
-            _sidebar_link("pages/20_🖍️_Coloring_Book_Doctor.py", "🖍️ Coloring Book Doctor")
-            _sidebar_link("pages/11_🛡️_Custos_e_Seguranca.py", "🛡️ Custos & Segurança")
-            _sidebar_link("pages/12_🏭_Fila_de_Producao.py", "🏭 Fila de Produção")
-            _sidebar_link("pages/33_🧭_Integration_UX_Center.py", "🧭 Integration UX")
+    """Menu visual FaithBloom; mantém todas as rotas registradas acessíveis."""
+    from painel_visual import render_sidebar
+    render_sidebar()
 
 
 
 def aplicar_estilo():
-    st.markdown(CSS, unsafe_allow_html=True)
+    st.html(CSS)
+    from painel_visual import aplicar_visual
+    aplicar_visual()
     render_sidebar_navigation()
 
 

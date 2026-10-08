@@ -32,11 +32,23 @@ class FakeBackend:
         return sorted(k for k in self.data if k == p or k.startswith(p + "/"))
 
 
-def test_autopilot_is_exposed_in_custom_sidebar():
-    root = Path(__file__).resolve().parents[1]
-    source = (root / "estilo.py").read_text(encoding="utf-8")
-    assert 'pages/52_✨_Autopilot_Editorial_Remaster.py' in source
-    assert '✨ Autopilot Editorial Remaster' in source
+def test_autopilot_is_exposed_in_custom_sidebar(monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    import estilo
+    import painel_visual
+
+    links = []
+    ui = SimpleNamespace(
+        sidebar=nullcontext(),
+        container=lambda **_kwargs: nullcontext(),
+        expander=lambda *_args, **_kwargs: nullcontext(),
+        markdown=lambda *_args, **_kwargs: None,
+        page_link=lambda page, **kwargs: links.append((page, kwargs["label"])),
+    )
+    monkeypatch.setattr(painel_visual, "st", ui)
+    estilo.render_sidebar_navigation()
+    assert ("pages/52_✨_Autopilot_Editorial_Remaster.py", "Autopilot Editorial Remaster") in links
 
 
 def test_runtime_tree_roundtrip(monkeypatch, tmp_path):
