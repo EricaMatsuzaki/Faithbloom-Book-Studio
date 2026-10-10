@@ -1,7 +1,7 @@
 """FaithBloom's illustrated dashboard and shared, accessible navigation.
 
-The reference images are kept intact. CSS frames reveal the supplied logo,
-welcome artwork and sidebar illustration without modifying their pixels.
+The reference images are kept intact. The banner shows the complete supplied
+PNG; CSS frames reveal only the separate logo and sidebar illustration.
 All navigation remains native Streamlit navigation.
 """
 from __future__ import annotations
@@ -15,13 +15,21 @@ import re
 import streamlit as st
 
 ROOT = Path(__file__).resolve().parent
+BANNER_PATH = ROOT / "PDF_historico" / "Estu\u0301dio Encantado FaithBloom.png"
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=4)
 def _asset(name: str) -> str:
     """Embed local artwork so it also works on Streamlit Cloud."""
-    content = (ROOT / "assets" / name).read_bytes()
-    return "data:image/jpeg;base64," + b64encode(content).decode("ascii")
+    path = BANNER_PATH if name == "faithbloom-studio-banner.png" else ROOT / "assets" / name
+    content = path.read_bytes()
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime_type = "image/png"
+    elif content.startswith(b"\xff\xd8\xff"):
+        mime_type = "image/jpeg"
+    else:
+        raise ValueError(f"Unsupported artwork format: {name}")
+    return f"data:{mime_type};base64," + b64encode(content).decode("ascii")
 
 
 CSS = """
@@ -89,74 +97,18 @@ section[data-testid="stSidebar"] {
 .fb-promo-frame img { position:absolute; width:653.061%; max-width:none; left:-6.633%; top:-449.219%; }
 .fb-brand-frame.fb-brand-inline { width:170px; margin:0; }
 .fb-banner { position:relative; margin:.2rem 0 .1rem; }
-.fb-banner-frame { position:relative; width:100%; aspect-ratio:1280 / 575; overflow:hidden;
-  border-radius:15px; isolation:isolate; container-type:inline-size; }
-.fb-banner-frame > img { display:block; width:100%; height:100%; object-fit:contain; }
-.fb-banner-desktop { aspect-ratio:1032 / 175; }
-.fb-banner-desktop > img { position:absolute; width:124.031%; height:auto; max-width:none;
-  left:-22.674%; top:-33.143%; object-fit:initial; }
-.fb-banner-desktop-full { aspect-ratio:1280 / 575; }
-.fb-banner-desktop-full > img { position:static; width:100%; height:100%; object-fit:contain; }
-.fb-banner-mobile { display:none; }
-.fb-greeting { position:absolute; left:37%; top:12.65%; width:22%; height:11.25%; display:flex;
-  align-items:center; background:linear-gradient(110deg,#c4e9ff,#d9ecfd 80%,#e9f0fc); border-radius:3px;
-  color:#081848; font-weight:800; line-height:1; font-size:var(--greeting-size,5.4cqw); white-space:nowrap;
-}
-.fb-banner-motion { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:2; }
-.fb-banner-motion span,.fb-banner-motion svg { pointer-events:none; }
-.fb-petal { position:absolute; left:var(--petal-left); top:-8%; width:.95%; height:2.5%;
-  border-radius:90% 10% 85% 15%; background:linear-gradient(135deg,#ffd9ec,#f8a6c7 70%,#f794bb);
-  box-shadow:inset 1px 1px 2px #fff9; opacity:0;
-  animation:fb-petal-fall var(--petal-duration,20s) linear var(--petal-delay,0s) infinite;
-}
-.fb-petal-garden { animation-name:fb-petal-garden-fall; }
-.fb-banner-star { position:absolute; color:#fff7c9; text-shadow:0 0 8px #ffe698;
-  font-size:2.1cqw; line-height:1; opacity:.5; animation:fb-star-twinkle 3.8s ease-in-out infinite; }
-.fb-banner-star-one { left:60.6%; top:8%; }
-.fb-banner-star-two { left:62.7%; top:18.6%; font-size:1.35cqw; animation-delay:-1.8s; }
-.fb-banner-star-three { left:22.2%; top:12.5%; font-size:1.2cqw; animation-delay:-2.6s; }
-.fb-butterfly { position:absolute; width:3%; height:auto; opacity:.8;
-  animation:fb-butterfly-float 8s ease-in-out infinite; }
-.fb-butterfly > svg { display:block; width:100%; height:auto; overflow:visible; }
-.fb-butterfly-one { left:15%; top:10%; }
-.fb-butterfly-two { left:79%; top:7.5%; width:2.4%; animation-delay:-3.5s; }
-.fb-butterfly-wings { transform-box:fill-box; transform-origin:center;
-  animation:fb-butterfly-flutter .95s ease-in-out infinite alternate; }
-.fb-heart-glow { position:absolute; left:78.6%; top:66.5%; width:5.4%; height:12.5%;
-  border-radius:50%; background:radial-gradient(ellipse,#ff4adb44 0%,#ff72df33 35%,#ff78e100 75%);
-  filter:blur(2px); animation:fb-heart-glow 4.2s ease-in-out infinite; }
-.fb-banner-motion-paused * { animation-play-state:paused !important; }
-.fb-banner-desktop .fb-greeting { left:40.3%; top:9.6%; width:17.1%; height:22.5%;
-  background:linear-gradient(110deg,#e3f0ff,#ecf1ff 80%,#f4f2fc); }
-.fb-banner-desktop .fb-petal { height:5.5%; }
-.fb-banner-desktop .fb-banner-star-one { left:58%; top:8%; }
-.fb-banner-desktop .fb-banner-star-two { left:59.3%; top:28%; }
-.fb-banner-desktop .fb-banner-star-three { left:36.5%; top:10%; }
-.fb-banner-desktop .fb-heart-glow { left:78.3%; top:75%; width:4.8%; height:28%; }
+.fb-banner-frame { position:relative; width:100%; border-radius:15px; }
+.fb-banner-frame > img { display:block; width:100%; max-width:100%; height:auto; border-radius:inherit; }
+.fb-banner-animated { animation:fb-banner-frame-pulse 5s ease-in-out infinite; }
 .st-key-fb_banner_controls { margin-top:-.15rem; margin-bottom:-.65rem; }
 .st-key-fb_banner_controls [data-testid="stToggle"],
 .st-key-fb_banner_controls [data-testid="stCheckbox"] { width:max-content; margin-left:auto; }
 .st-key-fb_banner_controls [data-testid="stToggle"] p,
 .st-key-fb_banner_controls [data-testid="stCheckbox"] p { font-size:.69rem; color:#6d7491; }
-@keyframes fb-petal-fall {
-  0% { top:-8%; transform:translateX(0) rotate(-20deg); opacity:0; }
-  10% { opacity:.7; }
-  90% { opacity:.65; }
-  100% { top:108%; transform:translateX(10px) rotate(260deg); opacity:0; }
+@keyframes fb-banner-frame-pulse {
+  0%,100% { box-shadow:0 0 0 1px #eedfff,0 0 8px #f2ddff33; }
+  50% { box-shadow:0 0 0 1px #e6cbfa,0 0 17px #ead2ff66; }
 }
-@keyframes fb-petal-garden-fall {
-  0% { top:48%; transform:translateX(0) rotate(-35deg); opacity:0; }
-  12% { opacity:.6; }
-  88% { opacity:.6; }
-  100% { top:108%; transform:translateX(-8px) rotate(220deg); opacity:0; }
-}
-@keyframes fb-star-twinkle { 0%,100% { opacity:.2; } 50% { opacity:.9; } }
-@keyframes fb-butterfly-float {
-  0%,100% { transform:translate(0,0) rotate(-7deg); }
-  50% { transform:translate(6px,-5px) rotate(7deg); }
-}
-@keyframes fb-butterfly-flutter { from { transform:scaleX(1); } to { transform:scaleX(.65); } }
-@keyframes fb-heart-glow { 0%,100% { opacity:.3; } 50% { opacity:.85; } }
 .fb-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 [class*="st-key-fb_action_"] {
   position:relative; border-radius:14px; padding:0 !important; overflow:visible;
@@ -271,7 +223,6 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
 .fb-live-jarvis-bubble,.fb-jarvis-bubble { width:max-content; max-width:90%; margin:0 auto 8px;
   padding:10px 18px; border-radius:22px; background:#ffffffdf; color:#8d42df; text-align:center;
   font-size:1.03rem; font-weight:750; line-height:1.45; }
-@media (min-width:769px) { .st-key-fb_live_jarvis_closed { display:none; } }
 @media (min-width: 1100px) {
   .st-key-fb_dashboard_actions [data-testid="stHorizontalBlock"] { gap:12px; }
   [class*="st-key-fb_action_"] { min-height:74px; }
@@ -291,12 +242,10 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
   [data-testid="stMainBlockContainer"],.block-container { padding:2.8rem .8rem 2rem; }
   section[data-testid="stSidebar"] { width:240px !important; min-width:240px !important; }
   .fb-banner-frame { border-radius:14px; }
-  .fb-banner-desktop,.fb-banner-desktop-full { display:none; }
-  .fb-banner-mobile { display:block; }
   .fb-action { min-height:87px; }
   .fb-action-copy h3 { font-size:.99rem; }
   .fb-action-copy p { font-size:.82rem; }
-  [class*="st-key-fb_live_jarvis_"] { display:block; padding:15px 10px !important; margin-top:-.75rem; }
+  [class*="st-key-fb_live_jarvis_"] { display:block; padding:15px 10px !important; margin-top:0; }
   .st-key-fb_topbar [data-testid="stHorizontalBlock"] { flex-wrap:nowrap; gap:.5rem; }
   .st-key-fb_topbar [data-testid="stColumn"] { min-width:0; }
   .st-key-fb_topbar [data-testid="stColumn"]:nth-child(2),
@@ -312,7 +261,7 @@ div[data-baseweb="input"] > div,div[data-baseweb="textarea"] > div,div[data-base
   html { scroll-behavior:auto !important; }
   *,*::before,*::after { transition:none !important; animation:none !important; }
   [class*="st-key-fb_action_"]:hover { transform:none; }
-  .fb-banner-motion { display:none; }
+  .fb-banner-animated { animation:none; }
 }
 .fb-action-copy h3,.fb-action-copy p,.fb-panel-heading h2,.fb-panel-heading p,.fb-project-title { padding:0!important; margin:0!important; }
 [data-testid="stSidebar"] [data-testid="stExpander"] details { border:0!important; border-radius:0!important; }
@@ -362,81 +311,34 @@ def render_brand(sidebar: bool = True) -> None:
 
 
 def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True, show_motion_control: bool = True) -> None:
-    """Reference dashboard artwork on desktop, complete garden on mobile."""
+    """Display the complete original PNG on every screen without cropping.
+
+    ``compact_desktop`` remains accepted for existing callers. The full artwork
+    always keeps its natural proportions, including the Masters' eye details.
+    """
     name = str(display_name or "Erica").strip() or "Erica"
-    # The supplied artwork includes Erica's greeting. Other profiles get a
-    # text overlay in the same place instead of inheriting another name.
-    personal = ""
-    personal_desktop = ""
-    if name.casefold() not in {"erica", "érica"}:
-        greeting_size = 5.4 * 10 / max(10, len(name) + 5)
-        personal = (
-            f'<div class="fb-greeting" style="--greeting-size:{greeting_size:.2f}cqw" '
-            f'aria-hidden="true">Oi, {escape(name)}!</div>'
-        )
-        desktop_size = 3.4 * 10 / max(10, len(name) + 5)
-        personal_desktop = (
-            f'<div class="fb-greeting" style="--greeting-size:{desktop_size:.2f}cqw" '
-            f'aria-hidden="true">Oi, {escape(name)}!</div>'
-        )
     if show_motion_control:
         with st.container(key="fb_banner_controls"):
             enabled = st.toggle(
                 "Movimento",
                 value=True,
                 key="fb_banner_motion",
-                help="Ativa ou pausa o movimento do banner. Respeita a preferência de reduzir movimento do seu dispositivo.",
+                help="Ativa ou pausa o brilho ao redor do banner. Respeita a preferência de reduzir movimento do seu dispositivo.",
             )
     else:
         enabled = bool(st.session_state.get("fb_banner_motion", True))
-    motion = _banner_motion() if enabled else ""
-    desktop_class = "fb-banner-desktop" if compact_desktop else "fb-banner-desktop-full"
-    desktop_asset = "faithbloom-dashboard-reference.jpg" if compact_desktop else "faithbloom-welcome.jpg"
-    desktop_greeting = personal_desktop if compact_desktop else personal
+    frame_class = "fb-banner-frame fb-banner-animated" if enabled else "fb-banner-frame"
     st.markdown(
         '<section class="fb-banner" aria-label="Boas-vindas">'
         f'<h1 class="fb-sr-only">Oi, {escape(name)}! O que você quer fazer hoje?</h1>'
-        '<p class="fb-sr-only">O Jarvis entende seu objetivo, monta a equipe certa de especialistas '
-        'e guia todo o processo, do começo ao fim. Você sonha. Nós orquestramos. Deus floresce. '
-        'Oi! Eu sou o Jarvis! Vamos criar juntos?</p>'
-        f'<div class="fb-banner-frame {desktop_class}" aria-hidden="true">'
-        f'<img src="{_asset(desktop_asset)}" alt="">{desktop_greeting}{motion}</div>'
-        '<div class="fb-banner-frame fb-banner-mobile" aria-hidden="true">'
-        f'<img src="{_asset("faithbloom-welcome.jpg")}" alt="">{personal}{motion}</div>'
+        '<p class="fb-sr-only">FaithBloom Book Studio. Histórias que tocam corações e transformam vidas. '
+        'Do seu livro de hoje para um futuro ainda mais brilhante!</p>'
+        f'<div class="{frame_class}">'
+        f'<img src="{_asset("faithbloom-studio-banner.png")}" width="1672" height="941" '
+        'alt="FaithBloom Book Studio: menina de olhos verdes, gatinha de laço rosa e passarinho azul, '
+        'junto a livros de histórias, valores, amizade, fé e grandes lições."></div>'
         '</section>',
         unsafe_allow_html=True,
-    )
-
-
-def _banner_motion() -> str:
-    """Decorations only: the original artwork never moves or changes."""
-    butterfly = (
-        '<svg viewBox="0 0 48 40" fill="none" aria-hidden="true">'
-        '<g class="fb-butterfly-wings" stroke="#c77a22" stroke-width=".9">'
-        '<path d="M24 20C14 0 1 2 4 17c1 8 12 10 20 3Z" fill="#ffd586"/>'
-        '<path d="M24 21C10 16 4 27 10 33c6 6 12-2 14-12Z" fill="#ffb975"/>'
-        '<path d="M24 20C34 0 47 2 44 17c-1 8-12 10-20 3Z" fill="#ffe19e"/>'
-        '<path d="M24 21c14-5 20 6 14 12-6 6-12-2-14-12Z" fill="#ffc486"/>'
-        '</g><path d="M24 15v16m0-14-4-5m4 5 4-5" stroke="#9a612c" stroke-width="1.6" stroke-linecap="round"/>'
-        '</svg>'
-    )
-    petals = "".join(
-        f'<span class="fb-petal{garden}" style="--petal-left:{left}%;'
-        f'--petal-duration:{duration}s;--petal-delay:-{delay}s"></span>'
-        for left, duration, delay, garden in [
-            (1.5, 21, 4, ""), (4, 25, 16, ""), (7, 23, 10, ""),
-            (98, 24, 8, ""), (95, 19, 12, " fb-petal-garden"),
-            (91, 22, 5, " fb-petal-garden"),
-        ]
-    )
-    return (
-        '<div class="fb-banner-motion" aria-hidden="true">'
-        f'{petals}<span class="fb-banner-star fb-banner-star-one">✦</span>'
-        '<span class="fb-banner-star fb-banner-star-two">✧</span>'
-        '<span class="fb-banner-star fb-banner-star-three">✦</span>'
-        f'<span class="fb-butterfly fb-butterfly-one">{butterfly}</span>'
-        f'<span class="fb-butterfly fb-butterfly-two">{butterfly}</span>'
-        '<span class="fb-heart-glow"></span></div>'
     )
 
 
