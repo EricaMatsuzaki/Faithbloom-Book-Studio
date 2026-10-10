@@ -179,6 +179,26 @@ def check_editorial(state: dict) -> list[dict]:
 
     if not _norm_text(state.get("licao_final")):
         items.append(issue("editorial", "atencao", "missing_lesson", "Final", "Lição/moral final não está registrada.", "Para coleções com lição explícita isso pode deixar o fechamento inconsistente.", "Confirmar se a obra exige uma moral final e, se sim, aprová-la."))
+
+    harmony = state.get("story_experience_biblical_harmony") or {}
+    if harmony:
+        if not harmony.get("ok"):
+            items.append(issue(
+                "editorial", "bloqueante", "story_experience_biblical_harmony",
+                "Experiência narrativa",
+                "A história ainda não passou no Story Experience & Biblical Harmony Gate.",
+                "O FaithBloom exige que a criança viva a experiência antes da conclusão, que a transformação seja conquistada pela jornada e que a moral/bíblia estejam em harmonia com o que foi vivido.",
+                "Revisar os blockers do gate sem apagar a essência, o Heart Arc ou a estrutura canônica.",
+                evidence={"blockers": deepcopy(harmony.get("blockers") or []), "summary": harmony.get("summary", "")},
+            ))
+    elif state.get("full_editorial_remaster"):
+        items.append(issue(
+            "editorial", "bloqueante", "story_experience_harmony_missing",
+            "Experiência narrativa",
+            "Remaster final sem auditoria Story Experience & Biblical Harmony registrada.",
+            "O Quality Guardian não deve presumir que história, moral e fé estão integradas sem evidência.",
+            "Executar o gate de experiência/harmonia antes do fechamento.",
+        ))
     return items
 
 
@@ -256,6 +276,27 @@ def check_bible(state: dict) -> list[dict]:
                 ))
         except Exception as exc:
             items.append(issue("bible", "atencao", "biblical_reference_validator_unavailable", "Referência bíblica", f"Validator indisponível: {type(exc).__name__}.", "Sem o validator, o Guardian não deve afirmar validação de contexto.", "Executar revisão humana/fonte aprovada antes do release."))
+
+    try:
+        from story_experience_biblical_harmony import bible_final_text_gate
+        final_text = bible_final_text_gate(state)
+        if state.get("aprendizado_cristao") and not final_text.get("ok"):
+            items.append(issue(
+                "bible", "bloqueante", "bible_final_text_missing",
+                "Fechamento bíblico",
+                final_text.get("reason") or "A Palavra de Deus ainda não está pronta para o fechamento.",
+                "No FaithBloom, a Lição de Moral e a Palavra de Deus no final são obrigatórias. O texto bíblico completo não pode ser inventado ou traduzido livremente pela IA.",
+                "Selecionar/fornecer o texto do versículo, registrar versão/fonte quando aplicável e aprovar no Bible Guard.",
+                evidence={"reference": ref, "status": final_text.get("status")},
+            ))
+    except Exception as exc:
+        items.append(issue(
+            "bible", "atencao", "bible_final_text_gate_unavailable",
+            "Fechamento bíblico",
+            f"Gate de Palavra de Deus indisponível: {type(exc).__name__}.",
+            "Sem o gate, o Guardian não deve afirmar que o encerramento bíblico está pronto.",
+            "Executar revisão do Bible Guard antes do release.",
+        ))
 
     specialist = (state.get("guardian_specialist_reviews") or {}).get("biblical") or {}
     if state.get("aprendizado_cristao") and not specialist.get("approved"):

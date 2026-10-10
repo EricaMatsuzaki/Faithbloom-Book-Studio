@@ -1,21 +1,25 @@
-"""Refinamento 24 — estilos narrativos formais do Prompt-Mestre FaithBloom.
+"""Refinamento 24/25 — estilos narrativos formais e adicionais do FaithBloom.
 
 Mantém a mesma premissa, personagens, lição cristã e referência bíblica,
-variando somente a forma narrativa. A autora pode comparar os quatro estilos
-antes de escolher qual seguirá para o livro final.
+variando somente a forma narrativa. Todos os estilos herdam a skill
+`storyteller` do Roteirista e acrescentam sua especialização própria.
 """
 from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
 
+from agent_skills import skill_contract
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
 from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
+from generation_autosave import persist_generation_snapshot
 
+# Núcleo histórico e oficial do Prompt-Mestre. Deve permanecer com quatro estilos.
 ESTILOS_NARRATIVOS = {
     "estilo_1": {
         "label": "Estilo 1 — Aventura",
-        "descricao": "Aventura + emoção + superação, com ação visual, humor leve e transformação clara.",
+        "skill_base": "storyteller",
+        "descricao": "Roteirista + especialização Aventura: emoção, superação, ação visual, humor leve e transformação clara.",
         "instrucao": (
             "Use aventura, emoção e superação. Estruture problema -> tentativas -> "
             "descoberta -> ação -> transformação -> vitória espiritual. Priorize ação "
@@ -24,7 +28,8 @@ ESTILOS_NARRATIVOS = {
     },
     "estilo_2": {
         "label": "Estilo 2 — Poético/Rimado",
-        "descricao": "Musicalidade, repetição e rimas naturais sem perder clareza para a faixa escolhida.",
+        "skill_base": "storyteller",
+        "descricao": "Roteirista + especialização Poética: musicalidade, repetição e rimas naturais sem perder clareza.",
         "instrucao": (
             "Use linguagem poética adequada à idade, musicalidade, repetição suave e rimas naturais. "
             "Nunca force rimas nem sacrifique clareza; ajuste a intensidade da repetição à faixa etária."
@@ -32,7 +37,8 @@ ESTILOS_NARRATIVOS = {
     },
     "estilo_3": {
         "label": "Estilo 3 — Fábula cristã",
-        "descricao": "Fábula cristã com simbolismo compatível com a maturidade da faixa etária.",
+        "skill_base": "storyteller",
+        "descricao": "Roteirista + especialização Fábula cristã, com simbolismo compatível com a maturidade da faixa etária.",
         "instrucao": (
             "Use estrutura de fábula cristã. Símbolos e metáforas, se usados, devem ser simples o suficiente "
             "para a faixa escolhida e nunca virar abstração teológica. A personagem precisa viver a lição, "
@@ -41,7 +47,8 @@ ESTILOS_NARRATIVOS = {
     },
     "misto": {
         "label": "Estilo misto",
-        "descricao": "Combina aventura, emoção, musicalidade e fábula cristã sem perder unidade.",
+        "skill_base": "storyteller",
+        "descricao": "Roteirista + especialização Mista: aventura, emoção, musicalidade e fábula cristã com unidade.",
         "instrucao": (
             "Combine aventura e emoção do Estilo 1, musicalidade/repetição do Estilo 2 e a "
             "clareza moral da fábula cristã do Estilo 3. Preserve uma voz narrativa única e "
@@ -50,21 +57,106 @@ ESTILOS_NARRATIVOS = {
     },
 }
 
+# Biblioteca opcional: não entra automaticamente nas quatro chamadas principais.
+# Metadados `dna`, `faixas_recomendadas`, `meta_editorial` e `ui_nome_curto`
+# são usados pela interface para crescer sem hardcode por estilo.
+ESTILOS_ADICIONAIS = {
+    "cumulativo_lengalenga": {
+        "label": "🔁 Cumulativo / Lengalenga",
+        "ui_nome_curto": "Cumulativo/Lengalenga",
+        "skill_base": "storyteller",
+        "descricao": (
+            "Roteirista + especialização Cumulativa/Lengalenga: progressão por acumulação, refrão memorável, "
+            "musicalidade, antecipação, participação e humor crescente."
+        ),
+        "dna": (
+            "acumulação progressiva + refrão original + musicalidade + antecipação + participação da criança + "
+            "humor crescente + clímax e resolução satisfatória"
+        ),
+        "faixas_recomendadas": "Especialmente forte para 3–5; funciona muito bem em 6–8 com variações mais criativas. Em 9–12, só quando houver sofisticação suficiente.",
+        "meta_editorial": "Criar prazer de antecipação e releitura: a criança reconhece o padrão, participa, ri e quer ouvir de novo.",
+        "instrucao": (
+            "Use uma estrutura cumulativa original: a cada nova passagem acrescente personagem, ação, objeto, "
+            "som, tentativa ou consequência, retomando de modo intencional parte do padrão anterior. Crie um "
+            "refrão curto, original e fácil de antecipar, sem copiar frases de obras existentes. Use cadência, "
+            "sons, contagem ou pequenas variações quando combinarem com a premissa. A repetição deve produzir "
+            "prazer de antecipação e releitura, não enchimento. Faça o humor crescer pela progressão das situações, "
+            "reações e pequenas surpresas visuais, sem humilhar personagens. Conduza a acumulação até um clímax "
+            "claro e encerre o padrão com uma resolução satisfatória, transformação emocional e lição cristã natural. "
+            "Para 3–5, privilegie simplicidade, refrão e participação; para 6–8, acrescente variações e causa-consequência; "
+            "para 9–12, só use se a estrutura puder ganhar sofisticação suficiente para não infantilizar."
+        ),
+    },
+    "cotidiano_comico_diario_visual": {
+        "label": "😄 Cotidiano Cômico / Diário Visual",
+        "ui_nome_curto": "Cotidiano Cômico/Diário Visual",
+        "skill_base": "storyteller",
+        "descricao": (
+            "Roteirista + especialização Cotidiano Cômico/Diário Visual: conflitos reais da infância, terceira pessoa próxima, "
+            "diálogos ágeis, humor de personalidade, emoções oscilantes e recursos gráficos originais."
+        ),
+        "dna": (
+            "cotidiano identificável + terceira pessoa próxima + humor de personalidade + diálogos rápidos + mini-ganchos + "
+            "mudanças emocionais claras + pequenos planos que dão errado + elementos gráficos ocasionais"
+        ),
+        "faixas_recomendadas": "Muito forte para 6–8 e 9–12. Para 3–5, usar somente uma versão simplificada, mais visual e com conflito cotidiano muito concreto.",
+        "meta_editorial": "Criar identificação e impulso de continuidade: a criança pensa ‘isso poderia acontecer comigo’ e quer acompanhar a próxima confusão da protagonista.",
+        "instrucao": (
+            "Use narrativa original de cotidiano cômico infantil. Prefira terceira pessoa próxima/focalizada na protagonista: "
+            "o narrador observa de fora, mas acompanha de perto pensamentos, sentimentos, interpretações e reações da criança. "
+            "Construa conflitos reconhecíveis da infância — escola, família, irmãos, amizades, tarefas, animais, pequenas competições, "
+            "vergonha, ciúme, frustração, planos e mal-entendidos — sempre adequados à faixa etária. Faça o humor nascer da personalidade, "
+            "das situações, das tentativas e das consequências, não de piadas aleatórias nem da humilhação de personagens. Use frases relativamente "
+            "curtas, diálogos ágeis, pequenos exageros cômicos originais e mini-ganchos entre cenas. Permita mudanças emocionais perceptíveis e rápidas "
+            "quando coerentes — entusiasmo, irritação, vergonha, esperança, alegria — ajudando a criança a reconhecer emoções sem transformar a narrativa "
+            "em sermão. Crie motivos recorrentes, listas, bilhetes, lembretes, rabiscos ou notas de diário SOMENTE como sugestões editoriais de elementos gráficos; "
+            "não copie bordões, slogans, layouts, voz autoral, personagens ou identidade visual de séries existentes. A lição cristã deve emergir das escolhas, "
+            "consequências, reconciliação, gratidão e transformação da personagem, sem pregação longa. Para 6–8, privilegie humor visual, diálogos curtos e conflitos simples; "
+            "para 9–12, permita pensamentos mais elaborados, conflitos sociais mais ricos, ironia infantil leve e maior autonomia da protagonista; para 3–5, simplifique bastante."
+        ),
+    },
+}
+
 ORDEM_ESTILOS = tuple(ESTILOS_NARRATIVOS.keys())
+ORDEM_ESTILOS_ADICIONAIS = tuple(ESTILOS_ADICIONAIS.keys())
+TODOS_ESTILOS = {**ESTILOS_NARRATIVOS, **ESTILOS_ADICIONAIS}
 
 
 def normalizar_estilo(estilo: str | None) -> str:
-    return estilo if estilo in ESTILOS_NARRATIVOS else "estilo_1"
+    return estilo if estilo in TODOS_ESTILOS else "estilo_1"
+
+
+def _spec_estilo(estilo: str | None) -> dict:
+    return TODOS_ESTILOS[normalizar_estilo(estilo)]
 
 
 def instrucao_estilo(estilo: str | None) -> str:
-    chave = normalizar_estilo(estilo)
-    dados = ESTILOS_NARRATIVOS[chave]
+    dados = _spec_estilo(estilo)
     return f"{dados['label']}: {dados['instrucao']}"
 
 
+def normalizar_licao_final(valor: Any) -> str:
+    """Converte moral textual ou estruturada em texto editorial limpo para UI/PDF."""
+    if isinstance(valor, dict):
+        texto = str(
+            valor.get("texto")
+            or valor.get("licao")
+            or valor.get("moral")
+            or valor.get("mensagem")
+            or ""
+        ).strip()
+        versiculo = str(valor.get("versiculo") or valor.get("referencia") or "").strip()
+        reflexao = str(valor.get("reflexao_extra") or valor.get("reflexao") or "").strip()
+        partes = [x for x in (texto, reflexao) if x]
+        if versiculo and versiculo.lower() not in " ".join(partes).lower():
+            partes.append(f"Referência bíblica: {versiculo}.")
+        return " ".join(partes).strip()
+    if isinstance(valor, (list, tuple)):
+        return " ".join(str(x).strip() for x in valor if str(x).strip()).strip()
+    return str(valor or "").strip()
+
+
 def _personagens_resumo(state: dict) -> str:
-    """Combina Character DNA já formalizado com o briefing livre da autora."""
     personagens = state.get("personagens") or {}
     partes = []
     for nome, dados in personagens.items():
@@ -95,26 +187,32 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
     amostra = resposta.get("amostra") or resposta.get("preview") or ""
     if not amostra and cenas:
         amostra = "\n\n".join(str(c.get("texto", "")) for c in cenas[:4] if isinstance(c, dict))
+    elementos = resposta.get("elementos_graficos_sugeridos") or []
+    if not isinstance(elementos, list):
+        elementos = []
     return {
         "estilo": estilo,
-        "label": ESTILOS_NARRATIVOS[estilo]["label"],
+        "label": TODOS_ESTILOS[estilo]["label"],
         "modo": modo,
         "titulo": resposta.get("titulo") or "",
         "sinopse_poetica": resposta.get("sinopse_poetica") or resposta.get("sinopse") or "",
         "amostra": str(amostra or ""),
         "cenas_texto": cenas,
-        "licao_final": resposta.get("licao_final") or "",
+        "elementos_graficos_sugeridos": elementos,
+        "licao_final": normalizar_licao_final(resposta.get("licao_final")),
     }
 
 
-def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
-    """Gera a mesma história/premissa nos quatro estilos e na mesma faixa etária."""
+def _gerar_um_estilo(state: dict, chamar_llm, estilo: str, modo: str) -> dict:
+    chave = normalizar_estilo(estilo)
+    spec = TODOS_ESTILOS[chave]
     modo = "completa" if modo == "completa" else "amostra"
     min_cenas = max(12, int(state.get("paginas_minimas") or 24) // 2)
     emocoes_validas = ", ".join(EMOCOES.keys())
     subemocoes_validas = ", ".join(EMOCOES_COMPLEMENTARES.keys())
     faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
     perfil = perfil_etario(faixa)
+
     base = f"""
 PREMISSA/TEMA:
 {state.get('_entrada_tema_livre') or state.get('titulo') or ''}
@@ -131,47 +229,45 @@ PERSONAGENS — identidade, nomes, papéis e características pedidas devem perm
 {_personagens_resumo(state)}
 """.strip()
 
-    resultados: dict[str, dict] = {}
-    for estilo in ORDEM_ESTILOS:
-        spec = ESTILOS_NARRATIVOS[estilo]
-        if modo == "amostra":
-            instrucao_saida = (
-                "Crie uma AMOSTRA REPRESENTATIVA da história nesse estilo: 4 a 6 pequenos blocos/cenas, "
-                "suficientes para a autora sentir ritmo, linguagem e atmosfera. Não precisa escrever o livro inteiro. "
-                "Retorne JSON com titulo, sinopse_poetica, amostra e licao_final."
-            )
-        else:
-            instrucao_saida = (
-                f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
-                "Retorne JSON com titulo, sinopse_poetica, cenas_texto e licao_final. "
-                "Cada cena deve conter numero, texto, emocao, emocao_secundaria, "
-                "intensidade_emocional (1-5), transicao_emocional, figurino, "
-                "contexto_visual, personagem_principal e expressao. "
-                f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
-                f"A subemoção opcional pode ser uma destas: {subemocoes_validas}. "
-                f"Use até aproximadamente {perfil['max_words_sentence']} palavras por frase e "
-                f"{perfil['max_words_scene']} palavras por cena como TETOS heurísticos de revisão, nunca como meta. "
-                "Não escolha cores no texto da história: o Emotional & Color Director aplicará a tabela canônica "
-                "do Prompt-Mestre depois."
-            )
+    if modo == "amostra":
+        instrucao_saida = (
+            "Crie uma AMOSTRA REPRESENTATIVA da história nesse estilo: 4 a 6 pequenos blocos/cenas, "
+            "suficientes para a autora sentir ritmo, linguagem, mecanismo narrativo e atmosfera. "
+            "Não precisa escrever o livro inteiro. Retorne JSON com titulo, sinopse_poetica, amostra, "
+            "elementos_graficos_sugeridos (lista opcional) e licao_final."
+        )
+    else:
+        instrucao_saida = (
+            f"Crie a HISTÓRIA COMPLETA nesse estilo, com no mínimo {min_cenas} cenas. "
+            "Retorne JSON com titulo, sinopse_poetica, cenas_texto, elementos_graficos_sugeridos (lista opcional) e licao_final. "
+            "Cada cena deve conter numero, texto, emocao, emocao_secundaria, intensidade_emocional (1-5), "
+            "transicao_emocional, figurino, contexto_visual, personagem_principal e expressao. "
+            f"A emoção principal deve ser uma destas chaves canônicas: {emocoes_validas}. "
+            f"A subemoção opcional pode ser uma destas: {subemocoes_validas}. "
+            f"Use até aproximadamente {perfil['max_words_sentence']} palavras por frase e "
+            f"{perfil['max_words_scene']} palavras por cena como tetos heurísticos, nunca como meta. "
+            "Não escolha cores no texto: o Emotional & Color Director fará isso depois."
+        )
 
-        sistema = f"""
+    sistema = f"""
 Você é o Comparative Story Director do FaithBloom Book Studio.
+Você HERDA integralmente a skill formal `storyteller` do Roteirista e, sobre essa
+base profissional comum, aplica a especialização narrativa indicada abaixo.
+Todos os estilos precisam ter a mesma qualidade de storytelling; o que muda é a forma de contar.
+
 Gere UMA versão da MESMA história, sem mudar fatos centrais, personagens, lição cristã,
 referência bíblica OU faixa etária. Varie somente o ESTILO NARRATIVO.
 
 FAIXA ETÁRIA OBRIGATÓRIA:
 {instrucao_faixa_etaria(faixa)}
 
-ESTILO OBRIGATÓRIO:
+ESPECIALIZAÇÃO NARRATIVA OBRIGATÓRIA:
 {spec['label']}
 {spec['instrucao']}
 
 Regras invariáveis:
 - linguagem, densidade, humor, tensão, musicalidade e onomatopeias seguem a faixa etária;
 - frases claras e agradáveis de ler/ouvir;
-- musicalidade natural em todos os estilos; no Estilo 2 ela pode ser mais intensa;
-- repetição e onomatopeias somente na intensidade apropriada para a idade;
 - emoções compreensíveis e coerentes com a maturidade do público;
 - ação visual e movimento;
 - humor quando couber, sem infantilizar leitores maiores;
@@ -182,26 +278,80 @@ Regras invariáveis:
 - não invente o texto completo do versículo: preserve somente a referência fornecida;
 - não altere Character DNA;
 - não troque nomes, relações ou papéis informados pela autora;
+- não copie frases, refrões, bordões, voz autoral, estruturas textuais distintivas, layouts distintivos ou personagens de livros/séries existentes;
 - quando gerar história completa, registre emoção principal, subemoção opcional,
   intensidade 1–5 e transição emocional coerentes com cada cena;
-- a psicologia das cores será aplicada depois pelo Emotional & Color Director com a
-  tabela canônica FaithBloom, portanto não transforme a narrativa em instruções cromáticas.
-""".strip()
-        resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
-        resultados[estilo] = _normalizar_resultado(resposta, estilo, modo)
+- elementos gráficos sugeridos são orientação editorial; texto legível deve ser diagramado depois, nunca embutido na ilustração pela IA;
+- a psicologia das cores será aplicada depois pelo Emotional & Color Director.
+""".strip() + "\n\n" + skill_contract("storyteller")
 
+    resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
+    return _normalizar_resultado(resposta, chave, modo)
+
+
+def _biblioteca_com_versoes(state: dict, versoes: dict[str, dict]) -> dict:
+    biblioteca = deepcopy(state.get("versoes_narrativas_salvas") or {})
+    for chave, versao in versoes.items():
+        if not isinstance(versao, dict):
+            continue
+        item = deepcopy(versao)
+        item["origem"] = (
+            "comparative_story_director_additional"
+            if chave in ESTILOS_ADICIONAIS
+            else "comparative_story_director"
+        )
+        item["faixa_etaria"] = state.get("faixa_etaria")
+        item["colecao"] = state.get("colecao")
+        item["status"] = "atual"
+        biblioteca[chave] = item
+    return biblioteca
+
+
+def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
+    """Gera os quatro estilos e AutoSalva o resultado no Book Master."""
+    resultados = {estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo) for estilo in ORDEM_ESTILOS}
+    try:
+        persist_generation_snapshot(
+            state,
+            reason=f"comparativo_4_estilos_{'completa' if modo == 'completa' else 'amostra'}",
+            updates={
+                "comparativo_estilos": resultados,
+                "versoes_narrativas_salvas": _biblioteca_com_versoes(state, resultados),
+            },
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
     return resultados
+
+
+def gerar_estilo_adicional(state: dict, chamar_llm, estilo: str, modo: str = "amostra") -> dict:
+    """Gera um estilo adicional e AutoSalva a versão sem depender do botão manual."""
+    if estilo not in ESTILOS_ADICIONAIS:
+        raise ValueError(f"Estilo adicional não registrado: {estilo}")
+    versao = _gerar_um_estilo(state, chamar_llm, estilo, modo)
+    try:
+        persist_generation_snapshot(
+            state,
+            reason=f"estilo_adicional_{estilo}_{versao.get('modo','amostra')}",
+            updates={
+                "versoes_narrativas_salvas": _biblioteca_com_versoes(state, {estilo: versao}),
+            },
+        )
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
+    return versao
 
 
 def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None) -> dict:
     novo = deepcopy(state)
     chave = normalizar_estilo(estilo)
     novo["estilo_narrativo"] = chave
-    novo["estilo_narrativo_label"] = ESTILOS_NARRATIVOS[chave]["label"]
+    novo["estilo_narrativo_label"] = TODOS_ESTILOS[chave]["label"]
     novo["faixa_etaria"] = normalizar_faixa_etaria(novo.get("faixa_etaria"))
     novo["age_profile_id"] = novo["faixa_etaria"]
 
-    # Amostra serve apenas para escolher o estilo; não altera título, moral nem cenas.
     if not versao or versao.get("modo") != "completa":
         novo["historia_escolhida_preservar"] = False
         return novo
@@ -211,9 +361,12 @@ def aplicar_estilo_ao_state(state: dict, estilo: str, versao: dict | None = None
     if versao.get("sinopse_poetica"):
         novo["sinopse_poetica"] = versao["sinopse_poetica"]
     if versao.get("licao_final"):
-        novo["licao_final"] = versao["licao_final"]
+        novo["licao_final"] = normalizar_licao_final(versao["licao_final"])
     if versao.get("cenas_texto"):
         novo["cenas_texto"] = versao["cenas_texto"]
         novo["revisao_aprovada"] = False
         novo["historia_escolhida_preservar"] = True
     return novo
+
+
+SKILL_PROFILE_IDS = ("storyteller",)

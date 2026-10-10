@@ -122,13 +122,17 @@ st.caption(
     f"Estes conteúdos são separados da história, seguem a faixa {perfil['short_label']} e podem ser editados pela autora antes da publicação."
 )
 
-if st.button("🌸 Gerar Boas-vindas + Pais/Educadores + Ficha Pedagógica"):
-    with st.spinner("Preparando os complementos editoriais..."):
-        extras = gerar_complementos_editoriais(dict(s), chamar_llm)
-    s["boas_vindas"] = extras["boas_vindas"]
-    s["pais_educadores"] = extras["pais_educadores"]
-    s["ficha_pedagogica"] = extras["ficha_pedagogica"]
-    st.success("Complementos gerados. Revise e edite antes de finalizar.")
+if st.button("🌸 Gerar Boas-vindas + Pais/Educadores + Ficha Pedagógica", disabled=not s.get("cenas_texto")):
+    try:
+        with st.spinner("Preparando os complementos editoriais..."):
+            extras = gerar_complementos_editoriais(dict(s), chamar_llm)
+    except ValueError as exc:
+        st.error(str(exc) + " Os complementos anteriores foram preservados.")
+    except Exception:
+        st.error("Não foi possível concluir a geração. Confira o provedor e tente novamente; os complementos anteriores foram preservados.")
+    else:
+        s.update(extras)
+        st.success("Complementos gerados e validados. Revise antes de finalizar.")
 
 s["boas_vindas"] = st.text_area(
     "👋 Mensagem de boas-vindas",
@@ -143,7 +147,9 @@ with st.expander("👨‍👩‍👧 Pais e Educadores", expanded=True):
     pais["emocao_trabalhada"] = st.text_input("Emoção trabalhada", value=pais.get("emocao_trabalhada", ""))
     pais["principio_biblico"] = st.text_input("Princípio bíblico", value=pais.get("principio_biblico", ""))
     pais["habilidade_socioemocional"] = st.text_input(
-        "Habilidade socioemocional", value=pais.get("habilidade_socioemocional", "")
+        "Habilidade socioemocional",
+        value=pais.get("habilidade_socioemocional", ""),
+        key="pais_habilidade_socioemocional",
     )
     perguntas = st.text_area(
         "Perguntas para conversar com o leitor — uma por linha",
@@ -171,7 +177,9 @@ with st.expander("🎓 Ficha Pedagógica", expanded=True):
     ficha["tema_central"] = st.text_input("Tema central", value=ficha.get("tema_central", ""))
     ficha["emocao_principal"] = st.text_input("Emoção principal", value=ficha.get("emocao_principal", ""))
     ficha["habilidade_socioemocional"] = st.text_input(
-        "Habilidade socioemocional", value=ficha.get("habilidade_socioemocional", "")
+        "Habilidade socioemocional",
+        value=ficha.get("habilidade_socioemocional", ""),
+        key="ficha_habilidade_socioemocional",
     )
     ficha["valor_cristao"] = st.text_input("Valor cristão", value=ficha.get("valor_cristao", ""))
     ficha["versiculo_referencia"] = st.text_input(

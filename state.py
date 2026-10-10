@@ -71,10 +71,17 @@ class LivroState(TypedDict, total=False):
     # --- Personagens ---
     personagens: dict[str, PersonagemDNA]
 
-    # --- Roteirista ---
+    # --- Roteirista / versões narrativas ---
     sinopse_poetica: str
     cenas_texto: list[CenaTexto]
     licao_final: str
+    proposta_roteirista: dict                    # visão autoral antes da história completa
+    versao_roteirista_autoral: dict              # quinta versão, gerada pela skill storyteller
+    comparativo_estilos: dict[str, dict]          # quatro estilos formais preservados
+    versoes_narrativas_salvas: dict[str, dict]    # biblioteca persistente das versões geradas
+    versao_narrativa_ativa: str                   # estilo_1|estilo_2|estilo_3|misto|roteirista_autoral
+    versao_narrativa_origem: str                  # comparative_story_director|storyteller_skill
+    historico_derivados_por_versao: dict[str, list[dict]]  # preserva revisão/mapa/imagens ao trocar versão
     cenas_bloqueadas: list[int]           # cenas aprovadas que não devem ser alteradas automaticamente
     historico_cenas: dict[int, list[dict]] # versões anteriores por cena
     mapa_emocional: list[dict]             # Emotional & Color Director, aprovado antes da geração em lote

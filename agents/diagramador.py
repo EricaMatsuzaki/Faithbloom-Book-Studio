@@ -13,6 +13,7 @@ from kdp_rules import validar_contagem_paginas
 from qualidade_impressao import preflight_livro
 from prompt_master_compliance import avaliar_prompt_mestre
 from age_profiles import normalizar_faixa_etaria
+from originality_guard import evaluate_originality
 
 
 def _lado_da_pagina(numero: int) -> str:
@@ -47,82 +48,43 @@ def montar_layout(state: LivroState) -> list[dict]:
     for i, cena in enumerate(state.get("cenas_texto") or []):
         numero_cena = int(cena.get("numero", i + 1))
         if i % 2 == 0:
-            # Spread: texto à esquerda, imagem à direita.
             layout.append(
-                {
-                    "pagina": pagina_atual,
-                    "tipo": "texto",
-                    "lado": "esquerda",
-                    "cena_numero": numero_cena,
-                }
+                {"pagina": pagina_atual, "tipo": "texto", "lado": "esquerda", "cena_numero": numero_cena}
             )
             layout.append(
-                {
-                    "pagina": pagina_atual + 1,
-                    "tipo": "imagem",
-                    "lado": "direita",
-                    "cena_numero": numero_cena,
-                }
+                {"pagina": pagina_atual + 1, "tipo": "imagem", "lado": "direita", "cena_numero": numero_cena}
             )
         else:
-            # Spread seguinte: imagem à esquerda, texto à direita.
             layout.append(
-                {
-                    "pagina": pagina_atual,
-                    "tipo": "imagem",
-                    "lado": "esquerda",
-                    "cena_numero": numero_cena,
-                }
+                {"pagina": pagina_atual, "tipo": "imagem", "lado": "esquerda", "cena_numero": numero_cena}
             )
             layout.append(
-                {
-                    "pagina": pagina_atual + 1,
-                    "tipo": "texto",
-                    "lado": "direita",
-                    "cena_numero": numero_cena,
-                }
+                {"pagina": pagina_atual + 1, "tipo": "texto", "lado": "direita", "cena_numero": numero_cena}
             )
         pagina_atual += 2
 
-    # Fechamento narrativo do Prompt-Mestre.
     for tipo in ("resolucao", "celebracao", "licao_e_versiculo_fim"):
-        layout.append(
-            {"pagina": pagina_atual, "tipo": tipo, "lado": _lado_da_pagina(pagina_atual)}
-        )
+        layout.append({"pagina": pagina_atual, "tipo": tipo, "lado": _lado_da_pagina(pagina_atual)})
         pagina_atual += 1
 
-    # Complementos editoriais depois da história, quando disponíveis.
     if str(state.get("pais_educadores") or "").strip() and state.get("pais_educadores"):
-        layout.append(
-            {"pagina": pagina_atual, "tipo": "pais_educadores", "lado": _lado_da_pagina(pagina_atual)}
-        )
+        layout.append({"pagina": pagina_atual, "tipo": "pais_educadores", "lado": _lado_da_pagina(pagina_atual)})
         pagina_atual += 1
 
     if str(state.get("ficha_pedagogica") or "").strip() and state.get("ficha_pedagogica"):
-        layout.append(
-            {"pagina": pagina_atual, "tipo": "ficha_pedagogica", "lado": _lado_da_pagina(pagina_atual)}
-        )
+        layout.append({"pagina": pagina_atual, "tipo": "ficha_pedagogica", "lado": _lado_da_pagina(pagina_atual)})
         pagina_atual += 1
 
-    # Seção de atividades: padrão atual do SaaS = 3 páginas de line art.
     for idx, pagina_colorir in enumerate(state.get("paginas_colorir", []) or [], 1):
         num = _numero_colorir(pagina_colorir, idx)
         layout.append(
-            {
-                "pagina": pagina_atual,
-                "tipo": "atividade_colorir",
-                "lado": _lado_da_pagina(pagina_atual),
-                "cena_numero": num,
-            }
+            {"pagina": pagina_atual, "tipo": "atividade_colorir", "lado": _lado_da_pagina(pagina_atual), "cena_numero": num}
         )
         pagina_atual += 1
 
-    # Paridade física explícita: o PDF final deve terminar com total par.
     ultimo = layout[-1]["pagina"] if layout else 2
     if ultimo % 2:
-        layout.append(
-            {"pagina": ultimo + 1, "tipo": "pagina_em_branco", "lado": "esquerda"}
-        )
+        layout.append({"pagina": ultimo + 1, "tipo": "pagina_em_branco", "lado": "esquerda"})
 
     return layout
 
@@ -144,6 +106,13 @@ def diagramador_node(state: LivroState) -> LivroState:
         for item in prompt_mestre.get("bloqueios", [])
     )
 
+    # Originality & Ineditism Guard: bloqueia somente quando existe evidência
+    # concreta local (ex.: overlap textual longo ou briefing de imitação direta).
+    # PASS_INTERNAL não é certificado jurídico de ineditismo mundial.
+    originality = evaluate_originality(dict(state))
+    state["originality_guard_report"] = originality
+    originality_ok = originality.get("status") != "BLOCKED"
+
     checklist = {
         "paginas_minimas_ok": ok,
         "dpi_300_confirmado": False,
@@ -153,6 +122,7 @@ def diagramador_node(state: LivroState) -> LivroState:
         "dedicatoria_incluida": bool(state.get("dedicatoria_texto")),
         "sinopse_vendas_pronta": bool(state.get("sinopse_vendas_curta")),
         "moral_obrigatoria_ok": moral_ok,
+        "originalidade_interna_ok": originality_ok,
         "faixa_etaria_definida": bool(state.get("faixa_etaria")),
         "boas_vindas_pronta": bool(str(state.get("boas_vindas") or "").strip()),
         "pais_educadores_pronto": bool(state.get("pais_educadores")),
@@ -171,12 +141,10 @@ def diagramador_node(state: LivroState) -> LivroState:
     state["checklist_kdp"]["dpi_300_confirmado"] = preflight["checks"]["imagens_300ppi"]
     state["checklist_kdp"]["bleed_configurado"] = preflight["checks"]["bleed_configurado"]
 
-    # Mantém a regra de segurança do Refinamento 24: moral é bloqueio real.
-    # Os demais complementos continuam visíveis no checklist e no relatório,
-    # sem mudar silenciosamente a política de bloqueios já aprovada.
     state["pacote_pronto"] = (
         ok
         and moral_ok
+        and originality_ok
         and all(checklist[k] for k in ("dedicatoria_incluida", "sinopse_vendas_pronta"))
     )
 
@@ -185,6 +153,14 @@ def diagramador_node(state: LivroState) -> LivroState:
     if not moral_ok:
         state.setdefault("notas_revisor", []).append(
             "BLOQUEIO PROMPT-MESTRE: a Lição de Moral é obrigatória antes da finalização."
+        )
+    if not originality_ok:
+        state.setdefault("notas_revisor", []).append(
+            "BLOQUEIO ORIGINALITY GUARD: há evidência local de proximidade indevida/imitação. Revisar antes da finalização."
+        )
+    elif originality.get("status") == "NEEDS_REVIEW":
+        state.setdefault("notas_revisor", []).append(
+            "ATENÇÃO ORIGINALITY GUARD: há itens de distintividade que pedem revisão humana antes da publicação."
         )
     return state
 

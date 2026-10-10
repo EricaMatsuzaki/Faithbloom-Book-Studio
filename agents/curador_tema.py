@@ -19,6 +19,7 @@ from emotion_colors import EMOCOES
 from agent_skills import skill_contract
 from biblical_reference_validator import create_reference_candidate
 from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria, perfil_etario
+from generation_autosave import persist_generation_snapshot
 
 PROMPT_CURADOR = """\
 Você é o Curador de Tema do FaithBloom Book Studio. A autora forneceu um
@@ -99,6 +100,14 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
             suggested_ref, reason=resposta.get("justificativa", ""), suggested_by="theme_curator"
         )
         state.setdefault("bible_reference_validation", dict(state["bible_reference_candidate"]))
+
+    # A preparação da ideia já cria/atualiza o Book Master quando coleção+título
+    # existem. Assim toda geração posterior tem um destino persistente.
+    try:
+        persist_generation_snapshot(state, reason="theme_curated")
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
     return state
 
 
