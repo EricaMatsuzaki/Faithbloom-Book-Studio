@@ -579,9 +579,11 @@ active_cfg = mode_config()
 st.html("""
 <style>
 .block-container{max-width:1500px!important;padding-top:.7rem!important}
-div.st-key-fb_live_jarvis_closed{display:none}
 div[class*="st-key-fb_live_jarvis_"]{border-radius:20px;border:1px solid #ece5f4;padding:.8rem;background:radial-gradient(ellipse at 30% 20%,#fff6dc,transparent 60%),linear-gradient(120deg,#fff0f4,#eafaff 55%,#f6efff)}
+.st-key-fb_home_hero [data-testid="stHorizontalBlock"]{align-items:center}
+.st-key-fb_home_hero div.st-key-fb_live_jarvis_open{padding:.35rem .25rem!important;margin-top:0!important}
 .fb-live-bubble{width:fit-content;max-width:95%;margin:0 auto;padding:.7rem 1.4rem;text-align:center;border-radius:24px;background:#ffffffed;color:#8b3edb;font-size:1.15rem;font-weight:750}
+.st-key-fb_home_hero .fb-live-bubble{padding:.5rem .6rem;font-size:1rem}
 .st-key-fb_assistant_heading{margin-top:.3rem}.st-key-fb_assistant_heading [data-testid="stHorizontalBlock"]{align-items:center}
 .st-key-jarvis_compose{border:1px solid #ececf6;border-radius:16px;padding:.4rem .8rem;background:white}
 .st-key-jarvis_compose [data-testid="stForm"]{border:0;padding:0}
@@ -591,20 +593,21 @@ div[class*="st-key-fb_live_jarvis_"]{border-radius:20px;border:1px solid #ece5f4
 .st-key-fb_voice_toggle [data-testid="stCheckbox"] p{font-size:.75rem;color:#7b43ca}
 .st-key-fb_home_responses{border:1px solid #ececf6;border-radius:16px;padding:.65rem;background:white}
 @media(max-width:768px){
- div.st-key-fb_live_jarvis_closed{display:block}
- .st-key-fb_voice_toggle{display:none}
  .st-key-jarvis_compose form [data-testid="stHorizontalBlock"]{flex-wrap:wrap}
  .st-key-jarvis_compose form [data-testid="stColumn"]{min-width:100%!important}
 }
 </style>
 """)
 
-render_banner(active_workspace_name or "Erica", show_motion_control=False)
-voice_open = bool(st.session_state.get("fb_voice_open", False))
-with st.container(key="fb_live_jarvis_open" if voice_open else "fb_live_jarvis_closed"):
-    st.html('<div class="fb-live-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
-    heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply,
-                      reply_audio="", reply_token=reply_token, compact=False)
+with st.container(key="fb_home_hero"):
+    artwork_col, jarvis_col = st.columns([3.4, 1.2], gap="small")
+    with artwork_col:
+        render_banner(active_workspace_name or "Erica", show_motion_control=False)
+    with jarvis_col:
+        with st.container(key="fb_live_jarvis_open"):
+            st.html('<div class="fb-live-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
+            heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply,
+                              reply_audio="", reply_token=reply_token, compact=False)
 
 if home_search.strip():
     st.caption(f"{len(found_projects)} projeto(s) e {len(found_actions)} ferramenta(s) para “{home_search.strip()}”.")
@@ -615,12 +618,7 @@ for offset in range(0, len(found_actions), 3):
             render_action_card(**action)
 
 with st.container(key="fb_assistant_heading"):
-    title_col, voice_col = st.columns([5, 1.1], gap="small")
-    with title_col:
-        _heading("Prefere só contar o que precisa?", "Converse ou envie arquivos para o Jarvis. Ele entende sua ideia e já organiza os próximos passos.", "💬")
-    with voice_col:
-        with st.container(key="fb_voice_toggle"):
-            st.toggle("🎙️ Falar", key="fb_voice_open")
+    _heading("Prefere só contar o que precisa?", "Converse ou envie arquivos para o Jarvis. Ele entende sua ideia e já organiza os próximos passos.", "💬")
 
 if audio_path and os.path.exists(audio_path) and reply_token and reply_token != st.session_state.get("jarvis_autoplayed_token"):
     st.audio(audio_path, format=_audio_mime(audio_path), autoplay=True)
