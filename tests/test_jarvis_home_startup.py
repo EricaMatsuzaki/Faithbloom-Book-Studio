@@ -105,3 +105,24 @@ def test_home_profile_switch_clears_previous_reply_before_loading_new_catalog(mo
     assert not app.chat_message
     assert all("Owner's private reply" not in item.value for item in app.markdown)
     assert any('Oi, Larissa!' in item.value for item in app.markdown)
+
+
+def test_home_motion_control_updates_the_real_heart_component(monkeypatch):
+    motion_modes = []
+    render_heart = jarvis_heart_mic.heart_mic
+
+    def heart(*args, **kwargs):
+        motion_modes.append(kwargs.get("motion"))
+        return render_heart(*args, **kwargs)
+
+    monkeypatch.setattr(jarvis_heart_mic, "heart_mic", heart)
+    monkeypatch.setattr(family_profiles, "list_workspace_profiles", lambda: PROFILES)
+    monkeypatch.setattr(painel_projetos, "available_projects", lambda _profile_id: [])
+    app = AppTest.from_file(ROOT / "app.py").run(timeout=15)
+    assert not app.exception
+    assert app.selectbox(key="fb_jarvis_motion").value == "on"
+    app.selectbox(key="fb_jarvis_motion").set_value("off").run(timeout=15)
+    assert not app.exception
+    app.selectbox(key="fb_jarvis_motion").set_value("auto").run(timeout=15)
+    assert not app.exception
+    assert motion_modes == ["on", "off", "auto"]
