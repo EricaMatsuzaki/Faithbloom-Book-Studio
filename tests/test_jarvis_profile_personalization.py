@@ -26,6 +26,7 @@ class _BannerUi:
 
     def __init__(self, motion):
         self.motion = motion
+        self.session_state = {"fb_banner_motion": motion}
         self.markup = ""
 
     def container(self, **_kwargs):
@@ -41,32 +42,24 @@ class _BannerUi:
 class _BannerMarkup(HTMLParser):
     def __init__(self, markup):
         super().__init__()
-        self.divs = []
-        self.images = {}
-        self.motion_count = 0
+        self.frames = []
+        self.images = []
         self.tags = []
         self.feed(markup)
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
         self.tags.append(tag)
-        if tag == "div":
-            classes = attributes.get("class", "").split()
-            self.divs.append(classes)
-            self.motion_count += "fb-banner-motion" in classes
+        if tag == "div" and "fb-banner-frame" in attributes.get("class", "").split():
+            self.frames.append(attributes)
         elif tag == "img":
-            frame = next(classes for classes in reversed(self.divs) if "fb-banner-frame" in classes)
-            self.images[next(name for name in frame if name != "fb-banner-frame")] = attributes["src"]
-
-    def handle_endtag(self, tag):
-        if tag == "div":
-            self.divs.pop()
+            self.images.append(attributes)
 
 
-def _render_banner(monkeypatch, *, motion=True, name="Erica", compact=True):
+def _render_banner(monkeypatch, *, motion=True, name="Erica", compact=True, show_control=True):
     ui = _BannerUi(motion)
     monkeypatch.setattr(painel_visual, "st", ui)
-    painel_visual.render_banner(name, compact_desktop=compact)
+    painel_visual.render_banner(name, compact_desktop=compact, show_motion_control=show_control)
     return ui.markup, _BannerMarkup(ui.markup)
 
 
@@ -107,31 +100,52 @@ def test_supplied_artwork_exists_at_original_dimensions(name, dimensions):
 
 
 @pytest.mark.parametrize("compact", [True, False])
-def test_banner_embeds_original_art_for_desktop_and_mobile(monkeypatch, compact):
+def test_banner_embeds_one_complete_original_png_on_every_screen(monkeypatch, compact):
     _markup, banner = _render_banner(monkeypatch, compact=compact)
-    desktop_class = "fb-banner-desktop" if compact else "fb-banner-desktop-full"
-    desktop_asset = "faithbloom-dashboard-reference.jpg" if compact else "faithbloom-welcome.jpg"
-    expected = {desktop_class: desktop_asset, "fb-banner-mobile": "faithbloom-welcome.jpg"}
-    assert set(banner.images) == set(expected)
-    for frame, asset in expected.items():
-        data = base64.b64decode(banner.images[frame].split(",", 1)[1], validate=True)
-        assert data == (ROOT / "assets" / asset).read_bytes()
-        with Image.open(BytesIO(data)) as image:
-            assert image.format == "JPEG"
+    assert len(banner.images) == len(banner.frames) == 1
+    image = banner.images[0]
+    assert image["src"].startswith("data:image/png;base64,")
+    data = base64.b64decode(image["src"].split(",", 1)[1], validate=True)
+    assert data == painel_visual.BANNER_PATH.read_bytes()
+    with Image.open(BytesIO(data)) as artwork:
+        assert artwork.format == "PNG"
+        assert artwork.size == (1672, 941)
+        assert (int(image["width"]), int(image["height"])) == artwork.size
+    assert image["alt"]
 
 
-def test_banner_personalizes_and_escapes_profile_name(monkeypatch):
+@pytest.mark.parametrize("name, mime", [
+    ("faithbloom-dashboard-reference.jpg", "image/jpeg"),
+    ("faithbloom-studio-banner.png", "image/png"),
+])
+def test_artwork_embedding_uses_original_format_and_bytes(name, mime):
+    embedded = painel_visual._asset(name)
+    assert embedded.startswith(f"data:{mime};base64,")
+    original = painel_visual.BANNER_PATH if name == "faithbloom-studio-banner.png" else ROOT / "assets" / name
+    assert base64.b64decode(embedded.split(",", 1)[1], validate=True) == original.read_bytes()
+
+
+def test_banner_personalizes_accessible_greeting_without_painting_over_art(monkeypatch):
     markup, banner = _render_banner(monkeypatch, name="Larissa <script>alert(1)</script>")
     assert "Oi, Larissa &lt;script&gt;alert(1)&lt;/script&gt;!" in markup
     assert "script" not in banner.tags
-    assert "<h1" in markup
+    assert '<h1 class="fb-sr-only"' in markup
+    assert "fb-greeting" not in markup
+    assert "svg" not in banner.tags
+    assert "span" not in banner.tags
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_banner_movement_can_be_paused_without_removing_art(monkeypatch, enabled):
-    _markup, banner = _render_banner(monkeypatch, motion=enabled)
-    assert len(banner.images) == 2
-    assert banner.motion_count == (2 if enabled else 0)
+@pytest.mark.parametrize("show_control", [True, False])
+def test_banner_movement_can_be_paused_without_changing_original_art(monkeypatch, enabled, show_control):
+    markup, banner = _render_banner(monkeypatch, motion=enabled, show_control=show_control)
+    assert len(banner.images) == 1
+    assert ("fb-banner-animated" in banner.frames[0]["class"].split()) is enabled
+    data = base64.b64decode(banner.images[0]["src"].split(",", 1)[1], validate=True)
+    assert data == painel_visual.BANNER_PATH.read_bytes()
+    assert "fb-petal" not in markup
+    assert "fb-butterfly" not in markup
+    assert "fb-greeting" not in markup
 
 
 def test_jarvis_home_keeps_one_real_heart_control_and_audio_fallback():
