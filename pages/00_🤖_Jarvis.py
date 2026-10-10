@@ -574,7 +574,7 @@ with st.container(key="fb_topbar"):
                 index=motion_options.index(jarvis_motion),
                 format_func=lambda mode: {"on": "Ativadas", "auto": "Conforme o dispositivo", "off": "Pausadas"}[mode],
                 key="fb_jarvis_motion", on_change=_change_jarvis_motion,
-                help="Aceno, piscadas e movimentos do corpo e da cabeça.",
+                help="Movimentos suaves e piscadas; um aceno ao tocar no coração para começar a falar.",
             )
             st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="Criar uma nova história →")
     with plan_col:
