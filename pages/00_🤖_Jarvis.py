@@ -463,8 +463,13 @@ st.session_state.setdefault("jarvis_latency_metrics", {})
 st.session_state.setdefault("faithbloom_cost_mode", "economico")
 st.session_state.setdefault("jarvis_auto_voice", False)
 st.session_state.setdefault("jarvis_engenheiro_automatico", True)
+st.session_state.setdefault("jarvis_motion_mode", "on")
 set_cost_mode(str(st.session_state.get("faithbloom_cost_mode") or "economico"))
 
+
+
+def _change_jarvis_motion() -> None:
+    st.session_state["jarvis_motion_mode"] = st.session_state["fb_jarvis_motion"]
 
 
 def _change_home_profile() -> None:
@@ -557,9 +562,20 @@ with st.container(key="fb_topbar"):
         home_search = st.text_input("Buscar no FaithBloom", placeholder="🔎 Buscar projetos, personagens, histórias…",
                                     label_visibility="collapsed", key="faithbloom_home_search")
     with gift_col:
-        with st.popover("", icon=":material/featured_seasonal_and_gifts:", help="Inspiração e movimento do banner"):
+        with st.popover("", icon=":material/featured_seasonal_and_gifts:", help="Movimento e inspiração"):
             st.write("Uma pequena história pode florescer em uma grande lição. 💜")
             st.toggle("Movimento do banner", key="fb_banner_motion", value=True)
+            motion_options = ["on", "auto", "off"]
+            jarvis_motion = str(st.session_state.get("jarvis_motion_mode") or "on")
+            if jarvis_motion not in motion_options:
+                jarvis_motion = "on"
+            st.selectbox(
+                "Animações do Jarvis", ["on", "auto", "off"],
+                index=motion_options.index(jarvis_motion),
+                format_func=lambda mode: {"on": "Ativadas", "auto": "Conforme o dispositivo", "off": "Pausadas"}[mode],
+                key="fb_jarvis_motion", on_change=_change_jarvis_motion,
+                help="Aceno, piscadas e movimentos do corpo e da cabeça.",
+            )
             st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="Criar uma nova história →")
     with plan_col:
         with st.popover("👑 Plano Profissional"):
@@ -579,7 +595,7 @@ with st.container(key="fb_home_hero"):
     with jarvis_col:
         with st.container(key="fb_live_jarvis_open"):
             st.html('<div class="fb-live-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
-            heart = heart_mic(key="jarvis_heart_control", stage=stage, compact=False)
+            heart = heart_mic(key="jarvis_heart_control", stage=stage, compact=False, motion=jarvis_motion)
 
 search_summary = st.empty()
 found_actions = filter_actions(home_search) if home_search.strip() else ACTIONS
