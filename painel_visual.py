@@ -310,7 +310,7 @@ def render_brand(sidebar: bool = True) -> None:
     )
 
 
-def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True, show_motion_control: bool = True) -> None:
+def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True, show_motion_control: bool = True, show_greeting: bool = True) -> None:
     """Display the complete original PNG on every screen without cropping.
 
     ``compact_desktop`` remains accepted for existing callers. The full artwork
@@ -328,9 +328,10 @@ def render_banner(display_name: str = "Erica", *, compact_desktop: bool = True, 
     else:
         enabled = bool(st.session_state.get("fb_banner_motion", True))
     frame_class = "fb-banner-frame fb-banner-animated" if enabled else "fb-banner-frame"
+    greeting = f'<h1 class="fb-sr-only">Oi, {escape(name)}! O que você quer fazer hoje?</h1>' if show_greeting else ""
     st.markdown(
         '<section class="fb-banner" aria-label="Boas-vindas">'
-        f'<h1 class="fb-sr-only">Oi, {escape(name)}! O que você quer fazer hoje?</h1>'
+        f'{greeting}'
         '<p class="fb-sr-only">FaithBloom Book Studio. Histórias que tocam corações e transformam vidas. '
         'Do seu livro de hoje para um futuro ainda mais brilhante!</p>'
         f'<div class="{frame_class}">'
