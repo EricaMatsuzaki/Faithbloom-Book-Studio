@@ -22,7 +22,7 @@ from painel_dados import ACTIONS, filter_projects, filter_actions, production_st
 from painel_projetos import available_projects, project_snapshot, project_path, searchable_projects, activate_project, open_project, project_cover_path
 from painel_visual import render_banner, render_action_card
 from faithbloom_cost_mode import COST_MODES, mode_config, mode_rows, set_cost_mode
-from family_profiles import get_workspace_profile, list_workspace_profiles
+from family_profiles import list_workspace_profiles
 from jarvis_assistant import interpret_request
 from jarvis_conversation import (
     append_turn,
@@ -82,14 +82,14 @@ def _now() -> datetime:
     return local_now(os.environ.get("JARVIS_TIMEZONE", DEFAULT_TIMEZONE))
 
 
-def _active_workspace_profile() -> dict | None:
+def _active_workspace_profile(profiles: list[dict] | None = None) -> dict | None:
     """Resolve o perfil pessoal ativo usado pela home/Jarvis.
 
     A sessão compartilha o mesmo profile_id do Dashboard. Se ainda não houver um
     perfil válido selecionado, usa o primeiro perfil ativo apenas como default de UX.
     """
     active_id = str(st.session_state.get("faithbloom_workspace_profile_id") or "")
-    profiles = list_workspace_profiles()
+    profiles = list_workspace_profiles() if profiles is None else profiles
     valid_ids = {str(p.get("id") or "") for p in profiles}
     if active_id and active_id not in valid_ids:
         for key in ("faithbloom_active_project", "state", "state_r", "state_c", "etapa_r", "etapa_c",
@@ -102,14 +102,14 @@ def _active_workspace_profile() -> dict | None:
     if active_id not in valid_ids:
         active_id = str(profiles[0].get("id") or "")
         st.session_state["faithbloom_workspace_profile_id"] = active_id
-    return get_workspace_profile(active_id) or next(
+    return next(
         (p for p in profiles if str(p.get("id") or "") == active_id),
         None,
     )
 
 
 def _active_profile_name() -> str:
-    profile = _active_workspace_profile() or {}
+    profile = active_workspace_profile or {}
     return str(profile.get("display_name") or "").strip()
 
 
@@ -465,20 +465,6 @@ st.session_state.setdefault("jarvis_auto_voice", False)
 st.session_state.setdefault("jarvis_engenheiro_automatico", True)
 set_cost_mode(str(st.session_state.get("faithbloom_cost_mode") or "economico"))
 
-active_workspace_profile = _active_workspace_profile()
-active_workspace_profile_id = str((active_workspace_profile or {}).get("id") or "")
-active_workspace_name = str((active_workspace_profile or {}).get("display_name") or "").strip()
-home_catalog = available_projects(active_workspace_profile_id)
-context_path = str((st.session_state.get(PROJECT_CONTEXT_KEY) or {}).get("storage_path") or "").removeprefix("fb://").strip("/")
-active_home_project = next((item for item in home_catalog if project_path(item) == context_path), None)
-active_kind = active_home_project.get("kind", "story") if active_home_project else "story"
-session_path_key = "caminho_salvo_c" if active_kind == "coloring" else "caminho_salvo_r"
-session_path = str(st.session_state.get(session_path_key) or "").removeprefix("fb://").strip("/")
-if active_home_project:
-    active_project_state = (st.session_state.get("state") or {}) if session_path == context_path else project_snapshot(context_path)
-else:
-    active_project_state = st.session_state.get("state") or {}
-project_progress = jarvis_project_progress(active_project_state, active_kind) if active_project_state else None
 
 
 def _change_home_profile() -> None:
@@ -539,43 +525,7 @@ def _render_ai_controls() -> None:
 
 
 
-with st.container(key="fb_topbar"):
-    top_search, gift_col, plan_col, bell_col, top_profile = st.columns([4.9, .38, 1.18, .38, 1.15], gap="small")
-    with top_search:
-        home_search = st.text_input("Buscar no FaithBloom", placeholder="🔎 Buscar projetos, personagens, histórias…",
-                                    label_visibility="collapsed", key="faithbloom_home_search")
-    with gift_col:
-        with st.popover("", icon=":material/featured_seasonal_and_gifts:", help="Inspiração e movimento do banner"):
-            st.write("Uma pequena história pode florescer em uma grande lição. 💜")
-            st.toggle("Movimento do banner", key="fb_banner_motion", value=True)
-            st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="Criar uma nova história →")
-    with plan_col:
-        with st.popover("👑 Plano Profissional"):
-            st.write("Seu estúdio reúne criação, personagens, ilustrações, revisão e publicação.")
-            st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="Abrir Prompt-Mestre Studio →")
-    with bell_col:
-        with st.popover("", icon=":material/notifications:", help="Acompanhar seu projeto"):
-            st.write((project_progress or {}).get("message") or "Escolha um projeto para acompanhar sua produção.")
-    with top_profile:
-        with st.popover((active_workspace_name.split()[0] if active_workspace_name else "Erica") + " ⌄", icon=":material/account_circle:"):
-            profiles = list_workspace_profiles()
-            if profiles:
-                ids = [str(profile["id"]) for profile in profiles]
-                st.selectbox("Perfil do workspace", ids,
-                             index=ids.index(active_workspace_profile_id) if active_workspace_profile_id in ids else 0,
-                             format_func=lambda pid: next(profile["display_name"] for profile in profiles if str(profile["id"]) == pid),
-                             key="fb_home_profile", on_change=_change_home_profile)
-            st.page_link("pages/34_🏠_Perfis_e_Dashboard.py", label="Gerenciar perfis →")
-
-found_projects = filter_projects(searchable_projects(home_catalog), home_search) if home_search.strip() else home_catalog
-found_actions = filter_actions(home_search) if home_search.strip() else ACTIONS
-
-stage = str(st.session_state.get("jarvis_stage") or "idle")
-reply = str(st.session_state.get("jarvis_reply") or "")
-audio_path = str(st.session_state.get("jarvis_audio_path") or "")
-reply_token = str(st.session_state.get("jarvis_reply_token") or "")
-active_cfg = mode_config()
-
+# A arte e o microfone ficam prontos antes das consultas ao armazenamento.
 st.html("""
 <style>
 .block-container{max-width:1500px!important;padding-top:.7rem!important}
@@ -599,23 +549,95 @@ div[class*="st-key-fb_live_jarvis_"]{border-radius:20px;border:1px solid #ece5f4
 </style>
 """)
 
+stage = str(st.session_state.get("jarvis_stage") or "idle")
+
+with st.container(key="fb_topbar"):
+    top_search, gift_col, plan_col, bell_col, top_profile = st.columns([4.9, .38, 1.18, .38, 1.15], gap="small")
+    with top_search:
+        home_search = st.text_input("Buscar no FaithBloom", placeholder="🔎 Buscar projetos, personagens, histórias…",
+                                    label_visibility="collapsed", key="faithbloom_home_search")
+    with gift_col:
+        with st.popover("", icon=":material/featured_seasonal_and_gifts:", help="Inspiração e movimento do banner"):
+            st.write("Uma pequena história pode florescer em uma grande lição. 💜")
+            st.toggle("Movimento do banner", key="fb_banner_motion", value=True)
+            st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="Criar uma nova história →")
+    with plan_col:
+        with st.popover("👑 Plano Profissional"):
+            st.write("Seu estúdio reúne criação, personagens, ilustrações, revisão e publicação.")
+            st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="Abrir Prompt-Mestre Studio →")
+    with bell_col:
+        bell_slot = st.empty()
+    with top_profile:
+        profile_slot = st.empty()
+
+
 with st.container(key="fb_home_hero"):
     artwork_col, jarvis_col = st.columns([3.4, 1.2], gap="small")
     with artwork_col:
-        render_banner(active_workspace_name or "Erica", show_motion_control=False)
+        greeting_slot = st.empty()
+        render_banner(show_motion_control=False, show_greeting=False)
     with jarvis_col:
         with st.container(key="fb_live_jarvis_open"):
             st.html('<div class="fb-live-bubble">Oi! Eu sou o Jarvis.<br>Vamos criar juntos? 💜</div>')
-            heart = heart_mic(key="jarvis_heart_control", stage=stage, reply_text=reply,
-                              reply_audio="", reply_token=reply_token, compact=False)
+            heart = heart_mic(key="jarvis_heart_control", stage=stage, compact=False)
 
-if home_search.strip():
-    st.caption(f"{len(found_projects)} projeto(s) e {len(found_actions)} ferramenta(s) para “{home_search.strip()}”.")
+search_summary = st.empty()
+found_actions = filter_actions(home_search) if home_search.strip() else ACTIONS
+
 for offset in range(0, len(found_actions), 3):
     cols = st.columns(3, gap="small")
     for col, action in zip(cols, found_actions[offset:offset + 3]):
         with col:
             render_action_card(**action)
+
+
+# Os dados pessoais são validados antes de exibir respostas, projetos ou áudio.
+workspace_profiles = list_workspace_profiles()
+active_workspace_profile = _active_workspace_profile(workspace_profiles)
+active_workspace_profile_id = str((active_workspace_profile or {}).get("id") or "")
+active_workspace_name = str((active_workspace_profile or {}).get("display_name") or "").strip()
+greeting_slot.markdown(
+    f'<h1 class="fb-sr-only">Oi, {html_lib.escape(active_workspace_name or "Erica")}! O que você quer fazer hoje?</h1>',
+    unsafe_allow_html=True,
+)
+home_catalog = available_projects(active_workspace_profile_id)
+context_path = str((st.session_state.get(PROJECT_CONTEXT_KEY) or {}).get("storage_path") or "").removeprefix("fb://").strip("/")
+active_home_project = next((item for item in home_catalog if project_path(item) == context_path), None)
+active_kind = active_home_project.get("kind", "story") if active_home_project else "story"
+session_path_key = "caminho_salvo_c" if active_kind == "coloring" else "caminho_salvo_r"
+session_path = str(st.session_state.get(session_path_key) or "").removeprefix("fb://").strip("/")
+if active_home_project:
+    active_project_state = (st.session_state.get("state") or {}) if session_path == context_path else project_snapshot(context_path)
+else:
+    active_project_state = st.session_state.get("state") or {}
+project_progress = jarvis_project_progress(active_project_state, active_kind) if active_project_state else None
+
+
+with bell_slot.container():
+    with st.popover("", icon=":material/notifications:", help="Acompanhar seu projeto"):
+        st.write((project_progress or {}).get("message") or "Escolha um projeto para acompanhar sua produção.")
+with profile_slot.container():
+    with st.popover((active_workspace_name.split()[0] if active_workspace_name else "Erica") + " ⌄", icon=":material/account_circle:"):
+        profiles = workspace_profiles
+        if profiles:
+            ids = [str(profile["id"]) for profile in profiles]
+            st.selectbox("Perfil do workspace", ids,
+                         index=ids.index(active_workspace_profile_id) if active_workspace_profile_id in ids else 0,
+                         format_func=lambda pid: next(profile["display_name"] for profile in profiles if str(profile["id"]) == pid),
+                         key="fb_home_profile", on_change=_change_home_profile)
+        st.page_link("pages/34_🏠_Perfis_e_Dashboard.py", label="Gerenciar perfis →")
+
+
+
+found_projects = filter_projects(searchable_projects(home_catalog), home_search) if home_search.strip() else home_catalog
+
+reply = str(st.session_state.get("jarvis_reply") or "")
+audio_path = str(st.session_state.get("jarvis_audio_path") or "")
+reply_token = str(st.session_state.get("jarvis_reply_token") or "")
+active_cfg = mode_config()
+
+if home_search.strip():
+    search_summary.caption(f"{len(found_projects)} projeto(s) e {len(found_actions)} ferramenta(s) para “{home_search.strip()}”.")
 
 with st.container(key="fb_assistant_heading"):
     _heading("Prefere só contar o que precisa?", "Converse ou envie arquivos para o Jarvis. Ele entende sua ideia e já organiza os próximos passos.", "💬")
