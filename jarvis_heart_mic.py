@@ -34,7 +34,7 @@ CSS = r"""
 .jh-aura{position:absolute;width:330px;height:330px;border-radius:50%;background:radial-gradient(circle,rgba(72,231,255,.22),rgba(100,83,255,.09) 46%,transparent 70%);animation:jAura 3s ease-in-out infinite}
 .jh-floor{position:absolute;bottom:42px;width:255px;height:54px;border-radius:50%;background:radial-gradient(ellipse,rgba(83,235,255,.34),transparent 68%);filter:blur(7px);animation:jFloor 2.4s ease-in-out infinite}
 .jh-robot{position:relative;width:240px;height:335px;transform:scale(var(--jh-scale,1));animation:jFloat 3.2s ease-in-out infinite;filter:drop-shadow(0 26px 28px rgba(0,0,0,.24));z-index:2}
-.jh-head-group{position:absolute;inset:0;transform-origin:50% 180px;animation:jGreet 4.4s ease-in-out infinite;pointer-events:none}
+.jh-head-group{position:absolute;inset:0;transform-origin:50% 180px;animation:jIdleNod 4.8s ease-in-out infinite;pointer-events:none}
 .jh-ant{position:absolute;left:50%;top:4px;transform:translateX(-50%);width:10px;height:44px;border-radius:12px;background:linear-gradient(#e6feff,#5ce5ed);box-shadow:0 0 18px rgba(92,229,237,.8)}
 .jh-ant:before{content:'';position:absolute;width:18px;height:18px;border-radius:50%;left:-4px;top:-9px;background:#8ff9f3;box-shadow:0 0 22px #8ff9f3}
 .jh-head{position:absolute;left:17px;top:46px;width:206px;height:150px;border-radius:49% 49% 43% 43%/43% 43% 52% 52%;background:linear-gradient(145deg,#fff,#d8e9f5 62%,#aabdd0);border:2px solid rgba(255,255,255,.95);box-shadow:inset -12px -14px 25px rgba(57,80,110,.16),0 0 35px rgba(83,237,255,.22)}
@@ -47,7 +47,7 @@ CSS = r"""
 .jh-body{position:absolute;left:51px;top:198px;width:138px;height:112px;border-radius:36px 36px 48px 48px;background:linear-gradient(145deg,#fff,#d9e8f2 67%,#a5b8cb);border:2px solid rgba(255,255,255,.92);box-shadow:inset -11px -13px 22px rgba(55,76,105,.15)}
 .jh-arm{position:absolute;top:215px;width:31px;height:82px;border-radius:20px;background:linear-gradient(#f6fbff,#a9bed0);border:1px solid rgba(255,255,255,.9)}
 .jh-arm.l{left:25px;transform:rotate(18deg)}
-.jh-arm.r{right:40px;height:72px;transform-origin:50% 12px;transform:rotate(-18deg);animation:jWave 4.4s ease-in-out infinite}
+.jh-arm.r{right:40px;height:72px;transform-origin:50% 12px;transform:rotate(-18deg)}
 .jh-heart{position:absolute;left:50%;top:24px;transform:translateX(-50%);width:62px;height:62px;border-radius:50%;border:4px solid #66eef1;background:#071927;color:#ff7fd1;font-size:29px;line-height:1;cursor:pointer;box-shadow:0 0 28px rgba(102,238,241,.72),inset 0 0 18px rgba(108,103,255,.22);animation:jCore 1.7s ease-in-out infinite;-webkit-tap-highlight-color:transparent}
 .jh-heart:focus-visible{outline:3px solid #fff;outline-offset:4px}
 .jh-heart.listening{color:#fff;background:#a51562;border-color:#ff8bd6;box-shadow:0 0 0 7px rgba(255,88,194,.18),0 0 42px rgba(255,88,194,.78);animation:jListen .72s ease-in-out infinite}
@@ -58,6 +58,8 @@ CSS = r"""
 .jh-robot.thinking .jh-head-group{animation-duration:1.8s}
 .jh-robot.speaking .jh-head-group{animation-duration:1.4s}
 .jh-robot.listening .jh-arm.r,.jh-robot.thinking .jh-arm.r,.jh-robot.speaking .jh-arm.r{animation:none}
+.jh-robot.greeting .jh-arm.r{animation:jWave 1.6s ease-in-out 1}
+.jh-robot.greeting .jh-head-group{animation:jGreet 1.6s ease-in-out 1}
 .jh-robot.listening .jh-scan,.jh-robot.thinking .jh-scan{opacity:.9;animation:jScan 1.2s ease-in-out infinite}
 .jh-status{position:absolute;bottom:8px;z-index:3;padding:.48rem .8rem;border-radius:999px;background:rgba(6,27,43,.72);border:1px solid rgba(117,244,239,.25);font-weight:700;font-size:.82rem;text-align:center;max-width:92%}
 .jh-shell.compact{--jh-scale:.48;min-height:176px}
@@ -68,15 +70,18 @@ CSS = r"""
 @keyframes jFloat{0%,100%{transform:scale(var(--jh-scale,1)) translateY(0) rotate(-1.4deg)}
 50%{transform:scale(var(--jh-scale,1)) translateY(-18px) rotate(1.4deg)}
 }
-@keyframes jWave{0%,58%,100%{transform:rotate(-18deg)}
-8%,34%,49%{transform:rotate(-154deg)}
-15%,28%{transform:rotate(-178deg)}
-21%,41%{transform:rotate(-140deg)}
+@keyframes jWave{0%,100%{transform:rotate(-18deg)}
+16%,80%{transform:rotate(-154deg)}
+32%,64%{transform:rotate(-178deg)}
+48%{transform:rotate(-140deg)}
 }
-@keyframes jGreet{0%,58%,100%{transform:rotate(0)}
-8%,41%{transform:rotate(4deg)}
-15%,28%{transform:rotate(-2deg)}
-21%,34%,49%{transform:rotate(3deg)}
+@keyframes jGreet{0%,100%{transform:rotate(0)}
+16%,64%{transform:rotate(4deg)}
+32%{transform:rotate(-2deg)}
+48%,80%{transform:rotate(3deg)}
+}
+@keyframes jIdleNod{0%,100%{transform:rotate(-.7deg)}
+50%{transform:translateY(2px) rotate(.7deg)}
 }
 @keyframes jAttend{0%,100%{transform:scale(var(--jh-scale,1)) translateY(0) rotate(-.7deg)}
 50%{transform:scale(var(--jh-scale,1)) translateY(-8px) rotate(.7deg)}
@@ -135,10 +140,18 @@ export default function(component){
  const setVisual=(mode,text)=>{['listening','thinking','speaking'].forEach(c=>{heart?.classList.remove(c);robot?.classList.remove(c)});if(mode&&mode!=='idle'){heart?.classList.add(mode);robot?.classList.add(mode)}if(status&&text)status.textContent=text;};
  if(stage==='thinking')setVisual('thinking','Pensando…');else setVisual('idle','Toque no coração para falar');
 
- const state=root._fbHeartState||(root._fbHeartState={rec:null,stream:null,chunks:[],started:0});
- const cleanup=()=>{try{if(state.stream){state.stream.getTracks().forEach(t=>t.stop())}}catch(_){}state.stream=null;state.rec=null;state.chunks=[];state.started=0;};
- const stop=()=>{if(state.rec&&state.rec.state==='recording'){setVisual('thinking','Enviando e preparando resposta…');state.rec.stop();}};
+ const state=root._fbHeartState||(root._fbHeartState={rec:null,stream:null,chunks:[],started:0,starting:false});
+ state.motion=motion;
+ const greetingEnabled=()=>state.motion!=='off'&&(state.motion==='on'||!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+ const clearGreeting=()=>robot?.classList.remove('greeting');
+ const startGreeting=()=>{if(greetingEnabled())robot?.classList.add('greeting')};
+ if(robot){robot.onanimationend=robot.onanimationcancel=e=>{if(e.animationName==='jWave')clearGreeting()};}
+ if(stage==='thinking'||!greetingEnabled())clearGreeting();
+ const cleanup=()=>{clearGreeting();try{if(state.stream){state.stream.getTracks().forEach(t=>t.stop())}}catch(_){}state.stream=null;state.rec=null;state.chunks=[];state.started=0;state.starting=false;};
+ const stop=()=>{if(state.rec&&state.rec.state==='recording'){clearGreeting();setVisual('thinking','Enviando e preparando resposta…');state.rec.stop();}};
  const start=async()=>{
+   if(state.starting)return;
+   state.starting=true;startGreeting();
    try{
      state.stream=await navigator.mediaDevices.getUserMedia({audio:true});
      state.chunks=[];
@@ -166,6 +179,7 @@ export default function(component){
      recorder.start(120);
      setVisual('listening','Ouvindo… toque novamente para terminar');
    }catch(e){cleanup();setVisual('idle',String(e?.name||'').includes('NotAllowed')?'Permita o microfone no navegador':'Não consegui acessar o microfone');}
+   finally{state.starting=false;}
  };
  heart.onclick=()=>{if(state.rec&&state.rec.state==='recording')stop();else start();};
  return()=>{if(!document.body.contains(root))cleanup();};
