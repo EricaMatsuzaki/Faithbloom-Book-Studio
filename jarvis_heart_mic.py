@@ -53,8 +53,11 @@ CSS = r"""
 .jh-heart.listening{color:#fff;background:#a51562;border-color:#ff8bd6;box-shadow:0 0 0 7px rgba(255,88,194,.18),0 0 42px rgba(255,88,194,.78);animation:jListen .72s ease-in-out infinite}
 .jh-heart.thinking{color:#fff0a8;border-color:#ffe36e;box-shadow:0 0 36px rgba(255,227,110,.72);animation:jThink .75s linear infinite}
 .jh-heart.speaking{color:#fff;border-color:#c78cff;box-shadow:0 0 46px rgba(199,140,255,.82),0 0 26px rgba(102,238,241,.8);animation:jSpeak .55s ease-in-out infinite}
-.jh-robot.listening,.jh-robot.thinking,.jh-robot.speaking{animation-play-state:paused}
-.jh-robot.listening .jh-head-group,.jh-robot.thinking .jh-head-group,.jh-robot.speaking .jh-head-group,.jh-robot.listening .jh-arm.r,.jh-robot.thinking .jh-arm.r,.jh-robot.speaking .jh-arm.r{animation:none}
+.jh-robot.listening,.jh-robot.thinking,.jh-robot.speaking{animation:jAttend 2.8s ease-in-out infinite}
+.jh-robot.listening .jh-head-group,.jh-robot.thinking .jh-head-group,.jh-robot.speaking .jh-head-group{animation:jNod 2.4s ease-in-out infinite}
+.jh-robot.thinking .jh-head-group{animation-duration:1.8s}
+.jh-robot.speaking .jh-head-group{animation-duration:1.4s}
+.jh-robot.listening .jh-arm.r,.jh-robot.thinking .jh-arm.r,.jh-robot.speaking .jh-arm.r{animation:none}
 .jh-robot.listening .jh-scan,.jh-robot.thinking .jh-scan{opacity:.9;animation:jScan 1.2s ease-in-out infinite}
 .jh-status{position:absolute;bottom:8px;z-index:3;padding:.48rem .8rem;border-radius:999px;background:rgba(6,27,43,.72);border:1px solid rgba(117,244,239,.25);font-weight:700;font-size:.82rem;text-align:center;max-width:92%}
 .jh-shell.compact{--jh-scale:.48;min-height:176px}
@@ -74,6 +77,12 @@ CSS = r"""
 8%,41%{transform:rotate(4deg)}
 15%,28%{transform:rotate(-2deg)}
 21%,34%,49%{transform:rotate(3deg)}
+}
+@keyframes jAttend{0%,100%{transform:scale(var(--jh-scale,1)) translateY(0) rotate(-.7deg)}
+50%{transform:scale(var(--jh-scale,1)) translateY(-8px) rotate(.7deg)}
+}
+@keyframes jNod{0%,100%{transform:translateY(0) rotate(-2deg)}
+50%{transform:translateY(3px) rotate(3deg)}
 }
 @keyframes jAura{0%,100%{transform:scale(.96);opacity:.7}
 50%{transform:scale(1.06);opacity:1}
@@ -107,7 +116,8 @@ CSS = r"""
 .jh-shell.compact .jh-robot{transform-origin:center center}
 .jh-shell.compact .jh-status{font-size:.52rem;bottom:0;padding:.2rem .34rem;white-space:nowrap}
 }
-@media(prefers-reduced-motion:reduce){.jh-robot,.jh-head-group,.jh-arm,.jh-aura,.jh-floor,.jh-heart,.jh-eye,.jh-scan{animation:none!important}
+.jh-shell.motion-off .jh-robot,.jh-shell.motion-off .jh-head-group,.jh-shell.motion-off .jh-arm,.jh-shell.motion-off .jh-aura,.jh-shell.motion-off .jh-floor,.jh-shell.motion-off .jh-heart,.jh-shell.motion-off .jh-eye,.jh-shell.motion-off .jh-scan{animation:none!important}
+@media(prefers-reduced-motion:reduce){.jh-shell:not(.motion-on) .jh-robot,.jh-shell:not(.motion-on) .jh-head-group,.jh-shell:not(.motion-on) .jh-arm,.jh-shell:not(.motion-on) .jh-aura,.jh-shell:not(.motion-on) .jh-floor,.jh-shell:not(.motion-on) .jh-heart,.jh-shell:not(.motion-on) .jh-eye,.jh-shell:not(.motion-on) .jh-scan{animation:none!important}
 }
 """
 
@@ -119,6 +129,9 @@ export default function(component){
  const stage=(data&&data.stage)||'idle';
  const compact=!!(data&&data.compact);
  root.classList.toggle('compact',compact);
+ const motion=(data&&data.motion)||'auto';
+ root.classList.toggle('motion-on',motion==='on');
+ root.classList.toggle('motion-off',motion==='off');
  const setVisual=(mode,text)=>{['listening','thinking','speaking'].forEach(c=>{heart?.classList.remove(c);robot?.classList.remove(c)});if(mode&&mode!=='idle'){heart?.classList.add(mode);robot?.classList.add(mode)}if(status&&text)status.textContent=text;};
  if(stage==='thinking')setVisual('thinking','Pensando…');else setVisual('idle','Toque no coração para falar');
 
@@ -171,7 +184,9 @@ def decode_recording(payload: dict[str, Any] | None) -> tuple[bytes, str, str] |
     return raw, fmt, str(payload.get("id") or "")
 
 
-def heart_mic(*, key: str = "jarvis_heart_mic", stage: str = "idle", reply_text: str = "", reply_audio: str = "", reply_token: str = "", compact: bool = False):
+def heart_mic(*, key: str = "jarvis_heart_mic", stage: str = "idle", reply_text: str = "", reply_audio: str = "", reply_token: str = "", compact: bool = False, motion: str = "auto"):
+    """Render Jarvis; motion follows the device unless explicitly on or off."""
+    motion = motion if motion in {"auto", "on", "off"} else "auto"
     components = getattr(st, "components", None)
     v2 = getattr(components, "v2", None) if components else None
     factory = getattr(v2, "component", None) if v2 else None
@@ -180,7 +195,7 @@ def heart_mic(*, key: str = "jarvis_heart_mic", stage: str = "idle", reply_text:
     widget = factory("faithbloom_jarvis_heart_mic", html=HTML, css=CSS + "\n/* inline */", js=JS)
     return widget(
         key=key,
-        data={"stage": stage, "reply_text": reply_text, "reply_audio": reply_audio, "reply_token": reply_token, "compact": bool(compact)},
+        data={"stage": stage, "reply_text": reply_text, "reply_audio": reply_audio, "reply_token": reply_token, "compact": bool(compact), "motion": motion},
         default={"recording": None},
         on_recording_change=lambda: None,
     )
