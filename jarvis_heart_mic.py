@@ -47,7 +47,7 @@ CSS = r"""
 .jh-body{position:absolute;left:51px;top:198px;width:138px;height:112px;border-radius:36px 36px 48px 48px;background:linear-gradient(145deg,#fff,#d9e8f2 67%,#a5b8cb);border:2px solid rgba(255,255,255,.92);box-shadow:inset -11px -13px 22px rgba(55,76,105,.15)}
 .jh-arm{position:absolute;top:215px;width:31px;height:82px;border-radius:20px;background:linear-gradient(#f6fbff,#a9bed0);border:1px solid rgba(255,255,255,.9)}
 .jh-arm.l{left:25px;transform:rotate(18deg)}
-.jh-arm.r{right:40px;height:72px;transform-origin:50% 12px;transform:rotate(-18deg)}
+.jh-arm.r{right:40px;height:72px;transform-origin:50% 12px;transform:rotate(-18deg);transition:transform .9s ease-in-out}
 .jh-heart{position:absolute;left:50%;top:24px;transform:translateX(-50%);width:62px;height:62px;border-radius:50%;border:4px solid #66eef1;background:#071927;color:#ff7fd1;font-size:29px;line-height:1;cursor:pointer;box-shadow:0 0 28px rgba(102,238,241,.72),inset 0 0 18px rgba(108,103,255,.22);animation:jCore 1.7s ease-in-out infinite;-webkit-tap-highlight-color:transparent}
 .jh-heart:focus-visible{outline:3px solid #fff;outline-offset:4px}
 .jh-heart.listening{color:#fff;background:#a51562;border-color:#ff8bd6;box-shadow:0 0 0 7px rgba(255,88,194,.18),0 0 42px rgba(255,88,194,.78);animation:jListen .72s ease-in-out infinite}
@@ -58,8 +58,8 @@ CSS = r"""
 .jh-robot.thinking .jh-head-group{animation-duration:1.8s}
 .jh-robot.speaking .jh-head-group{animation-duration:1.4s}
 .jh-robot.listening .jh-arm.r,.jh-robot.thinking .jh-arm.r,.jh-robot.speaking .jh-arm.r{animation:none}
-.jh-robot.greeting .jh-arm.r{animation:jWave 1.6s ease-in-out 1}
-.jh-robot.greeting .jh-head-group{animation:jGreet 1.6s ease-in-out 1}
+.jh-robot.greeting .jh-arm.r{animation:jWave 3.2s ease-in-out 1}
+.jh-robot.greeting .jh-head-group{animation:jGreet 3.2s ease-in-out 1}
 .jh-robot.listening .jh-scan,.jh-robot.thinking .jh-scan{opacity:.9;animation:jScan 1.2s ease-in-out infinite}
 .jh-status{position:absolute;bottom:8px;z-index:3;padding:.48rem .8rem;border-radius:999px;background:rgba(6,27,43,.72);border:1px solid rgba(117,244,239,.25);font-weight:700;font-size:.82rem;text-align:center;max-width:92%}
 .jh-shell.compact{--jh-scale:.48;min-height:176px}
@@ -71,14 +71,12 @@ CSS = r"""
 50%{transform:scale(var(--jh-scale,1)) translateY(-18px) rotate(1.4deg)}
 }
 @keyframes jWave{0%,100%{transform:rotate(-18deg)}
-16%,80%{transform:rotate(-154deg)}
-32%,64%{transform:rotate(-178deg)}
-48%{transform:rotate(-140deg)}
+35%,61%{transform:rotate(-100deg)}
+48%{transform:rotate(-112deg)}
 }
 @keyframes jGreet{0%,100%{transform:rotate(0)}
-16%,64%{transform:rotate(4deg)}
-32%{transform:rotate(-2deg)}
-48%,80%{transform:rotate(3deg)}
+35%,61%{transform:rotate(1.5deg)}
+48%{transform:rotate(.5deg)}
 }
 @keyframes jIdleNod{0%,100%{transform:rotate(-.7deg)}
 50%{transform:translateY(2px) rotate(.7deg)}
@@ -121,8 +119,8 @@ CSS = r"""
 .jh-shell.compact .jh-robot{transform-origin:center center}
 .jh-shell.compact .jh-status{font-size:.52rem;bottom:0;padding:.2rem .34rem;white-space:nowrap}
 }
-.jh-shell.motion-off .jh-robot,.jh-shell.motion-off .jh-head-group,.jh-shell.motion-off .jh-arm,.jh-shell.motion-off .jh-aura,.jh-shell.motion-off .jh-floor,.jh-shell.motion-off .jh-heart,.jh-shell.motion-off .jh-eye,.jh-shell.motion-off .jh-scan{animation:none!important}
-@media(prefers-reduced-motion:reduce){.jh-shell:not(.motion-on) .jh-robot,.jh-shell:not(.motion-on) .jh-head-group,.jh-shell:not(.motion-on) .jh-arm,.jh-shell:not(.motion-on) .jh-aura,.jh-shell:not(.motion-on) .jh-floor,.jh-shell:not(.motion-on) .jh-heart,.jh-shell:not(.motion-on) .jh-eye,.jh-shell:not(.motion-on) .jh-scan{animation:none!important}
+.jh-shell.motion-off .jh-robot,.jh-shell.motion-off .jh-head-group,.jh-shell.motion-off .jh-arm,.jh-shell.motion-off .jh-aura,.jh-shell.motion-off .jh-floor,.jh-shell.motion-off .jh-heart,.jh-shell.motion-off .jh-eye,.jh-shell.motion-off .jh-scan{animation:none!important;transition:none!important}
+@media(prefers-reduced-motion:reduce){.jh-shell:not(.motion-on) .jh-robot,.jh-shell:not(.motion-on) .jh-head-group,.jh-shell:not(.motion-on) .jh-arm,.jh-shell:not(.motion-on) .jh-aura,.jh-shell:not(.motion-on) .jh-floor,.jh-shell:not(.motion-on) .jh-heart,.jh-shell:not(.motion-on) .jh-eye,.jh-shell:not(.motion-on) .jh-scan{animation:none!important;transition:none!important}
 }
 """
 
@@ -143,7 +141,17 @@ export default function(component){
  const state=root._fbHeartState||(root._fbHeartState={rec:null,stream:null,chunks:[],started:0,starting:false});
  state.motion=motion;
  const greetingEnabled=()=>state.motion!=='off'&&(state.motion==='on'||!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
- const clearGreeting=()=>robot?.classList.remove('greeting');
+ const clearGreeting=()=>{
+   if(!robot?.classList.contains('greeting'))return;
+   const arm=root.querySelector('.jh-arm.r');
+   const pose=greetingEnabled()&&arm&&typeof getComputedStyle==='function'?getComputedStyle(arm).transform:'';
+   robot.classList.remove('greeting');
+   if(pose&&pose!=='none'){
+     arm.style.transition='none';arm.style.transform=pose;
+     void arm.offsetWidth;
+     arm.style.transition='';arm.style.transform='';
+   }
+ };
  const startGreeting=()=>{if(greetingEnabled())robot?.classList.add('greeting')};
  if(robot){robot.onanimationend=robot.onanimationcancel=e=>{if(e.animationName==='jWave')clearGreeting()};}
  if(stage==='thinking'||!greetingEnabled())clearGreeting();
