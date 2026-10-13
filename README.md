@@ -818,3 +818,10 @@ O Orquestrador deverá entender a intenção, montar o fluxo apropriado e conduz
 A entrada oficial continua sendo `pages/00_🤖_Jarvis.py`. O painel mostra o PNG original “Estúdio Encantado FaithBloom”, fornecido pela autora em `PDF_historico`, inteiro e na proporção natural em todas as telas. O arquivo é exibido diretamente, sem recompressão, preservando as cores, os brilhos e os detalhes dos olhos dos personagens. As seis ações, busca, projetos do perfil e etapas reais da produção continuam disponíveis. No presente da barra superior, `Movimento do banner` controla somente um brilho na moldura externa, sem cobrir os personagens; a preferência de movimento reduzido do dispositivo também é respeitada.
 
 O Jarvis real permanece visível e animado: ao lado do banner no desktop e abaixo no celular. Ele flutua, pisca e pulsa o coração; tocar no coração mantém a captura de voz original. Texto, anexos, encaminhamentos com confirmação e respostas de voz continuam usando os módulos existentes. As respostas escritas aparecem na tela. `Meus projetos` abre o catálogo da página 53, sem ocupar a página 38 do Prompt-Mestre. Um pacote pronto continua separado do registro de publicação.
+
+## Relatórios da revisão de engenharia
+
+- [Status de implementação de cada item do README](README_IMPLEMENTATION_STATUS.md): código existente, integrações parciais, recursos ainda não implementados e todas as 52 caixas do roadmap, com evidências e pendências.
+- [Revisão funcional e correções propostas](ENGINEERING_FUNCTIONAL_AUDIT.md): falhas reproduzidas, 894 testes e 2 subtestes aprovados após as correções, ensaios de abertura das 59 telas e limites da validação offline.
+
+Os relatórios identificam a base auditada e distinguem correções propostas de funcionalidades já integradas. Implementação no código não equivale a certificação dos provedores, do armazenamento ou da publicação em produção.
