@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import string
 import tempfile
+from hashlib import sha256
+from collections import Counter
 from pathlib import Path
 import streamlit as st
 
@@ -20,7 +22,7 @@ from translation_localization import (
     LOCALIZACOES, MODOS, INTENSIDADE_SONS, SOUND_LIBRARY,
     criar_registro_biblico, validar_registro_biblico, texto_biblico_para_exportacao,
     sugerir_onomatopeias, construir_prompt_localizacao,
-    revisar_localizacao_estrutural,
+    revisar_localizacao_estrutural, translation_source_fingerprint,
     criar_projeto_traducao, listar_projetos_traducao, carregar_projeto_traducao,
     salvar_projeto_traducao, adicionar_versao_localizada, aprovar_versao_localizada,
     extrair_texto_pdf_localizacao, construir_prompt_revisor_linguistico,
@@ -45,10 +47,16 @@ if not livros:
     st.info("Salve um Story Book primeiro para abrir uma tradução vinculada ao Master.")
     st.stop()
 
-opcoes={f"{x['titulo']} · {x.get('colecao','')}":x for x in livros}
+book_labels=Counter(f"{x['titulo']} · {x.get('colecao','')}" for x in livros)
+opcoes={}
+for book in livros:
+    book_label=f"{book['titulo']} · {book.get('colecao','')}"
+    if book_labels[book_label]>1:
+        book_label+=f" · {book.get('storage_path') or book.get('arquivo','')}"
+    opcoes[book_label]=book
 label=st.selectbox("📚 Livro Master",list(opcoes))
 info=opcoes[label]
-master=carregar_livro(info.get("colecao",""),info["arquivo"])
+master=carregar_livro(info.get("colecao",""),info.get("storage_path") or info["arquivo"])
 
 section_title("1. Mercado e estilo de localização", "O mesmo idioma pode ter variantes editoriais diferentes.", "Locale")
 c1,c2,c3,c4=st.columns(4)
@@ -124,6 +132,28 @@ else:
 section_title("5. Gerar e revisar", "A tradução vira uma nova versão; o Master nunca é sobrescrito.", "A/B/C Versions")
 instrucoes=st.text_area("Instruções adicionais para este mercado",placeholder="Ex.: manter o humor do Max suave; evitar gírias muito regionais.")
 
+# Keep an unsaved draft with the exact source and market that produced it.
+# Switching books/locales must never save the previous book's text into the
+# newly selected project; returning to a context restores its pending work.
+source_ref=info.get("storage_path") or info.get("arquivo","")
+draft_context=sha256(json.dumps({
+    "source_ref":source_ref,"source_fingerprint":translation_source_fingerprint(master),"locale":locale,
+    "idade":idade,"modo":modo,"sons":sons,
+},ensure_ascii=False,sort_keys=True,default=str).encode("utf-8")).hexdigest()
+draft_keys=("r06_translation","r06_review","r06_ai_review")
+previous_context=st.session_state.get("r06_draft_context")
+if previous_context!=draft_context:
+    drafts=st.session_state.setdefault("r06_pending_drafts",{})
+    if previous_context:
+        drafts[previous_context]={key:st.session_state[key] for key in draft_keys if key in st.session_state}
+    for key in draft_keys:
+        st.session_state.pop(key,None)
+    for key,value in drafts.get(draft_context,{}).items():
+        st.session_state[key]=value
+    st.session_state.pop("r06_project_id",None)
+    st.session_state.pop("r06_legacy_review",None)
+    st.session_state.r06_draft_context=draft_context
+
 with st.expander("🔎 Ver regras-base que serão enviadas ao tradutor",expanded=False):
     prompt,payload=construir_prompt_localizacao(master,locale,modo=modo,faixa_etaria=idade,intensidade_sons=sons,glossario=st.session_state.r06_glossary,instrucoes=instrucoes)
     st.code(prompt,language="text")
@@ -165,14 +195,23 @@ if trad:
 
     section_title("6. Salvar como versão", "A/B/C ficam preservadas; aprovar uma não apaga as anteriores.", "Version History")
     projetos=listar_projetos_traducao()
-    matching=[p for p in projetos if p.get("titulo")==master.get("titulo") and p.get("colecao")==master.get("colecao")]
+    source_key=str(source_ref).removeprefix("fb://").strip("/")
+    matching=[]
+    for project_card in projetos:
+        if project_card.get("titulo")!=master.get("titulo") or project_card.get("colecao")!=master.get("colecao"):
+            continue
+        candidate=carregar_projeto_traducao(project_card["id"])
+        if str(candidate.get("source_ref") or "").removeprefix("fb://").strip("/")==source_key:
+            matching.append(candidate)
     if matching:
-        proj=carregar_projeto_traducao(matching[0]["id"])
+        proj=matching[0]
     else:
         if st.button("Criar projeto de tradução para este Master"):
-            proj=criar_projeto_traducao(master.get("titulo",""),master.get("colecao",""),master.get("idioma_original","pt-BR"),info.get("storage_path",info.get("arquivo","")))
+            proj=criar_projeto_traducao(master.get("titulo",""),master.get("colecao",""),master.get("idioma_original","pt-BR"),source_ref)
             st.session_state.r06_project_id=proj["id"]; st.rerun()
         proj=carregar_projeto_traducao(st.session_state.get("r06_project_id","")) if st.session_state.get("r06_project_id") else {}
+        if str(proj.get("source_ref") or "").removeprefix("fb://").strip("/")!=source_key:
+            proj={}
     if proj:
         label_version=st.selectbox("Rótulo",list(string.ascii_uppercase[:8]))
         if st.button("💾 Salvar esta versão"):
@@ -211,3 +250,4 @@ if existing_pdf is not None:
 
 st.divider()
 st.caption("FaithBloom 2.0 · Refinamento 06 · Translation & Localization Studio · locale por mercado · Japanese Reading Guard · onomatopeias equilibradas · Bible Guard · revisão independente · versões A/B/C.")
+

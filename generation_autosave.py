@@ -23,10 +23,12 @@ def _achar_projeto_existente(state: dict) -> str:
     if not colecao or not titulo:
         return ""
     alvo = titulo.casefold()
-    for item in listar_livros(colecao):
-        if _texto(item.get("titulo")).casefold() == alvo:
-            return _texto(item.get("storage_path"))
-    return ""
+    candidatos = {
+        _texto(item.get("storage_path")) for item in listar_livros(colecao)
+        if _texto(item.get("titulo")).casefold() == alvo and _texto(item.get("storage_path"))
+    }
+    # Título não é identidade: nunca escolher arbitrariamente entre duas obras.
+    return next(iter(candidatos)) if len(candidatos) == 1 else ""
 
 
 def persist_generation_snapshot(
@@ -61,3 +63,4 @@ def persist_generation_snapshot(
     state["autosave_last_reason"] = reason
     state["autosave_last_path"] = caminho
     return caminho
+

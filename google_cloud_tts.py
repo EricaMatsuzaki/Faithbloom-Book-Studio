@@ -18,6 +18,8 @@ import requests
 GOOGLE_TTS_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
 # Nome da variável de ambiente, não o valor de uma credencial.
 GOOGLE_TTS_CREDENTIAL_ENV = "GOOGLE_CLOUD_TTS_API_KEY"
+# Public name consumed by the Voice Lab page; both identify the same setting.
+GOOGLE_TTS_API_KEY_ENV = GOOGLE_TTS_CREDENTIAL_ENV
 VOICE_LAB_MAX_CHARS = 500
 OUTPUT_DIR = Path("saida_audio")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -157,3 +159,4 @@ def synthesize_google_voice(
     path = target_dir / f"voice_lab_{safe_voice}_{uuid.uuid4().hex[:10]}.mp3"
     path.write_bytes(audio_bytes)
     return str(path)
+

@@ -37,7 +37,7 @@ import zipfile
 
 from armazenamento import _json, _save_json
 from storage_backend import materializar_assets_em_objeto, persistir_assets_em_objeto
-from translation_localization import normalize_locale, texto_biblico_para_exportacao
+from translation_localization import normalize_locale, texto_biblico_para_exportacao, translation_source_fingerprint
 from controle_geracao import estimar_custo
 
 AUDIOBOOK_INDEX = "audiobook_studio/index.json"
@@ -156,14 +156,18 @@ def get_voice_profile(profile_id: str, *, project: dict|None=None) -> dict:
 def _safe_translation(state: dict, locale: str) -> dict:
     loc=normalize_locale(locale)
     raw=(state.get("traducoes") or {}).get(loc) or {}
-    if isinstance(raw,dict) and isinstance(raw.get("cenas_texto"),list):
+    if (isinstance(raw,dict) and isinstance(raw.get("cenas_texto"),list) and raw["cenas_texto"]
+            and (not raw.get("locale") or normalize_locale(raw["locale"])==loc)
+            and (not raw.get("source_fingerprint") or raw["source_fingerprint"]==translation_source_fingerprint(state))):
         return raw
     # Alguns projetos guardam versões por locale; só usa explicitamente aprovada.
     versions=(state.get("translation_versions") or {}).get(loc) or []
     approved_id=((state.get("traducoes_aprovadas") or {}).get(loc) if isinstance(state.get("traducoes_aprovadas"),dict) else "")
     if approved_id:
         for v in versions:
-            if v.get("versao_id")==approved_id and isinstance(v.get("cenas_texto"),list):
+            if (v.get("versao_id")==approved_id and isinstance(v.get("cenas_texto"),list) and v["cenas_texto"]
+                    and (not v.get("locale") or normalize_locale(v["locale"])==loc)
+                    and (not v.get("source_fingerprint") or v["source_fingerprint"]==translation_source_fingerprint(state))):
                 return v
     return {}
 
@@ -176,7 +180,10 @@ def build_audio_source(state: dict, locale: str|None=None) -> dict:
     loc=normalize_locale(locale or state.get("idioma_original") or "pt-BR")
     original=normalize_locale(state.get("idioma_original") or "pt-BR")
     edition=_safe_translation(state,loc) if loc != original else {}
-    scenes=deepcopy(edition.get("cenas_texto") or state.get("cenas_texto") or [])
+    if loc!=original and not edition.get("cenas_texto"):
+        raise ValueError(f"Não há texto localizado em {loc} para este livro. Selecione uma localização válida antes de criar o audiobook nesse idioma.")
+    content=edition if loc!=original else state
+    scenes=deepcopy(content.get("cenas_texto") or [])
     out=[]
     for i,c in enumerate(scenes,1):
         if isinstance(c,dict):
@@ -187,7 +194,7 @@ def build_audio_source(state: dict, locale: str|None=None) -> dict:
             text=str(c).strip(); num=i; emotion="neutra"
         if text:
             out.append({"numero":num,"scene_type":"story","texto":text,"emocao":emotion})
-    lesson=str(edition.get("licao_final") or state.get("licao_final") or "").strip()
+    lesson=str(content.get("licao_final") or "").strip()
     if lesson:
         out.append({"numero":len(out)+1,"scene_type":"lesson","texto":lesson,"emocao":"reflexão"})
     bible_records=state.get("bible_records") or {}
@@ -203,6 +210,64 @@ def build_audio_source(state: dict, locale: str|None=None) -> dict:
             out.append({"numero":len(out)+1,"scene_type":"scripture_reference","texto":ref,"referencia":ref,"emocao":"reflexão","immutable_text":True})
     return {"locale":loc,"title":edition.get("titulo") or state.get("titulo","") ,"scenes":out,
             "bible_guard":{"ai_translation_allowed":False,"reference":ref,"approved_text_used":bool(safe.get("pode_exportar_texto"))}}
+
+
+def audio_provider_available() -> bool:
+    """Whether the same connector used by this studio has configured access.
+
+    This is a local configuration check, not a paid availability probe.
+    Explicit provider selection is respected, as it is by ``gerar_audio``.
+    """
+    import openrouter_client
+    from gemini_client import gemini_disponivel
+    provider=openrouter_client.PROVEDOR_TEXTO
+    if provider=="gemini":
+        return gemini_disponivel()
+    if provider=="openrouter":
+        return bool(openrouter_client.OPENROUTER_API_KEY)
+    return gemini_disponivel() or bool(openrouter_client.OPENROUTER_API_KEY)
+
+
+def with_approved_audio_translation(state: dict, source_ref: str, locale: str) -> dict:
+    """Read an approved Studio edition linked to this exact source, in memory.
+
+    Embedded legacy translations retain their existing contract. Separate
+    Studio projects must identify their source and an approved, valid version.
+    The Book Master and all translation histories remain unchanged.
+    """
+    loc=normalize_locale(locale)
+    if loc==normalize_locale(state.get("idioma_original") or "pt-BR") or _safe_translation(state,loc):
+        return state
+    from translation_localization import (
+        listar_projetos_traducao, carregar_projeto_traducao,
+        revisar_localizacao_estrutural,
+    )
+    reference=str(source_ref or "").removeprefix("fb://").strip("/")
+    if not reference:
+        return state
+    for card in listar_projetos_traducao():
+        if card.get("titulo")!=state.get("titulo") or card.get("colecao","")!=state.get("colecao",""):
+            continue
+        project=carregar_projeto_traducao(card["id"])
+        if str(project.get("source_ref") or "").removeprefix("fb://").strip("/")!=reference:
+            continue
+        edition=(project.get("edicoes") or {}).get(loc) or {}
+        approved_id=edition.get("aprovada_id")
+        version=next((v for v in edition.get("versoes",[]) if approved_id and v.get("versao_id")==approved_id),{})
+        if not version or normalize_locale(version.get("locale") or loc)!=loc:
+            continue
+        if version.get("source_fingerprint") and version["source_fingerprint"]!=translation_source_fingerprint(state):
+            continue
+        bible=(project.get("bible_records") or {}).get(loc)
+        if not revisar_localizacao_estrutural(state,version,bible_record=bible).get("ok"):
+            continue
+        out=deepcopy(state)
+        out.setdefault("translation_versions",{}).setdefault(loc,[]).append(deepcopy(version))
+        out.setdefault("traducoes_aprovadas",{})[loc]=approved_id
+        if bible:
+            out.setdefault("bible_records",{})[loc]=deepcopy(bible)
+        return out
+    return state
 
 
 def create_script_scene(number: int, text: str, *, scene_type: str="story", emotion: str="neutra",
@@ -674,3 +739,4 @@ def apply_automatic_direction_project(project: dict, *, only_unapproved: bool=Tr
         if only_unapproved and s.get("status")=="approved": scenes.append(s)
         else: scenes.append(apply_automatic_direction(s))
     out["script_scenes"]=scenes; out["updated_at"]=_now_iso(); return out
+

@@ -101,13 +101,12 @@ DERIVADOS_NARRATIVOS = (
 
 def _persistir_estado() -> str:
     """Salva/atualiza o projeto atual, inclusive a biblioteca de versões."""
-    caminho = str(s.get("storage_path") or st.session_state.get("historia4_storage_path") or "")
+    caminho = str(s.get("storage_path") or "")
     if caminho:
         caminho = atualizar_livro_salvo(caminho, dict(s))
     else:
         caminho = salvar_livro(dict(s))
     s["storage_path"] = caminho
-    st.session_state.historia4_storage_path = caminho
     return caminho
 
 
@@ -130,6 +129,25 @@ def _sincronizar_biblioteca_versoes() -> None:
         item["status"] = "atual"
         biblioteca["roteirista_autoral"] = item
     s["versoes_narrativas_salvas"] = biblioteca
+
+
+def _salvar_comparativo_parcial(versoes: dict) -> None:
+    """Preserva na sessão e no projeto cada chamada concluída do comparador."""
+    s["comparativo_estilos"] = deepcopy(versoes)
+    s.pop("estilo_escolhido_no_comparador", None)
+    _sincronizar_biblioteca_versoes()
+    _persistir_estado()
+
+
+def _gerar_comparativo_salvo(modo: str) -> None:
+    try:
+        gerar_comparativo_estilos(dict(s), chamar_llm, modo=modo, on_progress=_salvar_comparativo_parcial)
+    except Exception as exc:
+        st.error(f"A comparação foi interrompida: {exc}")
+        if s.get("comparativo_estilos"):
+            st.info("As versões concluídas continuam disponíveis abaixo. Se houve falha ao salvar, use ‘Salvar todas as versões no projeto’.")
+    else:
+        st.rerun()
 
 
 def _arquivar_derivados_da_versao_ativa() -> None:
@@ -447,10 +465,7 @@ st.caption(
 col_a, col_b = st.columns(2)
 if col_a.button("✨ Ver amostras dos 4 estilos", disabled=not bool(pronto_editorial), use_container_width=True):
     with st.spinner("Criando quatro amostras com a mesma premissa e personagens..."):
-        s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="amostra")
-        s.pop("estilo_escolhido_no_comparador", None)
-        _sincronizar_biblioteca_versoes()
-    st.rerun()
+        _gerar_comparativo_salvo("amostra")
 
 if col_b.button(
     "📚 Gerar a história COMPLETA nos 4 estilos",
@@ -458,10 +473,7 @@ if col_b.button(
     use_container_width=True,
 ):
     with st.spinner("Criando as quatro histórias completas com a mesma ideia, personagens e faixa etária..."):
-        s["comparativo_estilos"] = gerar_comparativo_estilos(dict(s), chamar_llm, modo="completa")
-        s.pop("estilo_escolhido_no_comparador", None)
-        _sincronizar_biblioteca_versoes()
-    st.rerun()
+        _gerar_comparativo_salvo("completa")
 
 st.markdown("#### ⭐ Quinta opção — versão autoral do Roteirista")
 st.caption(
@@ -473,9 +485,14 @@ if st.button(
     use_container_width=True,
 ):
     with st.spinner("O Roteirista está escrevendo sua melhor versão autoral completa..."):
-        s["versao_roteirista_autoral"] = gerar_versao_autoral_roteirista(dict(s), chamar_llm)
-        _sincronizar_biblioteca_versoes()
-    st.rerun()
+        try:
+            versao = gerar_versao_autoral_roteirista(dict(s), chamar_llm)
+        except Exception as exc:
+            st.error(f"Não foi possível gerar a versão do Roteirista: {exc}")
+        else:
+            s["versao_roteirista_autoral"] = versao
+            _sincronizar_biblioteca_versoes()
+            st.rerun()
 
 st.markdown("#### ➕ Quer experimentar outra forma de contar?")
 st.caption(
@@ -631,3 +648,4 @@ if s.get("estilo_escolhido_no_comparador"):
 st.caption(
     "Nenhuma versão é aprovada automaticamente. A escolha da autora continua obrigatória antes das ilustrações."
 )
+

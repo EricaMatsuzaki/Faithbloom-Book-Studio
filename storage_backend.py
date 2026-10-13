@@ -375,13 +375,21 @@ def persistir_assets_em_objeto(value: Any, prefixo: str) -> Any:
 
 
 def materializar_assets_em_objeto(value: Any) -> Any:
+    """Materializa arquivos de mídia sem transformar referências de projetos JSON.
+
+    Campos como storage_path e source_ref identificam um registro persistido;
+    uma cópia desse JSON no cache não pode substituir sua identidade.
+    """
     if isinstance(value, dict):
         return {k: materializar_assets_em_objeto(v) for k, v in value.items()}
     if isinstance(value, list):
         return [materializar_assets_em_objeto(v) for v in value]
     if isinstance(value, str) and is_storage_uri(value):
+        if Path(uri_to_path(value)).suffix.casefold() == ".json":
+            return value
         try:
             return materializar(value)
         except Exception:
             return value
     return value
+
