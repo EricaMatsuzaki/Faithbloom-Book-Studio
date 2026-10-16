@@ -15,7 +15,9 @@ from activity_studio import (
     project_readiness, story_to_activity_suggestions, build_activity_prompt,
     generation_prompt, normalize_llm_activity_result, render_activity_svg,
 )
-from armazenamento import listar_livros, carregar_livro
+from armazenamento import listar_livros, carregar_livro, listar_colecoes
+from editorial_dispatch import book_selection_labels
+from ui_saved_choices import select_saved_or_new
 from character_universe import listar_personagens_oficiais, carregar_personagem_oficial, personagem_para_prompt
 
 st.set_page_config(page_title="Activity Book Studio · FaithBloom", page_icon="🧩", layout="wide")
@@ -26,10 +28,18 @@ callout("Você mantém o controle editorial", "Nenhuma folha entra no livro só 
 # ---- Project
 section_title("1 · Projeto & público", "A faixa/público muda instrução, tipografia, densidade visual e tipos sugeridos. A dificuldade é independente da idade.", "Audience Engine")
 projects=list_activity_projects()
-mode=st.radio("Projeto",["Criar novo","Abrir existente"],horizontal=True)
+requested=st.session_state.get("r08_handoff_project_id")
+if requested:
+    if not any(p["id"]==requested for p in projects):
+        st.error("O Activity Book enviado pelo Orquestrador não está disponível. Nenhum outro projeto foi aberto."); st.stop()
+    st.session_state["r08_project_mode"]="Abrir existente"
+    st.session_state["r08_saved_selection"]=requested
+    st.session_state["r08_project_id"]=requested
+    st.session_state.pop("r08_handoff_project_id",None)
+mode=st.radio("Projeto",["Criar novo","Abrir existente"],horizontal=True,key="r08_project_mode")
 project=None
 if mode=="Abrir existente" and projects:
-    pid=st.selectbox("Projeto salvo",[p["id"] for p in projects],format_func=lambda x: next((p["title"] for p in projects if p["id"]==x),x))
+    pid=st.selectbox("Projeto salvo",[p["id"] for p in projects],format_func=lambda x: next((p["title"] for p in projects if p["id"]==x),x),key="r08_saved_selection")
     project=load_activity_project(pid)
 elif mode=="Abrir existente":
     st.info("Ainda não há Activity Books salvos. Crie o primeiro projeto.")
@@ -40,7 +50,17 @@ else:
     difficulty=c3.selectbox("Complexidade",list(DIFFICULTY_PROFILES),index=1,format_func=lambda x:DIFFICULTY_PROFILES[x]["label"])
     c4,c5=st.columns(2)
     theme=c4.selectbox("Linha de conteúdo",CONTENT_THEMES)
-    collection=c5.text_input("Coleção / universo",placeholder="Pequenas Histórias, Grandes Lições")
+    with c5:
+        collection = select_saved_or_new(
+            "Coleção / universo",
+            listar_colecoes(),
+            current="",
+            key="activity_collection_select",
+            new_input_label="Nome da nova coleção / universo",
+            placeholder="Pequenas Histórias, Grandes Lições",
+            allow_empty=True,
+            help="Selecione uma coleção salva para reutilizar personagens e identidade visual já existentes.",
+        )
     if st.button("🧩 Criar Activity Book",type="primary",disabled=not title.strip()):
         project=create_activity_project(title,audience,difficulty,theme,collection)
         st.session_state.r08_project_id=project["id"]; st.success("Projeto criado."); st.rerun()
@@ -60,7 +80,7 @@ st.caption(f"Perfil de leitura: {preset['reading']} · densidade visual: {preset
 section_title("2 · Da história para atividades", "Opcional: use um Story Book salvo para sugerir atividades coerentes com personagens, moral e tema — sem inventar texto bíblico.", "Story → Activities")
 books=listar_livros()
 if books:
-    labels={f"{b.get('titulo')} · {b.get('colecao','')}":b for b in books}
+    labels=book_selection_labels(books)
     chosen=st.selectbox("Livro-base (opcional)",["— nenhum —"]+list(labels))
     if chosen!="— nenhum —":
         b=labels[chosen]; story=carregar_livro(b.get("colecao",""),b.get("storage_path") or b.get("arquivo"))
@@ -192,3 +212,4 @@ r1,r2,r3=st.columns(3); r1.metric("Folhas",ready["total_pages"]); r2.metric("Apr
 if ready["ready"]: st.success("✅ Todas as folhas passaram pelos gates atuais e foram com aprovação humana.")
 else: st.info("Ainda não está pronto para montagem final. Continue o ciclo QA → revisão → aprovação.")
 st.download_button("⬇️ Exportar projeto JSON",data=json.dumps(project,ensure_ascii=False,indent=2),file_name=f"{project.get('title','activity-book')}.json",mime="application/json")
+

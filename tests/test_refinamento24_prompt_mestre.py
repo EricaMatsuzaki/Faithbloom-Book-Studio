@@ -119,23 +119,14 @@ def test_psicologia_cores_e_pagina_por_pagina():
     assert "Psicologia das cores página por página" in relatorio["aprovados"]
 
 
-def test_complementos_editoriais_normalizados():
+def test_complementos_editoriais_normalizados(complete_editorial_extras):
     def fake_llm(*, sistema, instrucao):
-        return {
-            "boas_vindas": "Olá, amiguinho!",
-            "pais_educadores": {
-                "mensagem": "Conversem sobre a história.",
-                "perguntas": ["O que você aprendeu?"],
-            },
-            "ficha_pedagogica": {
-                "faixa_etaria": "3–8 anos",
-                "tema_central": "Bondade",
-            },
-        }
+        return complete_editorial_extras()
 
     extras = gerar_complementos_editoriais(
         {
             "titulo": "Livro",
+            "cenas_texto": [{"numero": 1, "texto": "Mel ajudou sua amiga."}],
             "licao_final": "Bondade",
             "versiculo_referencia": "Efésios 4:32",
         },

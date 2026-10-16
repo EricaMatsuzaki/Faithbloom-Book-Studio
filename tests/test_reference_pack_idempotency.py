@@ -27,18 +27,23 @@ def _character(reference_pack=None):
 
 
 def _memory_store(monkeypatch, document):
-    saved = deepcopy(document)
+    character_path = f"character_universe/{document['id']}.json"
+    store = {
+        character_path: deepcopy(document),
+        universe.INDEX: [],
+    }
 
-    monkeypatch.setattr(universe, "_json", lambda _path, _default: deepcopy(saved))
+    def load(path, default):
+        return deepcopy(store.get(path, default))
 
-    def save(_path, value):
-        nonlocal saved
-        saved = deepcopy(value)
+    def save(path, value):
+        store[path] = deepcopy(value)
 
+    monkeypatch.setattr(universe, "_json", load)
     monkeypatch.setattr(universe, "_save_json", save)
     monkeypatch.setattr(universe, "persistir_assets_em_objeto", lambda value, _prefix: value)
     monkeypatch.setattr(universe, "materializar_assets_em_objeto", lambda value: value)
-    return lambda: deepcopy(saved)
+    return lambda: deepcopy(store[character_path])
 
 
 def test_four_images_added_once_and_repeated_click_stays_four(monkeypatch):

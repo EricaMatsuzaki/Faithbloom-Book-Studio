@@ -95,9 +95,12 @@ def test_candidate_versions_preserve_original_and_group(monkeypatch):
     base = {"id": "original", "version_group": "group", "storage_uri": "fb://original.png"}
     created = []
     monkeypatch.setattr(manager, "persistir_arquivo", lambda path, prefix: f"fb://{path}")
+
     def fake_version(asset_id, **kwargs):
         item = {"id": f"v{len(created)}", "parent_asset_id": asset_id, "version_group": "group", "storage_uri": kwargs["storage_uri_value"]}
-        created.append(item); return item
+        created.append(item)
+        return item
+
     monkeypatch.setattr(manager, "create_version", fake_version)
     monkeypatch.setattr(manager, "_set_visual", lambda aid, status, **meta: {**next(x for x in created if x["id"] == aid), "visual_status": status})
     results = manager.create_abc(base["id"], ["a.png", "b.png", "c.png"], transformation="light", prompt="locked")
@@ -133,6 +136,7 @@ def test_new_master_keeps_old_history(monkeypatch):
     monkeypatch.setattr(manager, "atualizar_personagem_oficial", lambda pid, value: saved.update(value) or value)
     monkeypatch.setattr(manager, "set_master_role", lambda *a, **k: {})
     monkeypatch.setattr(manager, "update_asset", lambda *a, **k: k)
+    monkeypatch.setattr(manager, "_autofill_visual_dna_best_effort", lambda *a, **k: None)
     manager.promote_master("mel", "new", "color_master", confirmed=True)
     assert saved["color_master"] == "fb://new.png"
     assert saved["metadata"]["master_history"][0]["asset"] == "fb://old.png"
@@ -149,11 +153,25 @@ def test_only_new_asset_keeps_current_master_role(monkeypatch):
     monkeypatch.setattr(manager, "atualizar_personagem_oficial", lambda pid, value: saved.update(value) or value)
     monkeypatch.setattr(manager, "set_master_role", lambda aid, role, enabled: roles[aid].add(role) if enabled else roles[aid].discard(role))
     monkeypatch.setattr(manager, "update_asset", lambda aid, **changes: {"id": aid, **changes})
+    monkeypatch.setattr(manager, "_autofill_visual_dna_best_effort", lambda *a, **k: None)
     manager.promote_master("mel", "v2", "color_master", confirmed=True)
     assert "color_master" not in roles["v1"]
     assert roles["v2"] == {"color_master"}
     assert saved["metadata"]["master_history"][0]["asset_id"] == "v1"
     assert saved["metadata"]["current_master_asset_ids"]["color_master"] == "v2"
+
+
+def test_color_master_promotion_triggers_dna_autofill(monkeypatch):
+    called = []
+    monkeypatch.setattr(manager, "get_asset", lambda aid, **k: {"id": aid, "approved": True, "storage_uri": f"fb://{aid}.png"})
+    monkeypatch.setattr(manager, "get_asset_by_uri", lambda *a, **k: None)
+    monkeypatch.setattr(manager, "carregar_personagem_oficial", lambda _pid: {"color_master": "", "metadata": {}})
+    monkeypatch.setattr(manager, "atualizar_personagem_oficial", lambda pid, value: value)
+    monkeypatch.setattr(manager, "set_master_role", lambda *a, **k: None)
+    monkeypatch.setattr(manager, "update_asset", lambda aid, **changes: {"id": aid, **changes})
+    monkeypatch.setattr(manager, "_autofill_visual_dna_best_effort", lambda pid, aid: called.append((pid, aid)))
+    manager.promote_master("mel", "new", "color_master", confirmed=True)
+    assert called == [("mel", "new")]
 
 
 def test_identity_lock_is_constraint_not_automatic_validation(monkeypatch):

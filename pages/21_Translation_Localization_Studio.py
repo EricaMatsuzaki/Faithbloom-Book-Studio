@@ -4,17 +4,25 @@ from __future__ import annotations
 import json
 import string
 import tempfile
+from hashlib import sha256
 from pathlib import Path
 import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import listar_livros, carregar_livro
 from openrouter_client import chamar_llm
+from age_profiles import normalizar_faixa_etaria, opcoes_faixa_etaria
+from editorial_dispatch import book_selection_labels, apply_studio_book_handoff, require_child_translation_source
+from japanese_reading_level import japanese_reading_profile
+from japanese_localization_bridge import (
+    localizar_livro_com_reading_guard,
+    revisar_localizacao_com_reading_guard,
+)
 from translation_localization import (
     LOCALIZACOES, MODOS, INTENSIDADE_SONS, SOUND_LIBRARY,
     criar_registro_biblico, validar_registro_biblico, texto_biblico_para_exportacao,
-    sugerir_onomatopeias, construir_prompt_localizacao, localizar_livro,
-    revisar_localizacao_estrutural, revisar_localizacao_com_llm,
+    sugerir_onomatopeias, construir_prompt_localizacao,
+    revisar_localizacao_estrutural, translation_source_fingerprint,
     criar_projeto_traducao, listar_projetos_traducao, carregar_projeto_traducao,
     salvar_projeto_traducao, adicionar_versao_localizada, aprovar_versao_localizada,
     extrair_texto_pdf_localizacao, construir_prompt_revisor_linguistico,
@@ -39,10 +47,29 @@ if not livros:
     st.info("Salve um Story Book primeiro para abrir uma tradução vinculada ao Master.")
     st.stop()
 
-opcoes={f"{x['titulo']} · {x.get('colecao','')}":x for x in livros}
-label=st.selectbox("📚 Livro Master",list(opcoes))
+try:
+    opcoes=book_selection_labels(livros)
+    apply_studio_book_handoff(st.session_state,"translation",opcoes,"r06_master_selection")
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+label=st.selectbox("📚 Livro Master",list(opcoes),key="r06_master_selection")
 info=opcoes[label]
-master=carregar_livro(info.get("colecao",""),info["arquivo"])
+master=carregar_livro(info.get("colecao",""),info.get("storage_path") or info["arquivo"])
+try:
+    require_child_translation_source(master)
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+selected_source=str(info.get("storage_path") or info.get("arquivo", ""))
+if st.session_state.get("r06_form_source") != selected_source:
+    previous_source=st.session_state.get("r06_form_source")
+    glossaries=st.session_state.setdefault("r06_source_glossaries",{})
+    if previous_source:
+        glossaries[previous_source]=dict(st.session_state.get("r06_glossary") or {})
+    st.session_state["r06_glossary"]=dict(glossaries.get(selected_source) or {})
+    for key in ("r06_bible_mode","r06_bible_version","r06_bible_source","r06_bible_text","r06_bible_approval","r06_market_instructions"):
+        st.session_state.pop(key,None)
+    st.session_state.pop("r06_age_selection",None)
+    st.session_state["r06_form_source"]=selected_source
 
 section_title("1. Mercado e estilo de localização", "O mesmo idioma pode ter variantes editoriais diferentes.", "Locale")
 c1,c2,c3,c4=st.columns(4)
@@ -51,12 +78,36 @@ with c1:
 with c2:
     modo=st.selectbox("Modo",list(MODOS),format_func=lambda x:{"fiel":"Fiel","natural_infantil":"Natural Infantil ⭐","localizacao_cultural":"Localização Cultural"}[x],index=1)
 with c3:
-    idade=st.selectbox("Faixa de leitura",["3–5","3–8","6–8","9–10","Personalizado"],index=1)
+    age_options=opcoes_faixa_etaria()
+    master_age=normalizar_faixa_etaria(master.get("faixa_etaria"))
+    default_age_index=next((i for i,opt in enumerate(age_options) if opt.profile_id==master_age),0)
+    idade_opt=st.selectbox(
+        "Faixa de leitura",
+        age_options,
+        index=default_age_index,
+        format_func=lambda x:x.label,
+        help="Usa os mesmos perfis etários oficiais do Story Book Studio e parte automaticamente da faixa do Book Master.",
+        key="r06_age_selection",
+    )
+    idade=idade_opt.profile_id
 with c4:
     sons=st.selectbox("Onomatopeias",list(INTENSIDADE_SONS),format_func=lambda x:x.capitalize(),index=1)
 
 loc=LOCALIZACOES[locale]
-st.caption(f"Destino: {loc['idioma']} · {loc['mercado']} · {loc['ortografia']}")
+st.caption(f"Destino: {loc['idioma']} · {loc['mercado']} · {loc['ortografia']} · faixa oficial {idade_opt.label}")
+
+if locale == "ja-JP":
+    jp_profile=japanese_reading_profile(idade)
+    st.info(
+        "🇯🇵 **Japanese Child Reading Guard ativo.** "
+        f"Perfil: {jp_profile['reader_stage']} · referência escolar: {jp_profile['school_grade_reference']}. "
+        "O sistema preserva palavras naturais e, quando um kanji puder estar acima da leitura-alvo, prefere adicionar furigana/ruby em vez de empobrecer a frase."
+    )
+    with st.expander("Ver política japonesa de leitura e furigana", expanded=False):
+        st.write("**Kyōiku Kanji — referência MEXT:** 1º 80 · 2º 160 · 3º 200 · 4º 202 · 5º 193 · 6º 191 = 1.026.")
+        for rule in jp_profile.get("guidance", []):
+            st.write(f"- {rule}")
+        st.caption("Furigana é tratado como metadado editorial para a diagramação; não como parênteses repetidos dentro do texto final.")
 
 section_title("2. Glossário protegido", "Nomes e termos recorrentes ficam consistentes entre livros e edições.", "Series Memory")
 if "r06_glossary" not in st.session_state: st.session_state.r06_glossary={}
@@ -79,12 +130,12 @@ ref=master.get("versiculo_referencia","")
 b1,b2=st.columns(2)
 with b1:
     st.text_input("Referência bíblica",value=ref,disabled=True)
-    bible_mode=st.radio("Nesta edição",["Somente referência","Usar texto bíblico aprovado"],horizontal=True)
+    bible_mode=st.radio("Nesta edição",["Somente referência","Usar texto bíblico aprovado"],horizontal=True,key="r06_bible_mode")
 with b2:
-    versao=st.text_input("Versão bíblica",placeholder="Nome exato da versão utilizada",disabled=bible_mode=="Somente referência")
-    fonte=st.text_input("Fonte/licença/observação",placeholder="Fonte ou nota de licença",disabled=bible_mode=="Somente referência")
-texto_biblico=st.text_area("Texto exato do versículo aprovado",height=110,disabled=bible_mode=="Somente referência",help="Cole aqui o texto da versão bíblica escolhida. O FaithBloom não o reescreve nem o traduz.")
-aprovado=st.checkbox("Confirmo que este é o texto bíblico que desejo usar nesta edição",disabled=bible_mode=="Somente referência")
+    versao=st.text_input("Versão bíblica",placeholder="Nome exato da versão utilizada",disabled=bible_mode=="Somente referência",key="r06_bible_version")
+    fonte=st.text_input("Fonte/licença/observação",placeholder="Fonte ou nota de licença",disabled=bible_mode=="Somente referência",key="r06_bible_source")
+texto_biblico=st.text_area("Texto exato do versículo aprovado",height=110,disabled=bible_mode=="Somente referência",help="Cole aqui o texto da versão bíblica escolhida. O FaithBloom não o reescreve nem o traduz.",key="r06_bible_text")
+aprovado=st.checkbox("Confirmo que este é o texto bíblico que desejo usar nesta edição",disabled=bible_mode=="Somente referência",key="r06_bible_approval")
 bible=criar_registro_biblico(ref,locale,versao=versao,texto_aprovado=texto_biblico,fonte=fonte,aprovado=aprovado) if bible_mode!="Somente referência" else criar_registro_biblico(ref,locale)
 erros_biblia=validar_registro_biblico(bible)
 if erros_biblia and bible_mode!="Somente referência": st.warning(" · ".join(erros_biblia))
@@ -93,16 +144,40 @@ else:
     st.success("🔒 Bible Guard ativo. " + ("Texto aprovado poderá ser inserido na exportação." if exp["pode_exportar_texto"] else "Somente a referência será inserida."))
 
 section_title("5. Gerar e revisar", "A tradução vira uma nova versão; o Master nunca é sobrescrito.", "A/B/C Versions")
-instrucoes=st.text_area("Instruções adicionais para este mercado",placeholder="Ex.: manter o humor do Max suave; evitar gírias muito regionais.")
+instrucoes=st.text_area("Instruções adicionais para este mercado",placeholder="Ex.: manter o humor do Max suave; evitar gírias muito regionais.",key="r06_market_instructions")
 
-with st.expander("🔎 Ver regras que serão enviadas ao tradutor",expanded=False):
+# Keep an unsaved draft with the exact source and market that produced it.
+# Switching books/locales must never save the previous book's text into the
+# newly selected project; returning to a context restores its pending work.
+source_ref=info.get("storage_path") or info.get("arquivo","")
+draft_context=sha256(json.dumps({
+    "source_ref":source_ref,"source_fingerprint":translation_source_fingerprint(master),"locale":locale,
+    "idade":idade,"modo":modo,"sons":sons,
+},ensure_ascii=False,sort_keys=True,default=str).encode("utf-8")).hexdigest()
+draft_keys=("r06_translation","r06_review","r06_ai_review")
+previous_context=st.session_state.get("r06_draft_context")
+if previous_context!=draft_context:
+    drafts=st.session_state.setdefault("r06_pending_drafts",{})
+    if previous_context:
+        drafts[previous_context]={key:st.session_state[key] for key in draft_keys if key in st.session_state}
+    for key in draft_keys:
+        st.session_state.pop(key,None)
+    for key,value in drafts.get(draft_context,{}).items():
+        st.session_state[key]=value
+    st.session_state.pop("r06_project_id",None)
+    st.session_state.pop("r06_legacy_review",None)
+    st.session_state.r06_draft_context=draft_context
+
+with st.expander("🔎 Ver regras-base que serão enviadas ao tradutor",expanded=False):
     prompt,payload=construir_prompt_localizacao(master,locale,modo=modo,faixa_etaria=idade,intensidade_sons=sons,glossario=st.session_state.r06_glossary,instrucoes=instrucoes)
     st.code(prompt,language="text")
     st.json(payload,expanded=False)
+    if locale == "ja-JP":
+        st.caption("Além destas regras-base, o Japanese Child Reading Guard injeta automaticamente a política MEXT-aware e o suporte de furigana.")
 
 if st.button("🌍 Gerar localização",type="primary",use_container_width=True):
     with st.spinner("Localizando o livro sem tocar no Master..."):
-        traducao=localizar_livro(master,chamar_llm,locale,modo=modo,faixa_etaria=idade,intensidade_sons=sons,glossario=st.session_state.r06_glossary,bible_record=bible,instrucoes=instrucoes)
+        traducao=localizar_livro_com_reading_guard(master,chamar_llm,locale,modo=modo,faixa_etaria=idade,intensidade_sons=sons,glossario=st.session_state.r06_glossary,bible_record=bible,instrucoes=instrucoes)
     st.session_state.r06_translation=traducao
     st.session_state.r06_review=revisar_localizacao_estrutural(master,traducao,bible_record=bible,glossario=st.session_state.r06_glossary)
 
@@ -120,9 +195,12 @@ if trad:
     else: st.error(f"❌ {review.get('bloqueantes',0)} bloqueio(s) estrutural(is).")
     for al in review.get("alertas",[]): st.write(f"- **{al['nivel']}** · {al['mensagem']}")
 
+    if locale == "ja-JP" and trad.get("furigana_metadata_supported"):
+        st.success("ふりがな対応 · O rascunho japonês pode carregar `furigana_annotations` por cena para a diagramação em ruby/furigana.")
+
     if st.button("🧑‍🏫 Rodar Revisor Linguístico Independente"):
         with st.spinner("Comparando Master × localização..."):
-            st.session_state.r06_ai_review=revisar_localizacao_com_llm(master,trad,chamar_llm,locale,idade)
+            st.session_state.r06_ai_review=revisar_localizacao_com_reading_guard(master,trad,chamar_llm,locale,idade)
     if st.session_state.get("r06_ai_review"):
         st.markdown("#### Parecer do Revisor Linguístico")
         st.json(st.session_state.r06_ai_review)
@@ -131,14 +209,23 @@ if trad:
 
     section_title("6. Salvar como versão", "A/B/C ficam preservadas; aprovar uma não apaga as anteriores.", "Version History")
     projetos=listar_projetos_traducao()
-    matching=[p for p in projetos if p.get("titulo")==master.get("titulo") and p.get("colecao")==master.get("colecao")]
+    source_key=str(source_ref).removeprefix("fb://").strip("/")
+    matching=[]
+    for project_card in projetos:
+        if project_card.get("titulo")!=master.get("titulo") or project_card.get("colecao")!=master.get("colecao"):
+            continue
+        candidate=carregar_projeto_traducao(project_card["id"])
+        if str(candidate.get("source_ref") or "").removeprefix("fb://").strip("/")==source_key:
+            matching.append(candidate)
     if matching:
-        proj=carregar_projeto_traducao(matching[0]["id"])
+        proj=matching[0]
     else:
         if st.button("Criar projeto de tradução para este Master"):
-            proj=criar_projeto_traducao(master.get("titulo",""),master.get("colecao",""),master.get("idioma_original","pt-BR"),info.get("storage_path",info.get("arquivo","")))
+            proj=criar_projeto_traducao(master.get("titulo",""),master.get("colecao",""),master.get("idioma_original","pt-BR"),source_ref)
             st.session_state.r06_project_id=proj["id"]; st.rerun()
         proj=carregar_projeto_traducao(st.session_state.get("r06_project_id","")) if st.session_state.get("r06_project_id") else {}
+        if str(proj.get("source_ref") or "").removeprefix("fb://").strip("/")!=source_key:
+            proj={}
     if proj:
         label_version=st.selectbox("Rótulo",list(string.ascii_uppercase[:8]))
         if st.button("💾 Salvar esta versão"):
@@ -176,4 +263,5 @@ if existing_pdf is not None:
             st.json(st.session_state.r06_legacy_review)
 
 st.divider()
-st.caption("FaithBloom 2.0 · Refinamento 06 · Translation & Localization Studio · locale por mercado · onomatopeias equilibradas · Bible Guard · revisão independente · versões A/B/C.")
+st.caption("FaithBloom 2.0 · Refinamento 06 · Translation & Localization Studio · locale por mercado · Japanese Reading Guard · onomatopeias equilibradas · Bible Guard · revisão independente · versões A/B/C.")
+

@@ -29,6 +29,7 @@ from state import LivroState, PersonagemDNA, CenaImagem
 from emotion_colors import paleta_para_prompt
 from emotional_color_director import direcao_emocional, prompt_direcao_visual
 from agent_skills import skill_contract
+from generation_autosave import persist_generation_snapshot
 
 ESTILO_VISUAL_FIXO = (
     "Ilustração digital 2D, traços arredondados, texturas macias. "
@@ -78,10 +79,23 @@ def _direcao_da_cena(cena: dict) -> dict:
     )
 
 
+def _personagem_para_cena(cena: dict, personagens: dict) -> dict | None:
+    nome = str(cena.get("personagem_principal") or "").strip().casefold()
+    if nome:
+        for chave, personagem in personagens.items():
+            if nome in {str(chave).strip().casefold(), str(personagem.get("nome") or "").strip().casefold()}:
+                return personagem
+        return None
+    for personagem in personagens.values():
+        if personagem.get("papel") == "protagonista":
+            return personagem
+    return next((p for p in personagens.values() if p.get("imagem_referencia")), None)
+
+
 def prompt_cena(
     cena: dict, personagens: dict[str, PersonagemDNA], lado_spread: str
 ) -> str:
-    protagonista = personagens.get(cena.get("personagem_principal", ""), None)
+    protagonista = _personagem_para_cena(cena, personagens)
     dna = protagonista["descricao_fixa"] if protagonista else ""
     direcao = _direcao_da_cena(cena)
     return (
@@ -102,46 +116,35 @@ def prompt_cena(
 
 
 def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
-    for nome, personagem in state["personagens"].items():
-        if not personagem.get("imagem_referencia"):
-            state["personagens"][nome] = gerar_referencia_personagem(
-                personagem, gerar_imagem
-            )
-
     imagens_enviadas = state.get("imagens_cenas_enviadas", {})
     imagens_enviadas = {str(k): v for k, v in imagens_enviadas.items()}
-    cenas_imagem: list[CenaImagem] = []
     for i, cena in enumerate(state["cenas_texto"]):
         numero = cena["numero"]
+        atual = obter_imagem_cena(state, numero)
         if str(numero) in imagens_enviadas:
-            cenas_imagem.append(
-                CenaImagem(
-                    numero=numero,
-                    prompt_final="(imagem enviada pela autora - não gerada por IA)",
-                    caminho_arquivo=imagens_enviadas[str(numero)],
-                    aprovado=True,
-                    origem="enviada_pela_autora",
-                )
-            )
+            if atual and atual.get("caminho_arquivo") == imagens_enviadas[str(numero)] and atual.get("aprovado"):
+                continue
+            definir_imagem_cena(state, numero, imagens_enviadas[str(numero)],
+                "(imagem enviada pela autora - não gerada por IA)", "enviada_pela_autora", aprovado=True)
+            persist_generation_snapshot(state, reason=f"scene_uploaded:{numero}")
+            continue
+        if atual and atual.get("caminho_arquivo"):
             continue
 
         lado = "esquerda" if i % 2 == 0 else "direita"
-        protagonista = state["personagens"].get(
-            cena.get("personagem_principal", "")
-        )
-        imagem_base = protagonista["imagem_referencia"] if protagonista else None
+        protagonista = _personagem_para_cena(cena, state.get("personagens", {}))
+        if protagonista is None:
+            raise ValueError(f"Cena {numero}: não encontrei a referência do personagem indicado. Confira o personagem antes de gerar.")
+        if not protagonista.get("imagem_referencia"):
+            gerar_referencia_personagem(protagonista, gerar_imagem)
+            persist_generation_snapshot(state, reason="character_reference_generated")
+        imagem_base = protagonista.get("imagem_referencia")
+        if not imagem_base:
+            raise ValueError(f"Cena {numero}: falta uma imagem de referência para gerar a ilustração.")
         prompt = prompt_cena(cena, state["personagens"], lado)
         caminho = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
-        cenas_imagem.append(
-            CenaImagem(
-                numero=numero,
-                prompt_final=prompt,
-                caminho_arquivo=caminho,
-                aprovado=False,
-                origem="gerada_pelo_agente",
-            )
-        )
-    state["cenas_imagem"] = cenas_imagem
+        definir_imagem_cena(state, numero, caminho, prompt, "gerada_pelo_agente", aprovado=False)
+        persist_generation_snapshot(state, reason=f"scene_illustrated:{numero}")
     return state
 
 
@@ -197,17 +200,8 @@ def definir_imagem_cena(state: dict, numero: int, caminho: str, prompt: str, ori
 
 
 def _referencia_para_cena(state: dict, cena: dict) -> str | None:
-    nome = cena.get("personagem_principal", "")
-    personagem = state.get("personagens", {}).get(nome)
-    if personagem and personagem.get("imagem_referencia"):
-        return personagem["imagem_referencia"]
-    for p in state.get("personagens", {}).values():
-        if p.get("papel") == "protagonista" and p.get("imagem_referencia"):
-            return p["imagem_referencia"]
-    for p in state.get("personagens", {}).values():
-        if p.get("imagem_referencia"):
-            return p["imagem_referencia"]
-    return None
+    personagem = _personagem_para_cena(cena, state.get("personagens", {}))
+    return personagem.get("imagem_referencia") if personagem else None
 
 
 def gerar_cena_unica(state: dict, numero: int, gerar_imagem, instrucao_extra: str = "") -> dict:
@@ -222,6 +216,8 @@ def gerar_cena_unica(state: dict, numero: int, gerar_imagem, instrucao_extra: st
             + "\nAltere somente o que foi pedido. Preserve personagens, identidade visual e elementos já aprovados."
         )
     base = _referencia_para_cena(state, cena)
+    if not base:
+        raise ValueError(f"Cena {numero}: falta uma imagem de referência do personagem para gerar a ilustração.")
     caminho = gerar_imagem(prompt=prompt, imagem_base=base)
     return definir_imagem_cena(state, numero, caminho, prompt, "gerada_pelo_agente", aprovado=False)
 
@@ -281,3 +277,4 @@ def restaurar_ultima_imagem_cena(state: dict, numero: int) -> dict:
 
 # Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
 SKILL_PROFILE_IDS = ('illustrator',)
+

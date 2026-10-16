@@ -19,6 +19,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, asdict
+from hashlib import sha256
 from typing import Any
 
 from armazenamento import _json, _save_json, _slug
@@ -200,6 +201,12 @@ def _conteudo_master_sem_versiculo(state: dict) -> dict:
     }
 
 
+def translation_source_fingerprint(state: dict) -> str:
+    content=_conteudo_master_sem_versiculo(state)
+    content.update({key:state.get(key) for key in ("colecao","idioma_original","faixa_etaria","versiculo_referencia")})
+    return sha256(json.dumps(content,ensure_ascii=False,sort_keys=True,default=str).encode("utf-8")).hexdigest()
+
+
 def construir_prompt_localizacao(state: dict, locale: str, *, modo: str="natural_infantil", faixa_etaria: str="3–8", intensidade_sons: str="equilibrada", glossario: dict | None=None, instrucoes: str="") -> tuple[str,dict]:
     loc=locale_info(locale)
     modo=modo if modo in MODOS else "natural_infantil"
@@ -266,7 +273,9 @@ def normalizar_resultado_localizacao(resposta: Any, locale: str, bible_record: d
 def localizar_livro(state: dict, chamar_llm, locale: str, *, modo: str="natural_infantil", faixa_etaria: str="3–8", intensidade_sons: str="equilibrada", glossario: dict | None=None, bible_record: dict | None=None, instrucoes: str="") -> dict:
     sistema,payload=construir_prompt_localizacao(state,locale,modo=modo,faixa_etaria=faixa_etaria,intensidade_sons=intensidade_sons,glossario=glossario,instrucoes=instrucoes)
     resposta=chamar_llm(sistema=sistema,instrucao="Localize o objeto editorial fornecido preservando a estrutura JSON.\n"+json.dumps(payload,ensure_ascii=False))
-    return normalizar_resultado_localizacao(resposta,locale,bible_record)
+    result=normalizar_resultado_localizacao(resposta,locale,bible_record)
+    result["source_fingerprint"]=translation_source_fingerprint(state)
+    return result
 
 
 def revisar_localizacao_estrutural(master: dict, traducao: dict, *, bible_record: dict | None=None, glossario: dict | None=None) -> dict:
@@ -351,7 +360,10 @@ def salvar_projeto_traducao(p: dict) -> dict:
 
 
 def adicionar_versao_localizada(p: dict, locale: str, traducao: dict, label: str="A") -> dict:
-    p=copy.deepcopy(p); loc=normalize_locale(locale); ed=p.setdefault("edicoes",{}).setdefault(loc,{"versoes":[],"aprovada_id":""})
+    loc=normalize_locale(locale)
+    if traducao.get("locale") and normalize_locale(traducao["locale"])!=loc:
+        raise ValueError("O idioma do rascunho não corresponde à edição selecionada. Gere ou selecione a localização correta antes de salvar.")
+    p=copy.deepcopy(p); ed=p.setdefault("edicoes",{}).setdefault(loc,{"versoes":[],"aprovada_id":""})
     item=copy.deepcopy(traducao); item.setdefault("versao_id",uuid.uuid4().hex); item["label"]=label; item["salva_em"]=int(time.time()); ed["versoes"].append(item)
     p.setdefault("historico",[]).append({"evento":"localizacao_salva","locale":loc,"versao_id":item["versao_id"],"em":int(time.time())})
     return salvar_projeto_traducao(p)
@@ -361,3 +373,4 @@ def aprovar_versao_localizada(p: dict, locale: str, versao_id: str) -> dict:
     p=copy.deepcopy(p); loc=normalize_locale(locale); ed=p.setdefault("edicoes",{}).setdefault(loc,{"versoes":[],"aprovada_id":""})
     if not any(v.get("versao_id")==versao_id for v in ed.get("versoes",[])): raise ValueError("Versão não encontrada para este locale.")
     ed["aprovada_id"]=versao_id; p.setdefault("historico",[]).append({"evento":"localizacao_aprovada","locale":loc,"versao_id":versao_id,"em":int(time.time())}); return salvar_projeto_traducao(p)
+

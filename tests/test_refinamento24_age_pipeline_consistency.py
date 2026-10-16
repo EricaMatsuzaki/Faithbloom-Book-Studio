@@ -249,12 +249,12 @@ def test_state_tem_faixa_etaria_como_campo_oficial_e_sem_duplicata_colorir():
 def test_dashboard_envia_criacao_para_novo_fluxo():
     source = Path("app.py").read_text(encoding="utf-8")
     assert 'card("Criar um livro"' in source
-    assert '"pages/39_Historia_4_Estilos.py"' in source
+    assert '"pages/39_✍️_Historia_4_Estilos.py"' in source
     assert 'Criar do Zero — fluxo clássico 3–8' in source
 
 
 def test_novo_fluxo_pede_colecao_autoria_salva_rascunho_e_carrega_biblioteca():
-    source = Path("pages/39_Historia_4_Estilos.py").read_text(encoding="utf-8")
+    source = Path("pages/39_✍️_Historia_4_Estilos.py").read_text(encoding="utf-8")
     assert 'st.subheader("1. Coleção e autoria")' in source
     assert "list_author_profiles" in source
     assert "listar_colecoes" in source
@@ -265,6 +265,6 @@ def test_novo_fluxo_pede_colecao_autoria_salva_rascunho_e_carrega_biblioteca():
 
 
 def test_novo_fluxo_permita_limpar_autoria_selecao():
-    source = Path("pages/39_Historia_4_Estilos.py").read_text(encoding="utf-8")
+    source = Path("pages/39_✍️_Historia_4_Estilos.py").read_text(encoding="utf-8")
     assert "if autores != atuais:" in source
     assert "set_project_authors(dict(s), autores)" in source

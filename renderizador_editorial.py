@@ -225,6 +225,16 @@ def _desenhar_creditos_dedicatoria(c: canvas.Canvas, state: dict, page_w: float,
     _paragraph(c, texto, x, y, w, h, 12.5, 19, TA_LEFT, cor="#37433F")
 
 
+def _desenhar_pertence_a(c: canvas.Canvas, page_w: float, page_h: float,
+                        bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
+    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
+    _paragraph(c, "Este livro pertence a", x, y + h * 0.55, w, h * 0.15,
+               22, 30, TA_CENTER, bold=True, cor="#000000")
+    c.setStrokeColor(HexColor("#000000"))
+    c.setLineWidth(1)
+    c.line(x + w * 0.12, y + h * 0.48, x + w * 0.88, y + h * 0.48)
+
+
 def _desenhar_boas_vindas(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
                            bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
     x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
@@ -349,6 +359,7 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
     cenas = _mapear_por_numero(state.get("cenas_texto"))
     imagens = _mapear_por_numero(state.get("cenas_imagem"))
     colorir = _mapear_por_numero(state.get("paginas_colorir"))
+    paginas_colorir = state.get("paginas", []) or []
     por_pagina = {int(p["pagina"]): p for p in layout}
 
     c = canvas.Canvas(destino, pagesize=(page_w, page_h), pageCompression=1, initialFontName=_FONT_NORMAL, initialFontSize=10)
@@ -363,6 +374,8 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
 
         if pagina_num == 1:
             _desenhar_rosto(c, state, page_w, page_h, bleed_pt)
+        elif pagina_num == 2 and por_pagina.get(2, {}).get("tipo") == "este_livro_pertence_a":
+            _desenhar_pertence_a(c, page_w, page_h, bleed_pt, pagina_num, total, bleed)
         elif pagina_num == 2:
             _desenhar_creditos_dedicatoria(c, state, page_w, page_h, bleed_pt, pagina_num, total, bleed)
         else:
@@ -385,6 +398,17 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
                     if not _draw_image_contain(c, caminho, x, y, w, h):
                         _placeholder(c, f"Line art da cena {num} não encontrada", page_w, page_h)
                         avisos.append(f"Cena {num}: line art ausente no PDF.")
+                elif tipo == "colorir":
+                    try:
+                        indice = int(item.get("indice_pagina_colorir", -1))
+                        pagina = paginas_colorir[indice] if 0 <= indice < len(paginas_colorir) else {}
+                        caminho = pagina.get("caminho_arquivo", "")
+                    except (TypeError, ValueError, AttributeError):
+                        caminho = ""
+                    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
+                    if not _draw_image_contain(c, caminho, x, y, w, h):
+                        _placeholder(c, "Página de colorir não encontrada", page_w, page_h)
+                        avisos.append(f"Página {pagina_num}: line art ausente no PDF.")
                 elif tipo in ("resolucao", "celebracao", "licao_e_versiculo_fim"):
                     _desenhar_final(c, state, tipo, page_w, page_h, bleed_pt, pagina_num, total, bleed)
                 elif tipo == "pais_educadores":
@@ -405,3 +429,4 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
         "avisos": avisos,
         "preflight_assets": pf,
     }
+
