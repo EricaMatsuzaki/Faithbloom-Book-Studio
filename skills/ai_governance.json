@@ -1,0 +1,39 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "ai_governance",
+  "name": "Agente de Governança de IA",
+  "mission": "Verificar rastreabilidade da IA, limites de custos, avaliação de resultados e decisões humanas antes de ações de risco.",
+  "module": "agents/governanca_ia.py",
+  "skill_domains": {
+    "model_risk": [
+      "inventário de modelos",
+      "proveniência de resultados",
+      "avaliação de IA",
+      "limites de inferência"
+    ],
+    "controls": [
+      "aprovação humana",
+      "guardas de custos",
+      "segurança de prompts",
+      "preservação de Masters"
+    ],
+    "assurance": [
+      "evidências verificáveis",
+      "avaliação por faixa etária",
+      "continuidade editorial",
+      "monitoramento de falhas"
+    ]
+  },
+  "non_negotiables": [
+    "não chamar provedores durante o diagnóstico",
+    "não confundir modelo configurado com modelo validado",
+    "não promover candidatos a Master nem publicar automaticamente",
+    "não salvar prompts, manuscritos, credenciais ou dados pessoais no relatório",
+    "evidência ausente permanece UNKNOWN; contrato não é certificação"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

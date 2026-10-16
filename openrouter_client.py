@@ -65,9 +65,9 @@ def _headers() -> dict:
     return {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
 
 
-def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
+def _post_com_retry(url: str, payload: dict, timeout: int, *, no_retries: bool = False) -> requests.Response:
     ultimo: Exception | None = None
-    tentativas = 1 if url.rstrip("/").endswith("/images") else max(1, POLITICA.tentativas_http)
+    tentativas = 1 if no_retries or url.rstrip("/").endswith("/images") else max(1, POLITICA.tentativas_http)
     for tentativa in range(1, tentativas + 1):
         try:
             resp=requests.post(url, headers=_headers(), json=payload, timeout=timeout)
@@ -123,7 +123,7 @@ def texto_provedor_ativo() -> str:
     return "indisponível"
 
 
-def chamar_llm(sistema: str, instrucao: str) -> dict | list:
+def chamar_llm(sistema: str, instrucao: str, *, no_paid_fallback: bool = False, no_retries: bool = False, strict_provider: str | None = None) -> dict | list:
     """Ponto único chamado por todos os agentes. Decide o provedor de texto
     (Gemini gratuito/econômico primeiro, OpenRouter como fallback pago) sem
     exigir nenhuma mudança nos agentes que já importam esta função.
@@ -134,11 +134,17 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
     mensagens de erro de sempre, inclusive para testes que simulam falhas de
     rede ou interrupção do Streamlit.
     """
-    if PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel():
+    if strict_provider not in {None, "gemini", "openrouter"}:
+        raise ValueError("Provedor estrito inválido.")
+    if strict_provider == "gemini" and not gemini_client.gemini_disponivel():
+        raise OpenRouterFaithBloomError("O Gemini não está configurado para esta operação.")
+    if (strict_provider == "gemini" or (strict_provider is None and PROVEDOR_TEXTO != "openrouter")) and gemini_client.gemini_disponivel():
         try:
+            if no_retries:
+                return gemini_client.chamar_llm_gemini(sistema, instrucao, no_retries=True)
             return gemini_client.chamar_llm_gemini(sistema, instrucao)
         except Exception as exc_gemini:
-            if PROVEDOR_TEXTO == "gemini":
+            if strict_provider == "gemini" or PROVEDOR_TEXTO == "gemini" or no_paid_fallback:
                 raise
             try:
                 return _chamar_llm_openrouter(sistema, instrucao)
@@ -148,16 +154,18 @@ def chamar_llm(sistema: str, instrucao: str) -> dict | list:
                     f"Gemini: {exc_gemini}. OpenRouter: {exc_openrouter}."
                 ) from exc_openrouter
 
-    if PROVEDOR_TEXTO == "gemini":
+    if strict_provider is None and PROVEDOR_TEXTO == "gemini":
         raise OpenRouterFaithBloomError(
             "FAITHBLOOM_PROVEDOR_TEXTO=gemini foi definido, mas o Gemini não está "
             "configurado ou disponível. Defina GEMINI_API_KEY (ou GOOGLE_API_KEY)."
         )
 
+    if no_retries:
+        return _chamar_llm_openrouter(sistema, instrucao, no_retries=True)
     return _chamar_llm_openrouter(sistema, instrucao)
 
 
-def _chamar_llm_openrouter(sistema: str, instrucao: str) -> dict | list:
+def _chamar_llm_openrouter(sistema: str, instrucao: str, *, no_retries: bool = False) -> dict | list:
     conteudo_assinatura = sistema + "\n" + instrucao
     req_id,assinatura,estimativa,inicio=iniciar_requisicao("texto", MODELO_TEXTO, conteudo_assinatura)
     try:
@@ -168,7 +176,10 @@ def _chamar_llm_openrouter(sistema: str, instrucao: str) -> dict | list:
                 {"role":"user","content":instrucao},
             ],
         }
-        resp=_post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions",payload,120)
+        if no_retries:
+            resp = _post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions", payload, 120, no_retries=True)
+        else:
+            resp = _post_com_retry(f"{OPENROUTER_BASE_URL}/chat/completions", payload, 120)
         dados=_json_resposta(resp)
         texto=dados["choices"][0]["message"]["content"]
         texto_limpo=texto.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -195,9 +206,12 @@ def _ler_referencias_base64(refs: list[str]) -> list[tuple[str, str]]:
     return saida
 
 
-def _gerar_imagem_gemini_e_salvar(prompt: str, refs: list[str]) -> str:
+def _gerar_imagem_gemini_e_salvar(prompt: str, refs: list[str], *, no_retries: bool = False) -> str:
     imagens_b64 = _ler_referencias_base64(refs)
-    imagem_bytes, mime_type = gemini_client.gerar_imagem_gemini(prompt, imagens_b64)
+    if no_retries:
+        imagem_bytes, mime_type = gemini_client.gerar_imagem_gemini(prompt, imagens_b64, no_retries=True)
+    else:
+        imagem_bytes, mime_type = gemini_client.gerar_imagem_gemini(prompt, imagens_b64)
     extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
     caminho = os.path.join(PASTA_IMAGENS, f"{uuid.uuid4().hex}.{extension}")
     with open(caminho, "wb") as f:
@@ -205,7 +219,7 @@ def _gerar_imagem_gemini_e_salvar(prompt: str, refs: list[str]) -> str:
     return caminho
 
 
-def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None, provider: str | None = None, aspect_ratio: str | None = None, output_format: str | None = "png") -> str:
+def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia: list[str] | None = None, *, resolution: str | None = None, provider: str | None = None, aspect_ratio: str | None = None, output_format: str | None = "png", no_paid_fallback: bool = False, no_retries: bool = False, strict_provider: str | None = None) -> str:
     """Gera/edita imagem. Desde 24/09/2026, tenta primeiro o Gemini direto
     (gratuito/econômico) quando disponível, com a OpenRouter como reserva —
     mesmo padrão já usado para texto e voz. Essa tentativa roda ANTES de
@@ -221,6 +235,12 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
         raise ValueError("Proporção de imagem inválida.")
     if output_format not in {None, "png"}:
         raise ValueError("Formato de saída inválido.")
+    if strict_provider not in {None, "gemini", "openrouter"}:
+        raise ValueError("Provedor estrito inválido.")
+    if strict_provider == "gemini" and (provider is not None or resolution is not None or aspect_ratio is not None):
+        raise ValueError("Estas opções de roteamento/resolução não são suportadas pelo cliente Gemini direto.")
+    if strict_provider == "gemini" and not gemini_client.gemini_disponivel():
+        raise OpenRouterFaithBloomError("O Gemini não está configurado para esta operação.")
     if not prompt.strip():
         raise ValueError("Escreva o pedido de edição antes de gerar.")
     refs=[]
@@ -238,15 +258,17 @@ def gerar_imagem(prompt: str, imagem_base: str | None = None, imagens_referencia
     # diferente e não relacionado ao Gemini direto abaixo. Só tentamos o
     # Gemini direto quando quem chamou NÃO pediu um "provider" específico da
     # OpenRouter (senão a escolha de quem chamou seria ignorada).
-    if provider is None and PROVEDOR_TEXTO != "openrouter" and gemini_client.gemini_disponivel():
+    if (strict_provider == "gemini" or (strict_provider is None and provider is None and PROVEDOR_TEXTO != "openrouter")) and gemini_client.gemini_disponivel():
         try:
+            if no_retries:
+                return _gerar_imagem_gemini_e_salvar(prompt, refs, no_retries=True)
             return _gerar_imagem_gemini_e_salvar(prompt, refs)
         except Exception as exc_gemini:
-            if PROVEDOR_TEXTO == "gemini":
+            if strict_provider == "gemini" or PROVEDOR_TEXTO == "gemini" or no_paid_fallback:
                 raise
             # cai silenciosamente para a OpenRouter, fluxo original abaixo.
 
-    if PROVEDOR_TEXTO == "gemini" and provider is None:
+    if strict_provider is None and PROVEDOR_TEXTO == "gemini" and provider is None:
         raise OpenRouterFaithBloomError(
             "FAITHBLOOM_PROVEDOR_TEXTO=gemini foi definido, mas o Gemini não está "
             "configurado ou disponível. Defina GEMINI_API_KEY (ou GOOGLE_API_KEY)."
@@ -428,3 +450,4 @@ def converter_marcacoes_para_texto_natural(texto_com_marcacoes: str) -> str:
     texto=re.sub(r"\[(?:emoção|emocao|ritmo|speaker|voz):[^\]]+\]","",texto,flags=re.I)
     texto=re.sub(r"\[pausa:\s*(\d+)\s*ms\]",lambda m:", " if int(m.group(1))<500 else "... ",texto,flags=re.I)
     return re.sub(r"[ \t]+"," ",texto).strip()
+

@@ -12,7 +12,7 @@ from typing import Any
 from agent_skills import skill_contract
 from age_profiles import normalizar_faixa_etaria, perfil_etario, instrucao_faixa_etaria
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
-from agents.estilos_narrativos import ESTILOS_NARRATIVOS, normalizar_licao_final
+from agents.estilos_narrativos import ESTILOS_NARRATIVOS, normalizar_licao_final, validar_conteudo_versao
 from generation_autosave import persist_generation_snapshot
 
 LABEL_ROTEIRISTA = "⭐ Versão do Roteirista"
@@ -165,6 +165,7 @@ def gerar_versao_autoral_roteirista(state: dict, chamar_llm) -> dict:
         "estilo_recomendado": _normalizar_estilo_recomendado(resposta.get("estilo_recomendado")),
         "justificativa_criativa": str(resposta.get("justificativa_criativa") or "").strip(),
     }
+    validar_conteudo_versao(versao)
     try:
         biblioteca = deepcopy(state.get("versoes_narrativas_salvas") or {})
         item = deepcopy(versao)

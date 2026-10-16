@@ -121,6 +121,11 @@ class AgeOption(tuple):
     def __new__(cls, profile_id: str, label: str):
         return super().__new__(cls, (profile_id, label))
 
+    def __getnewargs__(self):
+        # Streamlit copies a widget's initial value before storing it. A tuple
+        # subclass with a two-argument constructor must expose both arguments.
+        return self.profile_id, self.label
+
     @property
     def profile_id(self) -> str:
         return tuple.__getitem__(self, 0)
@@ -190,3 +195,4 @@ def instrucao_faixa_etaria(value: str | None) -> str:
         f"Moral: {p['moral']}. Densidade visual: {p['densidade_visual']}."
     )
     return base + "\n\n" + instrucao_experiencia_emocional(p["id"])
+

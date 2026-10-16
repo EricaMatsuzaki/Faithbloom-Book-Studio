@@ -29,6 +29,7 @@ from typing import Any
 
 from platform_registry import get_platform, registry_snapshot, verification_state
 from platform_format_engine import normalizar_master, preflight_target, compatibility
+from translation_localization import normalize_locale
 from storage_backend import BACKEND, is_storage_uri, materializar
 from pacote_publicacao import normalizar_metadata, disclosure_ia
 
@@ -189,6 +190,17 @@ def ai_disclosure_readiness(state: dict) -> dict:
     }
 
 
+def _edition_locale_mismatch(source_language: str, requested_locale: str, edition_language: str) -> dict | None:
+    source=normalize_locale(source_language or "pt-BR")
+    requested=normalize_locale(requested_locale or edition_language or source)
+    edition=normalize_locale(edition_language or source)
+    if requested==source and edition==source:
+        return None
+    return {"code":"edition_locale_mismatch","message":
+            f"O destino solicita {requested}, mas a obra e os arquivos selecionados pertencem à edição {source}. "
+            "Abra a edição localizada correspondente e recalcule o plano; alterar somente o locale não traduz o livro."}
+
+
 def create_distribution_plan(state: dict, targets: list[dict], guardian_report: dict | None = None,
                              edition_overrides: dict | None = None) -> dict:
     """Cria matriz de distribuição por destino sem executar publicação externa."""
@@ -214,6 +226,13 @@ def create_distribution_plan(state: dict, targets: list[dict], guardian_report: 
         spec_state = verification_state(platform)
         meta = metadata_readiness(state, locale=target.get("locale") or edition_master.get("language"))
         blockers = []
+        locale_blocker=_edition_locale_mismatch(
+            state.get("idioma_original") or "pt-BR",
+            target.get("locale") or edition_master.get("language"),
+            edition_master.get("language"),
+        )
+        if locale_blocker:
+            blockers.append(locale_blocker)
         if not gate["passed"]:
             blockers.append({"code": "quality_guardian_gate", "message": gate["message"]})
         if (pid, product) in conflicts:
@@ -304,6 +323,11 @@ def update_submission(plan: dict, edition_id: str, status: str, *, external_id: 
         raise KeyError(edition_id)
     if status in {"submitted", "processing", "live"} and row.get("readiness") != "ready":
         raise ValueError("Esta edição ainda está bloqueada e não pode ser marcada como submetida/live.")
+    source_language=(out.get("master") or {}).get("language")
+    if source_language and status in {"submitted","processing","live"}:
+        locale_blocker=_edition_locale_mismatch(source_language,row.get("locale"),(row.get("master") or {}).get("language"))
+        if locale_blocker:
+            raise ValueError(locale_blocker["message"])
     sub = row.setdefault("submission", {})
     sub.update({"status": status, "external_id": external_id.strip(), "store_url": store_url.strip(), "notes": notes.strip(), "updated_at": _now()})
     if status == "submitted" and not sub.get("submitted_at"): sub["submitted_at"] = _now()
@@ -345,6 +369,13 @@ def build_channel_package(state: dict, plan: dict, edition_id: str, output_root:
         raise KeyError(edition_id)
     if row.get("readiness") != "ready":
         raise ValueError("Edição bloqueada: resolva o preflight/Quality Gate antes de gerar o pacote final do canal.")
+    locale_blocker=_edition_locale_mismatch(
+        state.get("idioma_original") or "pt-BR",row.get("locale"),
+        (row.get("master") or {}).get("language"),
+    )
+    if locale_blocker:
+        # Also protect packages built from a saved plan made before this guard.
+        raise ValueError(locale_blocker["message"])
 
     platform_id = row["platform_id"]
     product = row["product"]
@@ -399,8 +430,20 @@ def save_distribution_plan(plan: dict) -> dict:
 
 
 def load_distribution_plan(plan_id: str) -> dict:
-    return _read_json(f"{DATA_PREFIX}/plans/{plan_id}.json", {}) or {}
+    plan=deepcopy(_read_json(f"{DATA_PREFIX}/plans/{plan_id}.json", {}) or {})
+    source_language=(plan.get("master") or {}).get("language")
+    if source_language:
+        for row in plan.get("editions",[]):
+            blocker=_edition_locale_mismatch(source_language,row.get("locale"),(row.get("master") or {}).get("language"))
+            if blocker:
+                blockers=row.setdefault("blockers",[])
+                if not any(item.get("code")==blocker["code"] for item in blockers):
+                    blockers.append(blocker)
+                row["readiness"]="blocked"
+        plan["summary"]=summarize_distribution(plan.get("editions",[]))
+    return plan
 
 
 def list_distribution_plans() -> list[dict]:
     return sorted(_read_json(INDEX_PATH, []) or [], key=lambda x: x.get("updated_at", ""), reverse=True)
+

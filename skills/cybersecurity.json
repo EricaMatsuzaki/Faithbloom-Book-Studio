@@ -1,0 +1,39 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "cybersecurity",
+  "name": "Agente de Cibersegurança",
+  "mission": "Verificar controles de acesso, isolamento de clientes, segredos, uploads e riscos operacionais com evidências rastreáveis.",
+  "module": "agents/ciberseguranca.py",
+  "skill_domains": {
+    "application_security": [
+      "autenticação e autorização",
+      "isolamento de tenant",
+      "validação de uploads",
+      "least privilege"
+    ],
+    "privacy": [
+      "proteção de segredos",
+      "dados pessoais",
+      "auditoria sanitizada",
+      "armazenamento privado"
+    ],
+    "resilience": [
+      "revisão de vulnerabilidades",
+      "resposta a incidentes",
+      "mudanças seguras",
+      "evidências de hardening"
+    ]
+  },
+  "non_negotiables": [
+    "não imprimir, copiar ou testar credenciais",
+    "não executar ataques, scans de redes ou operações destrutivas",
+    "não tratar política escrita como segurança aplicada",
+    "não declarar ambiente seguro sem evidências dos controles relevantes",
+    "preservar Masters, originais e histórico"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

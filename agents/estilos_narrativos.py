@@ -203,6 +203,19 @@ def _normalizar_resultado(resposta: Any, estilo: str, modo: str) -> dict:
     }
 
 
+def validar_conteudo_versao(versao: dict) -> None:
+    """Reject an empty provider result before replacing any saved draft."""
+    if versao.get("modo") == "completa":
+        cenas = versao.get("cenas_texto") or []
+        if not any(
+            isinstance(cena, dict) and isinstance(cena.get("texto"), str) and cena["texto"].strip()
+            for cena in cenas
+        ):
+            raise ValueError("A resposta da IA não contém uma cena de história com texto. Sua versão anterior foi preservada.")
+    elif not str(versao.get("amostra") or "").strip():
+        raise ValueError("A resposta da IA não contém uma amostra de história com texto. Sua versão anterior foi preservada.")
+
+
 def _gerar_um_estilo(state: dict, chamar_llm, estilo: str, modo: str) -> dict:
     chave = normalizar_estilo(estilo)
     spec = TODOS_ESTILOS[chave]
@@ -286,7 +299,9 @@ Regras invariáveis:
 """.strip() + "\n\n" + skill_contract("storyteller")
 
     resposta = chamar_llm(sistema=sistema, instrucao=f"{base}\n\n{instrucao_saida}")
-    return _normalizar_resultado(resposta, chave, modo)
+    versao = _normalizar_resultado(resposta, chave, modo)
+    validar_conteudo_versao(versao)
+    return versao
 
 
 def _biblioteca_com_versoes(state: dict, versoes: dict[str, dict]) -> dict:
@@ -307,21 +322,36 @@ def _biblioteca_com_versoes(state: dict, versoes: dict[str, dict]) -> dict:
     return biblioteca
 
 
-def gerar_comparativo_estilos(state: dict, chamar_llm, modo: str = "amostra") -> dict[str, dict]:
-    """Gera os quatro estilos e AutoSalva o resultado no Book Master."""
-    resultados = {estilo: _gerar_um_estilo(state, chamar_llm, estilo, modo) for estilo in ORDEM_ESTILOS}
-    try:
-        persist_generation_snapshot(
-            state,
-            reason=f"comparativo_4_estilos_{'completa' if modo == 'completa' else 'amostra'}",
-            updates={
-                "comparativo_estilos": resultados,
-                "versoes_narrativas_salvas": _biblioteca_com_versoes(state, resultados),
-            },
-        )
-    except Exception as exc:
-        state["autosave_status"] = "error"
-        state["autosave_error"] = str(exc)
+def gerar_comparativo_estilos(
+    state: dict, chamar_llm, modo: str = "amostra", *, on_progress=None
+) -> dict[str, dict]:
+    """Preserva cada versão concluída antes de solicitar a próxima.
+
+    A tela pode fornecer seu checkpoint para atualizar a sessão e salvar no
+    projeto atual. Sem callback, o AutoSave do Book Master continua ativo.
+    Falhas do provedor ou do checkpoint são propagadas; não viram sucesso.
+    """
+    resultados = {}
+    for estilo in ORDEM_ESTILOS:
+        resultados[estilo] = _gerar_um_estilo(state, chamar_llm, estilo, modo)
+        updates = {
+            "comparativo_estilos": deepcopy(resultados),
+            "versoes_narrativas_salvas": _biblioteca_com_versoes(state, resultados),
+        }
+        state.update(updates)
+        if on_progress is not None:
+            on_progress(deepcopy(resultados))
+        else:
+            try:
+                persist_generation_snapshot(
+                    state,
+                    reason=f"comparativo_4_estilos_{'completa' if modo == 'completa' else 'amostra'}",
+                    updates=updates,
+                )
+            except Exception as exc:
+                state["autosave_status"] = "error"
+                state["autosave_error"] = str(exc)
+                raise
     return resultados
 
 

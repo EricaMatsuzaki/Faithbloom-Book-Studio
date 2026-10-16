@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import math
 from copy import deepcopy
 
 from armazenamento import _json, _save_json, _slug
@@ -87,6 +88,8 @@ def create_visual_plan(
 ) -> dict:
     if generation_mode not in GENERATION_MODES:
         raise ValueError("Modo de geração visual inválido.")
+    if budget_limit_usd is not None and (not math.isfinite(float(budget_limit_usd)) or float(budget_limit_usd) < 0):
+        raise ValueError("O orçamento do projeto precisa ser finito e não negativo.")
     plan_id = uuid.uuid4().hex
     now = int(time.time())
     plan = {
@@ -188,6 +191,17 @@ def load_world_master(world_master_id: str) -> dict:
     return obj if isinstance(obj, dict) else {}
 
 
+def save_world_master(obj: dict) -> dict:
+    """Persist a location and its candidate/history checkpoints without promotion."""
+    obj = deepcopy(obj)
+    if not obj.get("id"):
+        raise ValueError("World/Location Master sem identificação.")
+    obj["updated_at"] = int(time.time())
+    _save_json(f"orchestrator/world_masters/{obj['id']}.json", obj)
+    _save_index(WORLD_MASTER_INDEX, {"id": obj["id"], "collection": obj.get("collection", ""), "name": obj.get("name", ""), "status": obj.get("status", "draft")})
+    return obj
+
+
 def approve_world_master(world_master_id: str) -> dict:
     obj = load_world_master(world_master_id)
     if not obj:
@@ -271,16 +285,20 @@ def require_scene_generation_ready(plan: dict) -> None:
 
 def cost_gate(plan: dict, estimated_usd: float, paid: bool) -> dict:
     """Returns a decision object; paid operations are never silently approved here."""
-    estimated = max(0.0, float(estimated_usd or 0.0))
+    estimated = float(estimated_usd or 0.0)
+    if not math.isfinite(estimated) or estimated < 0:
+        raise ValueError("A estimativa precisa ser finita e não negativa.")
     spent = float(plan.get("budget_spent_usd") or 0.0)
+    reserved = float(plan.get("budget_reserved_usd") or 0.0)
     limit = plan.get("budget_limit_usd")
-    over_budget = limit is not None and (spent + estimated) > float(limit)
+    over_budget = limit is not None and (spent + reserved + estimated) > float(limit)
     return {
         "estimated_usd": estimated,
         "paid": bool(paid),
+        "reserved_usd": reserved,
         "over_budget": over_budget,
         "requires_author_confirmation": bool(paid) or over_budget,
-        "remaining_after_usd": None if limit is None else float(limit) - spent - estimated,
+        "remaining_after_usd": None if limit is None else float(limit) - spent - reserved - estimated,
     }
 
 
@@ -316,3 +334,4 @@ def build_element_lock_instruction(
 
 def scenario_only_instruction(requested_change: str) -> dict:
     return build_element_lock_instruction(requested_change, unlock=["scenario"])
+

@@ -36,6 +36,8 @@ from agents.gerador_ideias import gerador_ideias_node
 from agents.criador_personagem import criar_personagem_a_partir_de_ideia
 from agents.roteirista import roteirista_node
 from agents.revisor import revisor_node
+from agents.complementos_editoriais import gerar_complementos_editoriais, aplicar_complementos
+from generation_autosave import persist_generation_snapshot
 from agents.ilustrador import ilustrador_node
 from agents.foto_para_personagem import gerar_personagem_a_partir_de_foto
 from agents.atividades_colorir import atividades_colorir_node
@@ -488,6 +490,32 @@ elif st.session_state.etapa == "revisar_texto":
                 s.setdefault("imagens_cenas_enviadas", {})[numero] = caminho
                 st.success(f"Cena {numero}: sua imagem será preservada e não será gerada novamente.")
 
+    with st.expander("📚 Boas-vindas, guia para pais e ficha pedagógica"):
+        st.caption("Esta geração com IA consome créditos. Ela cria os complementos do livro sem reescrever sua história nem gerar imagens.")
+        if st.button("✨ Gerar complementos editoriais", key="zero_editorial_extras"):
+            try:
+                with st.spinner("Preparando os complementos da história na faixa etária escolhida..."):
+                    extras = gerar_complementos_editoriais(dict(s), chamar_llm)
+                    novo = aplicar_complementos(dict(s), extras)
+            except Exception as exc:
+                st.error(f"Não foi possível gerar os complementos: {exc}")
+            else:
+                s.update(novo)
+                try:
+                    persist_generation_snapshot(s, reason="editorial_extras")
+                except Exception as exc:
+                    st.warning(f"Os complementos estão disponíveis nesta sessão, mas não foi possível salvá-los: {exc}")
+                st.success("Complementos gerados. Revise-os antes de continuar.")
+        if s.get("boas_vindas"):
+            st.markdown("**Boas-vindas**")
+            st.write(s["boas_vindas"])
+        if s.get("pais_educadores"):
+            st.markdown("**Guia para pais e educadores**")
+            st.json(s["pais_educadores"])
+        if s.get("ficha_pedagogica"):
+            st.markdown("**Ficha pedagógica**")
+            st.json(s["ficha_pedagogica"])
+
     st.divider()
     st.info(
         f"{len(s.get('cenas_bloqueadas', []))} cena(s) travada(s). "
@@ -653,7 +681,7 @@ elif st.session_state.etapa == "aprovar_personagens":
 # ------------------------------------------------------------ FINALIZANDO
 elif st.session_state.etapa == "finalizando":
     progresso = st.progress(0, text="Ilustrando cada cena...")
-    s.update(ilustrador_node(dict(s), gerar_imagem))
+    s.update(ilustrador_node(s, gerar_imagem))
     progresso.progress(35, text="Gerando 3 páginas de colorir (line-art)...")
     s.update(atividades_colorir_node(dict(s), gerar_imagem))
     progresso.progress(42, text="Gerando roteiro de audiobook...")
@@ -729,3 +757,4 @@ elif st.session_state.etapa == "resultado_zero":
         st.session_state.state = LivroState(paginas_minimas=24, idiomas_alvo=[])
         st.session_state.etapa = "entrada"
         st.rerun()
+

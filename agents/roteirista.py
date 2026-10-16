@@ -10,7 +10,7 @@ ritmo, densidade, musicalidade, humor, tensão e profundidade reflexiva.
 
 from state import LivroState, CenaTexto
 from agent_skills import skill_contract
-from agents.estilos_narrativos import normalizar_estilo, instrucao_estilo, normalizar_licao_final
+from agents.estilos_narrativos import TODOS_ESTILOS, normalizar_estilo, instrucao_estilo, normalizar_licao_final
 from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria, perfil_etario
 from originality_guard import creation_originality_contract
 
@@ -156,9 +156,7 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     state["faixa_etaria"] = faixa
     state["age_profile_id"] = faixa
     state["estilo_narrativo"] = estilo
-    state["estilo_narrativo_label"] = __import__(
-        "agents.estilos_narrativos", fromlist=["ESTILOS_NARRATIVOS"]
-    ).ESTILOS_NARRATIVOS[estilo]["label"]
+    state["estilo_narrativo_label"] = TODOS_ESTILOS[estilo]["label"]
 
     if (
         state.get("historia_escolhida_preservar")
