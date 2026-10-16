@@ -34,6 +34,13 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pip-audit
 
+      - name: Install media runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
       - name: Run test suite
         env:
           PYTHONPATH: .
