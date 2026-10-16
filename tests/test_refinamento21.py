@@ -1,4 +1,4 @@
-from agent_skills import validate_registry, get_agent_profile, skill_contract
+from agent_skills import AGENT_PROFILES, validate_registry, get_agent_profile, skill_contract
 from biblical_reference_validator import create_reference_candidate, validate_reference_candidate, reference_gate
 from bestseller_readiness import evaluate_bestseller_readiness
 from market_intelligence import make_market_evidence, validate_market_evidence, classify_market_mode, evidence_prompt
@@ -10,8 +10,10 @@ from agents.pesquisa_mercado import pesquisa_palavras_chave_node
 def test_agent_registry_covers_editorial_visual_and_technical_roles():
     audit = validate_registry()
     assert audit["ok"] is True
-    assert audit["role_count"] == 27
-    assert audit["module_count"] == 25
+    assert audit["role_count"] == len(AGENT_PROFILES)
+    assert audit["module_count"] == len({profile["module"] for profile in AGENT_PROFILES.values()})
+    assert {"storyteller", "saas_automation_engineer", "deep_code_review_engineer",
+            "ai_governance", "data_governance", "it_governance", "cybersecurity"} <= set(AGENT_PROFILES)
 
 
 def test_every_profile_has_formal_limits_and_quality_criteria():
@@ -109,3 +111,4 @@ def test_market_guardian_flags_missing_observed_evidence_without_fake_metrics():
     items = check_market_readiness({"palavras_chave_kdp": ["abc"], "market_evidence": []})
     assert any(x["code"] == "market_evidence_missing" for x in items)
     assert all("%" not in x["finding"] for x in items)
+

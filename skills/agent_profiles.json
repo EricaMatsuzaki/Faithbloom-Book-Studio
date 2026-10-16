@@ -45,6 +45,62 @@
   "profiles": [
     {
       "schema": "faithbloom.agent-skills.v3",
+      "role_id": "ai_governance",
+      "module": "governanca_ia.py",
+      "name": "Agente de Governança de IA",
+      "mission": "Verificar rastreabilidade da IA, limites de custos, avaliação de resultados e decisões humanas antes de ações de risco.",
+      "skills": [
+        "inventário de modelos",
+        "proveniência de resultados",
+        "avaliação de IA",
+        "limites de inferência",
+        "aprovação humana",
+        "guardas de custos",
+        "segurança de prompts",
+        "preservação de Masters",
+        "evidências verificáveis",
+        "avaliação por faixa etária",
+        "continuidade editorial",
+        "monitoramento de falhas"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "não chamar provedores durante o diagnóstico",
+        "não confundir modelo configurado com modelo validado",
+        "não promover candidatos a Master nem publicar automaticamente",
+        "não salvar prompts, manuscritos, credenciais ou dados pessoais no relatório",
+        "evidência ausente permanece UNKNOWN; contrato não é certificação"
+      ],
+      "evidence_requirements": [
+        "fontes locais inspecionadas",
+        "evidência observada e rastreável de execução"
+      ],
+      "execution": "deterministic",
+      "shared_editorial_dna": [],
+      "heart_arc": [],
+      "heart_arc_principles": [],
+      "heart_arc_mode": "not_applicable",
+      "bestseller_readiness_principles": [],
+      "scope": "technical",
+      "operating_rules": [
+        "não chamar provedores durante o diagnóstico",
+        "não confundir modelo configurado com modelo validado",
+        "não promover candidatos a Master nem publicar automaticamente",
+        "não salvar prompts, manuscritos, credenciais ou dados pessoais no relatório",
+        "evidência ausente permanece UNKNOWN; contrato não é certificação"
+      ]
+    },
+    {
+      "schema": "faithbloom.agent-skills.v3",
       "role_id": "audiobook_director",
       "module": "audiobook.py",
       "name": "Diretor de Audiobook",
@@ -600,6 +656,118 @@
     },
     {
       "schema": "faithbloom.agent-skills.v3",
+      "role_id": "cybersecurity",
+      "module": "ciberseguranca.py",
+      "name": "Agente de Cibersegurança",
+      "mission": "Verificar controles de acesso, isolamento de clientes, segredos, uploads e riscos operacionais com evidências rastreáveis.",
+      "skills": [
+        "autenticação e autorização",
+        "isolamento de tenant",
+        "validação de uploads",
+        "least privilege",
+        "proteção de segredos",
+        "dados pessoais",
+        "auditoria sanitizada",
+        "armazenamento privado",
+        "revisão de vulnerabilidades",
+        "resposta a incidentes",
+        "mudanças seguras",
+        "evidências de hardening"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "não imprimir, copiar ou testar credenciais",
+        "não executar ataques, scans de redes ou operações destrutivas",
+        "não tratar política escrita como segurança aplicada",
+        "não declarar ambiente seguro sem evidências dos controles relevantes",
+        "preservar Masters, originais e histórico"
+      ],
+      "evidence_requirements": [
+        "fontes locais inspecionadas",
+        "evidência observada e rastreável de execução"
+      ],
+      "execution": "deterministic",
+      "shared_editorial_dna": [],
+      "heart_arc": [],
+      "heart_arc_principles": [],
+      "heart_arc_mode": "not_applicable",
+      "bestseller_readiness_principles": [],
+      "scope": "technical",
+      "operating_rules": [
+        "não imprimir, copiar ou testar credenciais",
+        "não executar ataques, scans de redes ou operações destrutivas",
+        "não tratar política escrita como segurança aplicada",
+        "não declarar ambiente seguro sem evidências dos controles relevantes",
+        "preservar Masters, originais e histórico"
+      ]
+    },
+    {
+      "schema": "faithbloom.agent-skills.v3",
+      "role_id": "data_governance",
+      "module": "governanca_dados.py",
+      "name": "Agente de Governança de Dados",
+      "mission": "Verificar persistência, linhagem, acesso, consentimento, retenção e recuperação sem alterar dados ou originais.",
+      "skills": [
+        "classificação de dados",
+        "minimização",
+        "retenção",
+        "consentimento",
+        "linhagem",
+        "identidade de projeto",
+        "versionamento",
+        "backup e restauração",
+        "isolamento de tenant",
+        "controle de acesso",
+        "armazenamento privado",
+        "evidências de exposição"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "não ler bibliotecas pessoais completas durante diagnóstico",
+        "não expor manuscritos, documentos, fotos, tokens ou identidades no relatório",
+        "não apagar dados nem alterar Masters ou originais",
+        "backup declarado não equivale a restauração testada",
+        "isolamento de dados exige evidência; configuração desconhecida permanece UNKNOWN"
+      ],
+      "evidence_requirements": [
+        "fontes locais inspecionadas",
+        "evidência observada e rastreável de execução"
+      ],
+      "execution": "deterministic",
+      "shared_editorial_dna": [],
+      "heart_arc": [],
+      "heart_arc_principles": [],
+      "heart_arc_mode": "not_applicable",
+      "bestseller_readiness_principles": [],
+      "scope": "technical",
+      "operating_rules": [
+        "não ler bibliotecas pessoais completas durante diagnóstico",
+        "não expor manuscritos, documentos, fotos, tokens ou identidades no relatório",
+        "não apagar dados nem alterar Masters ou originais",
+        "backup declarado não equivale a restauração testada",
+        "isolamento de dados exige evidência; configuração desconhecida permanece UNKNOWN"
+      ]
+    },
+    {
+      "schema": "faithbloom.agent-skills.v3",
       "role_id": "dedication",
       "module": "dedicatoria.py",
       "name": "Dedicatória",
@@ -1123,6 +1291,62 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
+      ]
+    },
+    {
+      "schema": "faithbloom.agent-skills.v3",
+      "role_id": "it_governance",
+      "module": "governanca_ti.py",
+      "name": "Agente de Governança de TI",
+      "mission": "Verificar integridade técnica, dependências, observabilidade, recuperação e prontidão operacional sem efetuar deploys.",
+      "skills": [
+        "saúde operacional",
+        "observabilidade",
+        "continuidade",
+        "gestão de incidentes",
+        "CI e regressão",
+        "gestão de mudanças",
+        "release e rollback",
+        "integridade de configuração",
+        "inventário de dependências",
+        "versionamento",
+        "higiene técnica",
+        "limites de diagnóstico estático"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "forbidden": [
+        "não executar código inspecionado nem instalar dependências no diagnóstico",
+        "não executar merge, deploy ou mudança destrutiva automaticamente",
+        "teste não executado permanece UNKNOWN",
+        "não alegar ausência de vulnerabilidades sem análise e evidências apropriadas",
+        "não ler segredos ou configurações privadas para preencher relatórios"
+      ],
+      "evidence_requirements": [
+        "fontes locais inspecionadas",
+        "evidência observada e rastreável de execução"
+      ],
+      "execution": "deterministic",
+      "shared_editorial_dna": [],
+      "heart_arc": [],
+      "heart_arc_principles": [],
+      "heart_arc_mode": "not_applicable",
+      "bestseller_readiness_principles": [],
+      "scope": "technical",
+      "operating_rules": [
+        "não executar código inspecionado nem instalar dependências no diagnóstico",
+        "não executar merge, deploy ou mudança destrutiva automaticamente",
+        "teste não executado permanece UNKNOWN",
+        "não alegar ausência de vulnerabilidades sem análise e evidências apropriadas",
+        "não ler segredos ou configurações privadas para preencher relatórios"
       ]
     },
     {

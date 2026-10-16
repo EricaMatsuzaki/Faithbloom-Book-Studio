@@ -309,6 +309,10 @@ AGENT_PROFILES["scene_director"]["module_directory"] = ""
 # Technical profiles reuse their canonical domains; no second skill list to drift.
 from agents import engenheiro_saas_automacao as _saas
 from agents import engenheiro_code_review_profundo as _deep
+from agents import governanca_ia as _gov_ai
+from agents import governanca_dados as _gov_data
+from agents import governanca_ti as _gov_it
+from agents import ciberseguranca as _cyber
 for _engineer in (_saas, _deep):
     _profile = _p(
         _engineer.ROLE_ID, Path(_engineer.__file__).name, _engineer.NAME,
@@ -324,6 +328,27 @@ for _engineer in (_saas, _deep):
         _profile[_field] = []
     _profile["heart_arc_mode"] = "not_applicable"
     AGENT_PROFILES[_engineer.ROLE_ID] = _profile
+
+# Governança é executável e determinística. Contratos não constituem certificação.
+GOVERNANCE_AGENTS = (_gov_ai, _gov_data, _gov_it, _cyber)
+for _governor in GOVERNANCE_AGENTS:
+    _profile = _p(
+        _governor.ROLE_ID, Path(_governor.__file__).name, _governor.NAME,
+        _governor.MISSION, _governor.all_skills(),
+        ["achados com fonte e escopo", "UNKNOWN quando não há evidência", "nenhuma alteração destrutiva automática"],
+        ["saas_automation_engineer", "deep_code_review_engineer", "quality_guardian"],
+        evidence=["fontes locais inspecionadas", "evidência observada e rastreável de execução"],
+        execution="deterministic",
+    )
+    _profile["scope"] = "technical"
+    _profile["forbidden"] = list(_governor.NON_NEGOTIABLES)
+    _profile["operating_rules"] = list(_governor.NON_NEGOTIABLES)
+    for _field in ("shared_editorial_dna", "heart_arc", "heart_arc_principles", "bestseller_readiness_principles"):
+        _profile[_field] = []
+    _profile["heart_arc_mode"] = "not_applicable"
+    AGENT_PROFILES[_governor.ROLE_ID] = _profile
+
+TECHNICAL_AGENTS = (_saas, _deep, *GOVERNANCE_AGENTS)
 
 INHERITED_MODULE_PROFILES = {
     "estilos_narrativos.py": ["storyteller"],
@@ -488,7 +513,7 @@ def validate_registry(root: Path | None = None, *, check_export: bool = True) ->
                 errors.append("skills/agent_profiles.json desatualizado")
         except (OSError, ValueError):
             errors.append("skills/agent_profiles.json ausente ou inválido")
-        for role in ("saas_automation_engineer", "deep_code_review_engineer"):
+        for role in (agent.ROLE_ID for agent in TECHNICAL_AGENTS):
             try:
                 saved = json.loads((root / "skills" / (role + ".json")).read_text(encoding="utf-8"))
                 if saved != technical_profile_document(role):
@@ -506,23 +531,24 @@ def validate_registry(root: Path | None = None, *, check_export: bool = True) ->
 
 
 def technical_profile_document(role_id: str) -> dict:
-    engineer = {"saas_automation_engineer": _saas, "deep_code_review_engineer": _deep}[role_id]
+    engineer = {agent.ROLE_ID: agent for agent in TECHNICAL_AGENTS}[role_id]
+    is_governance = engineer in GOVERNANCE_AGENTS
     return {
         "schema": "faithbloom.technical-agent-skills.v2",
         "role_id": role_id, "name": engineer.NAME, "mission": engineer.MISSION,
         "module": "agents/" + Path(engineer.__file__).name,
         "skill_domains": {key: list(values) for key, values in engineer.SKILL_DOMAINS.items()},
         "non_negotiables": list(engineer.NON_NEGOTIABLES),
-        "runtime_entrypoints": ["run_diagnostic", "handle_saas_request"] if engineer is _saas else ["review_sources", "build_deep_review_plan"],
-        "activation": "Jarvis / Agent Skills / Engenharia; contrato técnico aplicado pelo executor autorizado",
-        "execution_boundary": "Diagnóstico local e revisão de fontes; nenhum patch, teste ou deploy é executado por uma resposta da IA.",
+        "runtime_entrypoints": ["run_diagnostic"] if is_governance else ["run_diagnostic", "handle_saas_request"] if engineer is _saas else ["review_sources", "build_deep_review_plan"],
+        "activation": "Governança / Agent Skills; diagnóstico determinístico" if is_governance else "Jarvis / Agent Skills / Engenharia; contrato técnico aplicado pelo executor autorizado",
+        "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente." if is_governance else "Diagnóstico local e revisão de fontes; nenhum patch, teste ou deploy é executado por uma resposta da IA.",
     }
 
 
 def export_all_profiles(directory: str | Path) -> None:
     folder = Path(directory)
     export_registry_json(folder / "agent_profiles.json")
-    for role in ("saas_automation_engineer", "deep_code_review_engineer"):
+    for role in (agent.ROLE_ID for agent in TECHNICAL_AGENTS):
         (folder / (role + ".json")).write_text(json.dumps(technical_profile_document(role), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -563,3 +589,4 @@ if __name__ == "__main__":
     report = validate_registry()
     print(json.dumps(report, ensure_ascii=False, indent=2))
     raise SystemExit(0 if report["ok"] else 1)
+

@@ -1,5 +1,7 @@
 # 🌷 FaithBloom Book Studio
 
+Atualização de integração: [funcionalidades, testes e pendências de produção](SAAS_INTEGRATION_STATUS.md). Os relatórios da auditoria original preservam a base examinada naquela ocasião; o documento de integração acompanha os avanços posteriores. Código implementado e testes locais não equivalem a validação dos provedores ou implantação no Streamlit.
+
 > **Estúdio editorial inteligente, visual e multimodal** — com controle humano, consistência de personagens, produção editorial, publicação e evolução futura para um assistente pessoal integrado.
 >
 > Autoria / direção do produto: **Erica Matsuzaki**
@@ -825,3 +827,4 @@ O Jarvis real permanece visível e animado: ao lado do banner no desktop e abaix
 - [Revisão funcional e correções propostas](ENGINEERING_FUNCTIONAL_AUDIT.md): falhas reproduzidas, 894 testes e 2 subtestes aprovados após as correções, ensaios de abertura das 59 telas e limites da validação offline.
 
 Os relatórios identificam a base auditada e distinguem correções propostas de funcionalidades já integradas. Implementação no código não equivale a certificação dos provedores, do armazenamento ou da publicação em produção.
+

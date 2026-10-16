@@ -1,0 +1,39 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "it_governance",
+  "name": "Agente de Governança de TI",
+  "mission": "Verificar integridade técnica, dependências, observabilidade, recuperação e prontidão operacional sem efetuar deploys.",
+  "module": "agents/governanca_ti.py",
+  "skill_domains": {
+    "operations": [
+      "saúde operacional",
+      "observabilidade",
+      "continuidade",
+      "gestão de incidentes"
+    ],
+    "delivery": [
+      "CI e regressão",
+      "gestão de mudanças",
+      "release e rollback",
+      "integridade de configuração"
+    ],
+    "supply_chain": [
+      "inventário de dependências",
+      "versionamento",
+      "higiene técnica",
+      "limites de diagnóstico estático"
+    ]
+  },
+  "non_negotiables": [
+    "não executar código inspecionado nem instalar dependências no diagnóstico",
+    "não executar merge, deploy ou mudança destrutiva automaticamente",
+    "teste não executado permanece UNKNOWN",
+    "não alegar ausência de vulnerabilidades sem análise e evidências apropriadas",
+    "não ler segredos ou configurações privadas para preencher relatórios"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

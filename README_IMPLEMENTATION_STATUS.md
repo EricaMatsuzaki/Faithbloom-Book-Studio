@@ -1,5 +1,7 @@
 # Status de implementação do README — FaithBloom
 
+**Fotografia histórica da auditoria original.** Para as correções e implementações posteriores, consulte [o status de integração](SAAS_INTEGRATION_STATUS.md). As classificações abaixo descrevem o commit-base indicado, não negam o código adicionado depois nem certificam a versão em produção.
+
 **Auditoria de 14/10/2026.** Branch examinada: `feature/refinamento-24-prompt-mestre-compliance`, commit `9b0e6a8df0b69d972db205cc8f8bfcd44687637c`. README: blob `35a48bdf1f86d244d002418f8de09d7f0a33f85d`.
 
 O README mistura recursos existentes, integrações incompletas e planos futuros. Esta matriz identifica o status de cada item e a implementação que sustenta a conclusão. Cadastro, skill ou prompt não equivalem a um produto completo. **Os status referem-se à base examinada; correções desta auditoria ainda são uma proposta de PR, sem deploy.**
@@ -437,3 +439,4 @@ A marcação original é transcrita para comparação; o status técnico resulta
 Os arquivos deste PR mantêm separado o inventário da base examinada e as correções testadas em proposta. Após merge/deploy, revisar os itens afetados e registrar os testes reais; não trocar todas as marcações para “implementado” apenas porque a suíte local passou.
 
 O PR #18 foi confirmado aberto em Draft, com base `release/2.0.0-rc5-skills` e head da feature no commit auditado. A configuração efetiva de proteção da release não foi inspecionada e nenhuma mudança nela foi realizada.
+

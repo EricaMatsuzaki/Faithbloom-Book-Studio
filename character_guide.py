@@ -269,7 +269,7 @@ def _normalize_scene_ideas(raw: Any, count: int = 3) -> list[dict]:
     return normalized[:count]
 
 
-def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: int = 3, *, project_context: dict | None = None) -> list[dict]:
+def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: int = 3, *, project_context: dict | None = None, text_generator=None) -> list[dict]:
     if count != 3:
         raise ValueError("O Diretor de Cena trabalha com exatamente três propostas A/B/C.")
     context = dict(project_context or {})
@@ -313,7 +313,7 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
             "objetos": "props essenciais", "por_que_funciona": "1 frase"
         }]}
     }
-    raw = chamar_llm(system, str(instruction))
+    raw = (text_generator or chamar_llm)(system, str(instruction))
     ideas = _normalize_scene_ideas(raw, count=count)
     validate_scene_concepts(ideas)
     for idea in ideas:
@@ -462,3 +462,4 @@ def approve_asset_as_variation(asset_id: str) -> dict:
     if asset.get("visual_status") not in {VARIATION_STATUS, MASTER_STATUS, "RESTORATION_CANDIDATE"}:
         raise ValueError("Somente uma candidata visual pode ser aprovada como variação.")
     return update_asset(asset_id, approved=True, visual_status="APPROVED_VARIATION", metadata={"visual_status": "APPROVED_VARIATION", "approved_at": _now(), "approval": "human"})
+

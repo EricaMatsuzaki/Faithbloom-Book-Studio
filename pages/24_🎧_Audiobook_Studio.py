@@ -9,6 +9,7 @@ import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import listar_livros, carregar_livro
+from editorial_dispatch import book_selection_labels, apply_studio_book_handoff, book_source_key
 from audiobook_studio import (
     STUDIO_MODES, CAST_MODES, VOICE_STYLE_PRESETS, EMOTION_PRESETS,
     create_voice_profile, save_voice_profile, list_voice_profiles,
@@ -33,7 +34,17 @@ provider_ready=audio_provider_available()
 # ---------------- Project
 section_title("1 · Projeto de audiobook", "Abra um projeto existente ou crie uma edição de áudio a partir de um Story Book salvo.", "Audio Project")
 projects=list_audiobook_projects()
-mode=st.radio("Projeto",["Criar novo","Abrir existente"],horizontal=True)
+books=listar_livros()
+try:
+    labels=book_selection_labels(books)
+    incoming=apply_studio_book_handoff(st.session_state,"audiobook",labels,"r09_source_selection")
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+if incoming:
+    st.session_state["r09_project_mode"]="Criar novo"
+    for key in ("r09_project_id","r09_export","r09_form_source"):
+        st.session_state.pop(key,None)
+mode=st.radio("Projeto",["Criar novo","Abrir existente"],horizontal=True,key="r09_project_mode")
 project=None
 if mode=="Abrir existente" and projects:
     pid=st.selectbox("Projeto salvo",[p["id"] for p in projects],format_func=lambda x:next((f"{p.get('title')} · {p.get('locale')}" for p in projects if p["id"]==x),x))
@@ -41,19 +52,26 @@ if mode=="Abrir existente" and projects:
 elif mode=="Abrir existente":
     st.info("Ainda não há projetos de audiobook salvos.")
 else:
-    books=listar_livros()
-    labels={f"{b.get('titulo')} · {b.get('colecao','')}":b for b in books}
-    source_label=st.selectbox("Story Book de origem",["— projeto independente —"]+list(labels))
-    c1,c2,c3=st.columns(3)
-    locale=c1.text_input("Locale",value="pt-BR",help="Ex.: pt-BR, en-US, en-GB, ja-JP")
-    studio_mode=c2.selectbox("Modo",list(STUDIO_MODES),format_func=lambda x:STUDIO_MODES[x].split(" — ")[0])
-    cast_mode=c3.selectbox("Elenco",list(CAST_MODES),format_func=lambda x:CAST_MODES[x])
+    source_label=st.selectbox("Story Book de origem",["— projeto independente —"]+list(labels),key="r09_source_selection")
     source_state=None; source_ref=""; collection=""
     default_title=""
     if source_label!="— projeto independente —":
         b=labels[source_label]; source_ref=b.get("storage_path") or b.get("arquivo",""); collection=b.get("colecao","")
         source_state=carregar_livro(collection,source_ref); default_title=source_state.get("titulo",b.get("titulo",""))
-    title=st.text_input("Título da edição de áudio",value=default_title)
+    form_source=book_source_key(source_ref)
+    if st.session_state.get("r09_form_source")!=form_source:
+        previous_source=st.session_state.get("r09_form_source")
+        st.session_state["r09_new_locale"]=(source_state or {}).get("idioma_original") or "pt-BR"
+        st.session_state["r09_new_title"]=default_title
+        if incoming or previous_source is not None:
+            for key in ("r09_project_id","r09_export"):
+                st.session_state.pop(key,None)
+        st.session_state["r09_form_source"]=form_source
+    c1,c2,c3=st.columns(3)
+    locale=c1.text_input("Locale",key="r09_new_locale",help="Ex.: pt-BR, en-US, en-GB, ja-JP")
+    studio_mode=c2.selectbox("Modo",list(STUDIO_MODES),format_func=lambda x:STUDIO_MODES[x].split(" — ")[0])
+    cast_mode=c3.selectbox("Elenco",list(CAST_MODES),format_func=lambda x:CAST_MODES[x])
+    title=st.text_input("Título da edição de áudio",key="r09_new_title")
     if st.button("🎧 Criar projeto de audiobook",type="primary",disabled=not title.strip()):
         try:
             if source_state:

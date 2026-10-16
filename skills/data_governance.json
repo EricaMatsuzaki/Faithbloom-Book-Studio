@@ -1,0 +1,39 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "data_governance",
+  "name": "Agente de Governança de Dados",
+  "mission": "Verificar persistência, linhagem, acesso, consentimento, retenção e recuperação sem alterar dados ou originais.",
+  "module": "agents/governanca_dados.py",
+  "skill_domains": {
+    "lifecycle": [
+      "classificação de dados",
+      "minimização",
+      "retenção",
+      "consentimento"
+    ],
+    "integrity": [
+      "linhagem",
+      "identidade de projeto",
+      "versionamento",
+      "backup e restauração"
+    ],
+    "access": [
+      "isolamento de tenant",
+      "controle de acesso",
+      "armazenamento privado",
+      "evidências de exposição"
+    ]
+  },
+  "non_negotiables": [
+    "não ler bibliotecas pessoais completas durante diagnóstico",
+    "não expor manuscritos, documentos, fotos, tokens ou identidades no relatório",
+    "não apagar dados nem alterar Masters ou originais",
+    "backup declarado não equivale a restauração testada",
+    "isolamento de dados exige evidência; configuração desconhecida permanece UNKNOWN"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

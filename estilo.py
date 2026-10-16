@@ -344,6 +344,8 @@ def render_sidebar_navigation() -> None:
 
 
 def aplicar_estilo():
+    from saas_access import require_streamlit_access
+    require_streamlit_access(st)
     st.html(CSS)
     from painel_visual import aplicar_visual
     aplicar_visual()

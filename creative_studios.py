@@ -1,9 +1,8 @@
-"""FaithBloom Creative Studios — arquitetura multimídia extensível.
+"""Creative Studio contracts and honest runtime media readiness.
 
-Esta camada registra capacidades futuras de animação, vídeo, música e cofre de
-ideias sem acoplar o produto a um provedor específico. Ela não gera mídia por
-si só: define contratos, especialistas, checkpoints e reaproveitamento dos
-Masters já aprovados no FaithBloom.
+The durable Idea Vault, local animatic renderer and opt-in Replicate execution
+live in media_studio. AI models require explicit deployment configuration;
+configuration alone never means live provider validation.
 """
 from __future__ import annotations
 
@@ -103,11 +102,19 @@ def build_derivative_plan(path_id: str, *, source_id: str, title: str = "", appr
 
 def provider_readiness(studio_id: str) -> dict:
     studio = get_studio(studio_id)
-    ready = studio["status"] != STATUS_PROVIDER_PENDING
+    from media_studio import media_readiness
+    runtime = media_readiness()
+    provider = runtime.get(studio_id, {})
+    ready = studio_id == "idea_vault"
     return {
         "studio_id": studio_id,
         "architecture_ready": True,
-        "provider_connected": ready if studio_id == "idea_vault" else False,
-        "can_generate_final_media": False if studio_id in {"animation_video", "music"} else None,
+        "provider_connected": ready,
+        "provider_configured": bool(provider.get("configured")),
+        "can_generate_final_media": bool(provider.get("available")) if studio_id in {"animation_video", "music"} else None,
+        "can_generate_local_animatic": runtime["local_animatic"]["available"] if studio_id == "animation_video" else False,
+        "character_animation_local": False,
+        "live_tested": False,
         "status": studio["status"],
     }
+

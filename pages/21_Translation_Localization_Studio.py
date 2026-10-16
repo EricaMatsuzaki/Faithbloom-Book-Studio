@@ -5,7 +5,6 @@ import json
 import string
 import tempfile
 from hashlib import sha256
-from collections import Counter
 from pathlib import Path
 import streamlit as st
 
@@ -13,6 +12,7 @@ from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import listar_livros, carregar_livro
 from openrouter_client import chamar_llm
 from age_profiles import normalizar_faixa_etaria, opcoes_faixa_etaria
+from editorial_dispatch import book_selection_labels, apply_studio_book_handoff, require_child_translation_source
 from japanese_reading_level import japanese_reading_profile
 from japanese_localization_bridge import (
     localizar_livro_com_reading_guard,
@@ -47,16 +47,29 @@ if not livros:
     st.info("Salve um Story Book primeiro para abrir uma tradução vinculada ao Master.")
     st.stop()
 
-book_labels=Counter(f"{x['titulo']} · {x.get('colecao','')}" for x in livros)
-opcoes={}
-for book in livros:
-    book_label=f"{book['titulo']} · {book.get('colecao','')}"
-    if book_labels[book_label]>1:
-        book_label+=f" · {book.get('storage_path') or book.get('arquivo','')}"
-    opcoes[book_label]=book
-label=st.selectbox("📚 Livro Master",list(opcoes))
+try:
+    opcoes=book_selection_labels(livros)
+    apply_studio_book_handoff(st.session_state,"translation",opcoes,"r06_master_selection")
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+label=st.selectbox("📚 Livro Master",list(opcoes),key="r06_master_selection")
 info=opcoes[label]
 master=carregar_livro(info.get("colecao",""),info.get("storage_path") or info["arquivo"])
+try:
+    require_child_translation_source(master)
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+selected_source=str(info.get("storage_path") or info.get("arquivo", ""))
+if st.session_state.get("r06_form_source") != selected_source:
+    previous_source=st.session_state.get("r06_form_source")
+    glossaries=st.session_state.setdefault("r06_source_glossaries",{})
+    if previous_source:
+        glossaries[previous_source]=dict(st.session_state.get("r06_glossary") or {})
+    st.session_state["r06_glossary"]=dict(glossaries.get(selected_source) or {})
+    for key in ("r06_bible_mode","r06_bible_version","r06_bible_source","r06_bible_text","r06_bible_approval","r06_market_instructions"):
+        st.session_state.pop(key,None)
+    st.session_state.pop("r06_age_selection",None)
+    st.session_state["r06_form_source"]=selected_source
 
 section_title("1. Mercado e estilo de localização", "O mesmo idioma pode ter variantes editoriais diferentes.", "Locale")
 c1,c2,c3,c4=st.columns(4)
@@ -74,6 +87,7 @@ with c3:
         index=default_age_index,
         format_func=lambda x:x.label,
         help="Usa os mesmos perfis etários oficiais do Story Book Studio e parte automaticamente da faixa do Book Master.",
+        key="r06_age_selection",
     )
     idade=idade_opt.profile_id
 with c4:
@@ -116,12 +130,12 @@ ref=master.get("versiculo_referencia","")
 b1,b2=st.columns(2)
 with b1:
     st.text_input("Referência bíblica",value=ref,disabled=True)
-    bible_mode=st.radio("Nesta edição",["Somente referência","Usar texto bíblico aprovado"],horizontal=True)
+    bible_mode=st.radio("Nesta edição",["Somente referência","Usar texto bíblico aprovado"],horizontal=True,key="r06_bible_mode")
 with b2:
-    versao=st.text_input("Versão bíblica",placeholder="Nome exato da versão utilizada",disabled=bible_mode=="Somente referência")
-    fonte=st.text_input("Fonte/licença/observação",placeholder="Fonte ou nota de licença",disabled=bible_mode=="Somente referência")
-texto_biblico=st.text_area("Texto exato do versículo aprovado",height=110,disabled=bible_mode=="Somente referência",help="Cole aqui o texto da versão bíblica escolhida. O FaithBloom não o reescreve nem o traduz.")
-aprovado=st.checkbox("Confirmo que este é o texto bíblico que desejo usar nesta edição",disabled=bible_mode=="Somente referência")
+    versao=st.text_input("Versão bíblica",placeholder="Nome exato da versão utilizada",disabled=bible_mode=="Somente referência",key="r06_bible_version")
+    fonte=st.text_input("Fonte/licença/observação",placeholder="Fonte ou nota de licença",disabled=bible_mode=="Somente referência",key="r06_bible_source")
+texto_biblico=st.text_area("Texto exato do versículo aprovado",height=110,disabled=bible_mode=="Somente referência",help="Cole aqui o texto da versão bíblica escolhida. O FaithBloom não o reescreve nem o traduz.",key="r06_bible_text")
+aprovado=st.checkbox("Confirmo que este é o texto bíblico que desejo usar nesta edição",disabled=bible_mode=="Somente referência",key="r06_bible_approval")
 bible=criar_registro_biblico(ref,locale,versao=versao,texto_aprovado=texto_biblico,fonte=fonte,aprovado=aprovado) if bible_mode!="Somente referência" else criar_registro_biblico(ref,locale)
 erros_biblia=validar_registro_biblico(bible)
 if erros_biblia and bible_mode!="Somente referência": st.warning(" · ".join(erros_biblia))
@@ -130,7 +144,7 @@ else:
     st.success("🔒 Bible Guard ativo. " + ("Texto aprovado poderá ser inserido na exportação." if exp["pode_exportar_texto"] else "Somente a referência será inserida."))
 
 section_title("5. Gerar e revisar", "A tradução vira uma nova versão; o Master nunca é sobrescrito.", "A/B/C Versions")
-instrucoes=st.text_area("Instruções adicionais para este mercado",placeholder="Ex.: manter o humor do Max suave; evitar gírias muito regionais.")
+instrucoes=st.text_area("Instruções adicionais para este mercado",placeholder="Ex.: manter o humor do Max suave; evitar gírias muito regionais.",key="r06_market_instructions")
 
 # Keep an unsaved draft with the exact source and market that produced it.
 # Switching books/locales must never save the previous book's text into the

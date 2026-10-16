@@ -8,6 +8,7 @@ from estilo import aplicar_estilo, hero, section_title
 from armazenamento import listar_colecoes
 from character_universe import listar_personagens_oficiais, carregar_personagem_oficial
 from ui_saved_choices import select_many_saved_plus_new, select_saved_or_new
+from orchestrator_execution_ui import render_editorial_execution
 from orchestrator_editorial import (
     AUDIENCES,
     EDITORIAL_LINES,
@@ -30,7 +31,10 @@ from orchestrator_visual import (
     load_visual_plan,
     scenario_only_instruction,
     visual_preflight_status,
+    save_visual_plan,
 )
+from visual_execution_ui import render_visual_execution
+from editorial_dispatch import load_run, bind_visual_plan_to_run, approve_run_content, validate_visual_source
 
 st.set_page_config(page_title="Orquestrador FaithBloom", page_icon="🤖", layout="wide")
 aplicar_estilo()
@@ -123,7 +127,14 @@ with st.container(border=True):
             st.write(f"{status_icon} `{capability_id}` · {meta.get('kind', '')} · {status}")
         st.caption("Translation/Localization e Publishing/Distribution aparecem uma única vez porque são camadas compartilhadas do FaithBloom.")
 
+render_editorial_execution(editorial_route)
+
 visual_project = bool(PROJECT_TYPES[selected_project_type].get("visual"))
+active_run_id = st.session_state.get("editorial_run_id")
+active_run = load_run(active_run_id) if active_run_id else None
+if active_run:
+    visual_project = bool(PROJECT_TYPES[active_run["project_type"]].get("visual"))
+    st.session_state["orchestrator_visual_plan_id"] = active_run.get("visual_plan_id") or None
 if not visual_project:
     st.info(
         "🧭 Este tipo de projeto não exige pré-voo visual obrigatório. A rota editorial acima já está definida e reutiliza os módulos existentes. O pré-voo visual abaixo fica reservado aos projetos que precisam de personagens, cenários ou imagens."
@@ -143,6 +154,7 @@ with st.expander("💰 Como quero gerar imagens", expanded=True):
     selected_mode = st.radio(
         "Modo de geração",
         mode_keys,
+        index=mode_keys.index("economy") if "economy" in mode_keys else 0,
         format_func=lambda k: GENERATION_MODES[k]["label"],
         horizontal=True,
         key="orchestrator_generation_mode",
@@ -186,19 +198,19 @@ locations_text = st.text_input("Cenários principais (separe por vírgula)", pla
 
 if st.button("🌱 Criar pré-voo visual", type="primary", use_container_width=True):
     locs = [x.strip() for x in locations_text.split(",") if x.strip()]
-    plan = create_visual_plan(
-        project_id=uuid.uuid4().hex,
-        title=title or "Novo projeto FaithBloom",
-        story_text=story,
-        characters=[{"id": x, "name": x, "principal": True} for x in chars],
-        locations=[{"id": x, "name": x, "required": True} for x in locs],
-        generation_mode=selected_mode,
-        budget_limit_usd=budget_limit if budget_enabled else None,
-    )
-    st.session_state["orchestrator_visual_plan_id"] = plan["id"]
-    st.session_state["orchestrator_collection"] = collection
-    st.success("Pré-voo visual criado. Agora aprove cada etapa antes das cenas.")
-    st.rerun()
+    try:
+        kwargs = dict(characters=[{"id": x, "name": x, "principal": True} for x in chars], locations=[{"id": x, "name": x, "required": True} for x in locs], generation_mode=selected_mode, budget_limit_usd=budget_limit if budget_enabled else None)
+        if active_run:
+            plan = bind_visual_plan_to_run(active_run_id, **kwargs)
+            collection = active_run["collection"]
+        else:
+            plan = create_visual_plan(project_id=uuid.uuid4().hex, title=title or "Novo projeto FaithBloom", story_text=story, **kwargs)
+        st.session_state["orchestrator_visual_plan_id"] = plan["id"]
+        st.session_state["orchestrator_collection"] = collection
+        st.success("Pré-voo visual criado. Agora aprove cada etapa antes das cenas.")
+        st.rerun()
+    except Exception as exc:
+        st.error(str(exc))
 
 plan_id = st.session_state.get("orchestrator_visual_plan_id")
 if not plan_id:
@@ -207,13 +219,22 @@ plan = load_visual_plan(plan_id)
 if not plan:
     st.warning("Não foi possível carregar o pré-voo visual atual.")
     st.stop()
+if plan.get("editorial_run_id"):
+    try:
+        validate_visual_source(plan)
+    except PermissionError as exc:
+        st.warning(str(exc))
+        st.stop()
 
 section_title("2 · Checkpoint do conteúdo", "Aprovar aqui libera apenas a próxima etapa; ainda não gera imagens.", "Checkpoint")
 if plan.get("approvals", {}).get("story"):
     st.success("✅ Conteúdo-base aprovado para o pré-voo visual.")
 else:
     if st.button("✅ Aprovar conteúdo para seguir ao visual", use_container_width=True):
-        approve_story(plan)
+        if plan.get("editorial_run_id"):
+            approve_run_content(plan["editorial_run_id"])
+        else:
+            approve_story(plan)
         st.rerun()
 
 section_title("3 · Personagens antes das cenas", "Use Masters existentes quando houver. Personagem novo deve ser definido e aprovado antes do lote de ilustrações.", "Character Master")
@@ -265,11 +286,16 @@ for loc in plan.get("locations", []):
                 key=f"world_desc_{key}",
                 placeholder="Ex.: jardim de primavera, flores delicadas, caminho de pedras, luz da manhã...",
             )
-            if st.button(f"🌿 Criar e aprovar cenário mestre: {loc.get('name') or key}", key=f"world_{key}", use_container_width=True, disabled=not description.strip()):
+            if st.button(f"🌿 Salvar descrição do cenário: {loc.get('name') or key}", key=f"world_{key}", use_container_width=True, disabled=not description.strip()):
                 world = create_world_master(collection, loc.get("name") or key, description)
-                world = approve_world_master(world["id"])
-                plan = link_location_approval(plan, key, world["id"])
-                st.success("Cenário salvo como World/Location Master aprovado.")
+                plan.setdefault("location_world_drafts", {})[key] = world["id"]
+                save_visual_plan(plan)
+                st.success("Descrição salva. Aprove o estilo abaixo para gerar as candidatas do cenário.")
+                st.rerun()
+            world_id = (plan.get("location_world_drafts") or {}).get(key)
+            if world_id and st.button("Usar cenário descrito sem gerar imagem de referência", key=f"world_text_approve_{key}"):
+                approve_world_master(world_id)
+                link_location_approval(plan, key, world_id)
                 st.rerun()
 
 section_title("5 · Estilo visual", "A estética do projeto também precisa ser aprovada antes de gerar o lote de cenas.", "Style Master")
@@ -294,6 +320,8 @@ if status["ready_for_scene_generation"]:
     st.success("🎬 PRONTO: o Diretor de Cena pode preparar opções A/B/C sem reinventar personagens, cenários ou estilo.")
 else:
     st.warning("🎬 BLOQUEADO: conclua os checkpoints acima. Isso evita gerar dezenas de imagens antes de você gostar do universo visual.")
+
+render_visual_execution(plan_id)
 
 section_title("7 · Controle de custo antes do lote", "Teste a regra que o Orquestrador aplicará antes de uma geração paga.", "Cost Gate")
 estimate = st.number_input("Estimativa do próximo lote (US$)", min_value=0.0, value=0.0, step=0.10)
@@ -333,3 +361,4 @@ b.page_link("pages/19_✨_Restoration_Studio.py", label="✨ Restaurar imagem/p�
 c.page_link("pages/11_🛡️_Custos_e_Seguranca.py", label="🛡️ Custos & Segurança", use_container_width=True)
 
 st.caption("FaithBloom Orchestrator · roteamento editorial genérico · Visual approval gates · Masters oficiais permanecem sob aprovação humana.")
+

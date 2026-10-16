@@ -412,6 +412,11 @@ PAGE_LABELS = {
     "pages/34_🏠_Perfis_e_Dashboard.py": "Perfis e dashboard",
     "pages/32_✍️_Autores_e_Colaboradores.py": "Autores e colaboradores",
     "pages/53_📁_Meus_Projetos.py": "Meus projetos",
+    "pages/54_🛡️_Governanca.py": "Governança e cibersegurança",
+    "pages/55_📚_Produtos_Editoriais.py": "Devocionais, estudos e outros produtos",
+    "pages/56_📩_Servicos_do_Assistente.py": "E-mail, mensagens e rotinas",
+    "pages/57_🎬_Musica_e_Video.py": "Música e vídeo",
+    "pages/58_🗯️_Quadrinhos.py": "Histórias em quadrinhos",
 }
 
 
@@ -482,11 +487,14 @@ def render_sidebar() -> None:
                 "pages/02_🏠_Dashboard_do_Estudio.py", "pages/34_🏠_Perfis_e_Dashboard.py",
                 "pages/32_✍️_Autores_e_Colaboradores.py", "pages/6_👤_Personagens.py",
                 "pages/8_🖼️_Galeria_e_Armazenamento.py",
+                "pages/55_📚_Produtos_Editoriais.py", "pages/58_🗯️_Quadrinhos.py",
+                "pages/57_🎬_Musica_e_Video.py",
             ], ":material/auto_stories:"),
             ("QUALIDADE & PUBLICAÇÃO", [
                 "pages/25_🛡️_Quality_Guardian.py", "pages/13_✅_QA_Final_e_Release.py",
                 "pages/22_📐_Publishing_Platform_Engine.py", "pages/7_🚀_Lançamento.py",
                 "pages/19_✨_Restoration_Studio.py", "pages/20_🖍️_Coloring_Book_Doctor.py",
+                "pages/54_🛡️_Governanca.py",
             ], ":material/verified_user:"),
         ]
         for label, paths, icon in groups:

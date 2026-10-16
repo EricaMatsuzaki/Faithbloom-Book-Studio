@@ -104,25 +104,26 @@ def _descobrir_modelos_disponiveis() -> list[str]:
         return []
 
 
-def _post_com_retry(url: str, payload: dict, timeout: int) -> requests.Response:
+def _post_com_retry(url: str, payload: dict, timeout: int, *, no_retries: bool = False) -> requests.Response:
     ultimo: Exception | None = None
-    for tentativa in range(1, POLITICA.tentativas_http + 1):
+    tentativas = 1 if no_retries else POLITICA.tentativas_http
+    for tentativa in range(1, tentativas + 1):
         try:
             resp = requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=timeout)
             if resp.status_code == 429 or 500 <= resp.status_code <= 599:
-                if tentativa < POLITICA.tentativas_http:
+                if tentativa < tentativas:
                     time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa - 1)))
                     continue
             resp.raise_for_status()
             return resp
         except requests.RequestException as exc:
             ultimo = exc
-            if tentativa < POLITICA.tentativas_http:
+            if tentativa < tentativas:
                 time.sleep(POLITICA.backoff_inicial_seg * (2 ** (tentativa - 1)))
     codigo = getattr(getattr(ultimo, "response", None), "status_code", None)
     sufixo = f" (HTTP {codigo})" if codigo else ""
     raise GeminiFaithBloomError(
-        "O Gemini (Google AI Studio) não respondeu corretamente após novas tentativas" + sufixo + ". "
+        ("O Gemini (Google AI Studio) não respondeu corretamente na única tentativa, sem reenvio automático" if no_retries else "O Gemini (Google AI Studio) não respondeu corretamente após novas tentativas") + sufixo + ". "
         "Nenhuma chave ou payload foi gravado no log."
     ) from ultimo
 
@@ -150,7 +151,7 @@ def _extrair_texto(dados: dict) -> str:
         raise GeminiFaithBloomError(f"O Gemini não retornou texto utilizável{sufixo}.") from exc
 
 
-def _tentar_modelo(modelo: str, sistema: str, instrucao: str, conteudo_assinatura: str) -> dict | list:
+def _tentar_modelo(modelo: str, sistema: str, instrucao: str, conteudo_assinatura: str, *, no_retries: bool = False) -> dict | list:
     modelo_marcado = f"gemini/{modelo}"
     req_id, assinatura, estimativa, inicio = iniciar_requisicao("texto", modelo_marcado, conteudo_assinatura)
     try:
@@ -161,7 +162,10 @@ def _tentar_modelo(modelo: str, sistema: str, instrucao: str, conteudo_assinatur
             "contents": [{"role": "user", "parts": [{"text": instrucao}]}],
             "generationConfig": {"response_mime_type": "application/json"},
         }
-        resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 120)
+        if no_retries:
+            resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 120, no_retries=True)
+        else:
+            resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 120)
         dados = _json_resposta(resp)
         texto = _extrair_texto(dados)
         texto_limpo = texto.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -182,7 +186,7 @@ def _tentar_modelo(modelo: str, sistema: str, instrucao: str, conteudo_assinatur
         raise
 
 
-def chamar_llm_gemini(sistema: str, instrucao: str) -> dict | list:
+def chamar_llm_gemini(sistema: str, instrucao: str, *, no_retries: bool = False) -> dict | list:
     """Mesmo contrato de openrouter_client.chamar_llm: recebe system + instrução,
     devolve JSON já decodificado (dict ou list). É a primeira tentativa
     (gratuita/econômica) antes de cair para a OpenRouter.
@@ -194,6 +198,8 @@ def chamar_llm_gemini(sistema: str, instrucao: str) -> dict | list:
         )
 
     conteudo_assinatura = sistema + "\n" + instrucao
+    if no_retries:
+        return _tentar_modelo(MODELO_TEXTO_PADRAO, sistema, instrucao, conteudo_assinatura, no_retries=True)
     ultimo_erro: Exception | None = None
 
     for modelo in _ordem_modelos_texto():
@@ -331,7 +337,7 @@ def _extrair_imagem(dados: dict) -> tuple[bytes, str]:
 
 
 def _tentar_modelo_imagem(
-    modelo: str, prompt: str, imagens_referencia_b64: list[tuple[str, str]], conteudo_assinatura: str
+    modelo: str, prompt: str, imagens_referencia_b64: list[tuple[str, str]], conteudo_assinatura: str, *, no_retries: bool = False
 ) -> tuple[bytes, str]:
     modelo_marcado = f"gemini/{modelo}"
     req_id, assinatura, estimativa, inicio = iniciar_requisicao("imagem", modelo_marcado, conteudo_assinatura)
@@ -343,7 +349,10 @@ def _tentar_modelo_imagem(
             "contents": [{"role": "user", "parts": partes}],
             "generationConfig": {"responseModalities": ["IMAGE"]},
         }
-        resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 180)
+        if no_retries:
+            resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 180, no_retries=True)
+        else:
+            resp = _post_com_retry(f"{GEMINI_BASE_URL}/models/{modelo}:generateContent", payload, 180)
         dados = _json_resposta(resp)
         imagem_bytes, mime_type = _extrair_imagem(dados)
         finalizar_requisicao(
@@ -363,7 +372,7 @@ def _tentar_modelo_imagem(
 
 
 def gerar_imagem_gemini(
-    prompt: str, imagens_referencia_b64: list[tuple[str, str]] | None = None
+    prompt: str, imagens_referencia_b64: list[tuple[str, str]] | None = None, *, no_retries: bool = False
 ) -> tuple[bytes, str]:
     """Gera/edita imagem pela API gratuita/econômica do Google AI Studio.
 
@@ -382,6 +391,8 @@ def gerar_imagem_gemini(
         )
     refs = imagens_referencia_b64 or []
     conteudo_assinatura = prompt + "".join(f"|ref:{mime}:{len(dados)}" for mime, dados in refs)
+    if no_retries:
+        return _tentar_modelo_imagem(MODELO_IMAGEM_PADRAO, prompt, refs, conteudo_assinatura, no_retries=True)
     ultimo_erro: Exception | None = None
     for modelo in _ordem_modelos_imagem():
         try:
@@ -392,3 +403,4 @@ def gerar_imagem_gemini(
     raise GeminiFaithBloomError(
         "Nenhum modelo de imagem do Gemini disponível respondeu corretamente para esta chave."
     ) from ultimo_erro
+
