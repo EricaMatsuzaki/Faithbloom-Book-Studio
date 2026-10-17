@@ -1,6 +1,6 @@
 # Estado da integração do FaithBloom
 
-Atualizado em 16/10/2026. Este documento descreve o código desta revisão. A existência de um módulo, uma tela ou um teste simulado não comprova que o respectivo serviço já esteja ativo no site.
+Atualizado em 17/10/2026 (Japão). Este documento descreve o código desta revisão. A existência de um módulo, uma tela ou um teste simulado não comprova que o respectivo serviço já esteja ativo no site. O [relatório por agente](docs/AGENT_CONNECTIONS_STATUS.md) detalha competências, conexões e evidências de execução.
 
 ## Entrega para o piloto
 
@@ -13,8 +13,8 @@ Atualizado em 16/10/2026. Este documento descreve o código desta revisão. A ex
 | Produtos editoriais especializados | Conselhos infantis/adolescentes, devocionais, desenvolvimento pessoal, estudo, preparação para provas, atividades, guias, flashcards e formato livre; revisão, versões, PDF e EPUB | Saídas textuais reais; revisão humana de conteúdo, referências bíblicas, gabaritos e fontes continua necessária. Flashcards não têm imposição duplex certificada |
 | Produção visual | Opções de mundo e cena, escolha humana, estimativa/reserva de custo, imagens e aplicação na cena aprovada | Falha ambígua não autoriza repetição paga automática. Edição por máscara ElementLock continua indisponível |
 | HQ | Roteiro, painéis, falas, revisão, opções visuais, seleção de imagens, PDF com balões e EPUB | Origem e plano exatos; relatos pessoais exigem consentimento novo por ação. Não certifica impressão nem EPUBCheck |
-| Governança de IA, dados, TI e cibersegurança | Quatro agentes com diagnósticos determinísticos, evidências sanitizadas e histórico; autorização antes das novas gerações especializadas, visuais e de roteiro HQ | Não substitui auditoria de segurança. A cobertura não é universal: chamadas legadas e mensageria ainda exigem extensão |
-| Gmail e WhatsApp | Adaptadores, confirmação, escopo da conta, rascunhos com expiração, recibos e tratamento de envio incerto | Sem envio externo nesta revisão. OAuth/contas reais pendentes; WhatsApp ainda precisa de receptor HTTPS público para webhooks |
+| Governança de IA, dados, TI e cibersegurança | Quatro verificadores reais por ação coberta, incluindo geração especializada, visual, roteiro HQ, mídia, mensageria e callbacks conectados de tradução, atividades, direção de voz e revisão; evidências gravadas e relidas antes do provedor | Qualquer veto aplicável ou evidência desconhecida bloqueia. Não substitui auditoria externa nem cobre automaticamente todo novo chamador de provedor |
+| Gmail e WhatsApp | Adaptadores, confirmação, escopo da conta, rascunhos com expiração, governança e recibos antes do envio; falha anterior ao envio não vira resultado incerto | Sem envio externo nesta revisão. WhatsApp exige estimativa explícita em `WHATSAPP_ESTIMATED_COST_USD`, incluída na revisão do rascunho; tarifa real não é inventada. OAuth/contas reais e receptor HTTPS de webhook continuam pendentes |
 | Assistente pessoal | Prioridades, lembretes, briefing e fechamento diário persistidos por perfil | Sem agendador em segundo plano nem cofre OAuth por cliente |
 | Mídia e ideias | Animatic MP4 local a partir das imagens originais aprovadas, áudio opcional, biblioteca de ideias e adaptador Replicate configurável | Animatic não equivale a animação corporal de personagens; modelo pago precisa de configuração e teste real |
 | Tradução, narração e publicação | Guardas de idioma, identidade da origem, traduções aprovadas e consistência dos arquivos | Credenciais, voz e saída real precisam de teste; nenhuma publicação automática em loja |
@@ -22,6 +22,8 @@ Atualizado em 16/10/2026. Este documento descreve o código desta revisão. A ex
 | Persistência | Leitura estrita, paginação completa e API opcional de atualização atômica/CAS, com testes locais entre processos | SQL Supabase fornecido, mas não executado; consumidores legados ainda precisam migrar para a API de atualização |
 
 ## Bloqueios antes de disponibilizar o SaaS comercialmente
+
+A autora confirmou em 17/10/2026 que os provedores de IA e o armazenamento estão configurados nos Secrets do Streamlit. Essa configuração pertence ao ambiente publicado e não foi copiada para esta sessão de desenvolvimento. A confirmação de configuração é distinta da execução de uma geração real e da observação da versão implantada.
 
 O modo comercial continua bloqueado intencionalmente. O piloto mantém o namespace de autoria existente; não inventa autenticação de cliente. Identidade OIDC verificada e controles de namespace não resolvem, por si sós, os itens abaixo.
 
@@ -33,6 +35,14 @@ O modo comercial continua bloqueado intencionalmente. O piloto mantém o namespa
 6. Fazer uma aceitação ponta a ponta no ambiente implantado: novo livro, colorir, tradução, narração, HQ, exportação e recuperação após interrupção, com aprovação humana para gastos e envios.
 
 ## Como interpretar os testes
+
+A revisão de 17/10 acrescenta contratos de execução por cargo e casos comportamentais explícitos para os 31 papéis. Cada caso chama uma função real, verifica entrada/saída e substitui o provedor externo quando necessário. A configuração das skills não é uma medição de excelência profissional; qualidade editorial, fidelidade visual, voz e resultados de serviços reais precisam de revisão própria.
+
+O mapa emocional agora possui aprovação vinculada à obra, às cenas, ao DNA e ao estilo. Alterações invalidam a aprovação antes de novas imagens. O fluxo central/HQ carrega direção canônica e vínculo painel–cena; o ilustrador legado também exige mapa e referência aprovados, aplica o Style DNA e verifica a fonte persistida antes do provedor e do salvamento do lote. No caminho legado, o callback de cena usa uma referência principal; referências simultâneas de múltiplos World/Style Masters pertencem ao fluxo visual central. Capas e contracapas narrativas aplicam o Style DNA da obra, recebem o DNA dos personagens e todas as referências nos adaptadores compatíveis. O DNA do Master prevalece sobre presets genéricos nas páginas e capas de colorir.
+
+O AutoSave atualiza somente o destino explícito em `storage_path`. Um rascunho sem referência cria uma obra nova, mesmo que já exista apenas um livro com o mesmo título; os checkpoints seguintes conservam o novo destino. Esta proteção não equivale a controle transacional entre vários editores.
+
+No CLI de exemplo, uma revisão reprovada tem limite de tentativas; aprovação editorial sem mapa emocional encerra a execução com rascunho preservado. A retomada explícita após a revisão emocional não reescreve a história. Nenhum registro de cargo dispara sozinho todos os demais agentes.
 
 Os testes desta revisão exercitam código, persistência local, arquivos exportados e contratos com provedores simulados. A revisão independente também verifica consentimento de relatos reais, identidade de origem, governança e abertura inicial das páginas. A contagem final e o commit efetivamente verificado ficam registrados no pull request e no GitHub Actions. Nenhuma migração remota, envio de mensagem, compra de geração ou publicação em loja é executada pelos testes.
 

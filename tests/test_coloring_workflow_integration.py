@@ -319,12 +319,15 @@ def test_coloring_form_reuses_approved_official_master_without_saved_story(isola
     page = app.session_state["state_c"]["paginas"][0]
     assert page["character_id"] == character["id"]
     assert page["character_master_asset_id"] == asset["id"]
+    assert "Modo visual: color; uso: coloring" in page["character_color_dna_prompt"]
+    assert "verdes com estrelas brilhantes" in page["character_color_dna_prompt"]
     button(app, "✨ Gerar").click().run(timeout=15)
     assert not app.exception and len(generated) == 1
     assert generated[0]["imagem_base"] == character["color_master"]
     assert Path(generated[0]["imagem_base"]).read_bytes() == original_bytes
     assert "verdes com estrelas brilhantes" in generated[0]["prompt"]
     assert "laço rosa" in generated[0]["prompt"]
+    assert "2 pontos de brilho" not in generated[0]["prompt"]
     assert isolated_studio.get_json(f"character_universe/{character['id']}.json") == master_before
 
 

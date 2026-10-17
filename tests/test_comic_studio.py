@@ -286,7 +286,7 @@ def test_changed_or_deleted_plan_blocks_before_paid_calls(source, monkeypatch):
     plan["project_id"] = "forged-book"
     ov.save_visual_plan(plan)
     monkeypatch.setattr(ve, "generate_scene_options", lambda *_a, **_kw: pytest.fail("No provider for wrong source"))
-    with pytest.raises(ValueError, match="identidade e ao conteúdo"):
+    with pytest.raises(ValueError, match="identidade e ao conteúdo|origem foi revisada"):
         studio.generate_panel_options(project, "1:1", confirmed=True)
 
 
@@ -311,6 +311,8 @@ def test_exact_central_run_preflight_reopens_and_passes_hq_gate_without_network(
     with pytest.raises(PermissionError, match="história não aprovada"):
         studio._visual_gate(project)
     plan = ov.approve_style(ov.approve_story(plan), {"name": "Pastel"})
+    from emotional_visual_binding import prepare_emotional_binding, approve_emotional_binding
+    plan = ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     reopened = studio.load_comic(project["storage_path"])
     assert studio._visual_gate(reopened) == plan["id"]
     assert isolated.get_bytes(source["storage_path"].removeprefix("fb://")) == original
@@ -359,7 +361,7 @@ def test_linked_central_plan_rechecks_persisted_source_before_paid_panel_options
     current["personagens"]["Mel"]["descricao_fixa"] = "Outra cor de olhos."
     isolated.put_json(source["storage_path"].removeprefix("fb://"), current)
     monkeypatch.setattr(ve, "generate_scene_options", lambda *_a, **_kw: pytest.fail("No provider for stale source"))
-    with pytest.raises(ValueError, match="identidade e ao conteúdo"):
+    with pytest.raises(ValueError, match="identidade e ao conteúdo|origem foi revisada"):
         studio.generate_panel_options(project, "1:1", confirmed=True)
 
 
@@ -474,6 +476,11 @@ def visual_project(source, tmp_path, monkeypatch, *, budget=3):
     plan = ov.approve_character_candidate(plan, "Mel", f"official:{official['id']}", master_asset["storage_uri"])
     plan = ov.link_location_approval(plan, "Jardim", world["id"])
     plan = ov.approve_style(plan, {"name": "3D suave, cores pastel"})
+    from emotional_visual_binding import prepare_emotional_binding, approve_emotional_binding
+    plan = ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
+    for page in project["comic_product"]["script"]["paginas"]:
+        for panel in page["paineis"]:
+            studio.link_panel_emotion(project, f"{page['numero']}:{panel['numero']}", 1, reviewed=True)
     monkeypatch.setattr(ve.client.gemini_client, "GEMINI_API_KEY", "fake-test-only")
     monkeypatch.setattr(ve.client, "OPENROUTER_API_KEY", None)
     monkeypatch.setattr(ve.client, "PROVEDOR_TEXTO", "auto")

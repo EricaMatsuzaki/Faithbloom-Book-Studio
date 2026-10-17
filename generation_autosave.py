@@ -1,34 +1,19 @@
 """FaithBloom — AutoSave de gerações valiosas.
 
 Protege resultados que consomem chamadas de IA contra perda por rerun, troca de
-página ou redeploy. O AutoSave procura primeiro um projeto existente com a mesma
-coleção+título; se não encontrar, cria um Book Master. Assim a autora não precisa
-lembrar de clicar em Salvar depois de cada geração.
+página ou redeploy. Atualiza somente a referência explícita do projeto; sem ela,
+cria um Book Master. Títulos não identificam uma obra com segurança.
 """
 from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
 
-from armazenamento import atualizar_livro_salvo, listar_livros, salvar_livro
+from armazenamento import atualizar_livro_salvo, salvar_livro
 
 
 def _texto(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _achar_projeto_existente(state: dict) -> str:
-    colecao = _texto(state.get("colecao"))
-    titulo = _texto(state.get("titulo"))
-    if not colecao or not titulo:
-        return ""
-    alvo = titulo.casefold()
-    candidatos = {
-        _texto(item.get("storage_path")) for item in listar_livros(colecao)
-        if _texto(item.get("titulo")).casefold() == alvo and _texto(item.get("storage_path"))
-    }
-    # Título não é identidade: nunca escolher arbitrariamente entre duas obras.
-    return next(iter(candidatos)) if len(candidatos) == 1 else ""
 
 
 def persist_generation_snapshot(
@@ -52,7 +37,7 @@ def persist_generation_snapshot(
     if not _texto(snapshot.get("colecao")) or not _texto(snapshot.get("titulo")):
         return ""
 
-    caminho = _texto(snapshot.get("storage_path")) or _achar_projeto_existente(snapshot)
+    caminho = _texto(snapshot.get("storage_path"))
     if caminho:
         caminho = atualizar_livro_salvo(caminho, snapshot)
     else:

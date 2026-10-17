@@ -66,3 +66,18 @@ def test_autosave_with_ambiguous_title_preserves_both_existing_books(monkeypatch
     assert len(backend.list("livros")) == 3
     assert backend.get_json(first.removeprefix("fb://"))["note"] == "First"
     assert backend.get_json(second.removeprefix("fb://"))["note"] == "Second"
+
+
+def test_autosave_without_explicit_reference_preserves_the_only_same_title_book(monkeypatch, tmp_path):
+    backend = storage.LocalStorageBackend(tmp_path / "backend")
+    monkeypatch.setattr(armazenamento, "BACKEND", backend)
+    first = armazenamento.salvar_livro({"titulo": "Mesmo título", "colecao": "Audit", "note": "Approved original"})
+    state = {"titulo": "Mesmo título", "colecao": "Audit", "note": "New unrelated draft"}
+    saved = generation_autosave.persist_generation_snapshot(state, reason="new generation")
+    assert saved != first
+    assert backend.get_json(first.removeprefix("fb://"))["note"] == "Approved original"
+    assert backend.get_json(saved.removeprefix("fb://"))["note"] == "New unrelated draft"
+    assert state["storage_path"] == saved
+    generation_autosave.persist_generation_snapshot(state, reason="next checkpoint", updates={"note": "Continued draft"})
+    assert len(backend.list("livros")) == 2
+    assert backend.get_json(saved.removeprefix("fb://"))["note"] == "Continued draft"

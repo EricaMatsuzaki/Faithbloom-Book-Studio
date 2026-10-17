@@ -53,6 +53,10 @@ def _source_fingerprint(state):
                          "reference": state.get("versiculo_referencia")}))
 
 
+def _emotion_source_fingerprint(state):
+    return _hash({"map": state.get("mapa_emocional"), "preset": state.get("paleta_emocional_preset")})
+
+
 def _source_data_marker(state):
     """Keep only origin/risk flags, never a second copy of a private account."""
     inherited = (state.get("comic_product") or {}).get("source_data") or {}
@@ -87,7 +91,8 @@ def uses_personal_data(project):
 
 
 def _require_source_intact(project):
-    if _source_fingerprint(project) != _meta(project)["source_fingerprint"]:
+    if (_source_fingerprint(project) != _meta(project)["source_fingerprint"]
+            or (_meta(project).get("source_emotional_fingerprint") and _emotion_source_fingerprint(project) != _meta(project)["source_emotional_fingerprint"])):
         raise ValueError("O conteúdo ou os personagens de origem desta HQ foram alterados. Crie uma nova adaptação para a outra versão.")
 
 
@@ -102,7 +107,8 @@ def source_status(project, current_source=None, source_ref=None):
             raise ValueError("A história selecionada não é a origem canônica desta HQ.")
         if meta.get("source_book_id") and current_source.get("book_id") != meta["source_book_id"]:
             raise ValueError("O identificador da história de origem não confere.")
-        if _source_fingerprint(current_source) != meta["source_fingerprint"]:
+        if (_source_fingerprint(current_source) != meta["source_fingerprint"]
+                or _emotion_source_fingerprint(current_source) != _emotion_source_fingerprint(project)):
             raise ValueError("A história de origem foi revisada. Esta HQ conserva a versão anterior; crie uma nova adaptação para usar a revisão.")
     return {"ok": True, "source_ref": meta.get("source_ref", ""), "source_book_id": meta.get("source_book_id", ""),
             "source_fingerprint": meta["source_fingerprint"]}
@@ -119,7 +125,8 @@ def create_comic(source_state: dict, source_ref: str = "", *, title: str = "", s
         raise ValueError("A referência canônica não corresponde à história selecionada.")
     project = {key: deepcopy(source_state[key]) for key in (
         "colecao", "faixa_etaria", "age_profile_id", "idioma_original", "personagens", "autora", "authorship",
-        "versiculo_referencia", "licao_final", "aprendizado_cristao", "cenas_texto", "versao_narrativa_ativa") if key in source_state}
+        "versiculo_referencia", "licao_final", "aprendizado_cristao", "cenas_texto", "versao_narrativa_ativa",
+        "mapa_emocional", "paleta_emocional_preset") if key in source_state}
     project.update(book_id=uuid.uuid4().hex, project_type="comic", tipo_projeto="comic",
                    titulo=title.strip() or _text(source_state.get("titulo"), "Título") + " · HQ",
                    trim_largura_in=6.0, trim_altura_in=9.0, revisao_aprovada=False, pacote_pronto=False)
@@ -127,6 +134,7 @@ def create_comic(source_state: dict, source_ref: str = "", *, title: str = "", s
     project["comic_product"] = {"schema": SCHEMA, "source_ref": source_ref or source_state.get("storage_path", ""),
                                 "source_book_id": source_state.get("book_id", ""),
                                 "source_fingerprint": _source_fingerprint(source_state),
+                                "source_emotional_fingerprint": _emotion_source_fingerprint(source_state),
                                 "source_data": _source_data_marker(source_state),
                                 "script": None, "script_versions": [], "script_approval": None,
                                 "panels": {}, "visual_plan_id": "", "exports": [], "created_at": _now()}
@@ -335,7 +343,8 @@ def _validate_visual_plan_source(project, plan):
             raise ValueError("A identidade da origem salva não corresponde à HQ.")
         if plan.get("source_book_id") and source.get("book_id") != plan["source_book_id"]:
             raise ValueError("A identidade da origem salva não corresponde ao pré-voo visual.")
-        if _source_fingerprint(source) != meta["source_fingerprint"]:
+        if (_source_fingerprint(source) != meta["source_fingerprint"]
+                or _emotion_source_fingerprint(source) != _emotion_source_fingerprint(project)):
             raise ValueError("O conteúdo ou os personagens da história de origem mudaram. Crie uma nova adaptação.")
 
 
@@ -372,12 +381,15 @@ def prepare_visual_plan(project, locations, *, generation_mode="economy", budget
                     source_fingerprint=content_fingerprint(persisted), comic_source_ref=_meta(project).get("source_ref", ""),
                     comic_source_fingerprint=_meta(project)["source_fingerprint"])
         plan = ov.save_visual_plan(plan)
+    from emotional_visual_binding import prepare_emotional_binding
+    plan = ov.save_visual_plan(prepare_emotional_binding(plan))
     link_visual_plan(project, plan["id"], checkpoint=checkpoint)
     return plan
 
 
 def _scene_key(project, panel_id):
-    return f"comic:{project['book_id']}:{panel_id}:{_panel_hash(project, panel_id)[:16]}"
+    number = ((_meta(project)["panels"].get(panel_id) or {}).get("emotional_source") or {}).get("scene_number", "pending")
+    return f"comic:{project['book_id']}:{panel_id}:{_panel_hash(project, panel_id)[:16]}:source{number}"
 
 
 def _visual_gate(project):
@@ -387,6 +399,13 @@ def _visual_gate(project):
         raise PermissionError("Vincule o pré-voo visual aprovado desta HQ/história antes de gerar imagens.")
     import orchestrator_visual as ov
     plan = ov.load_visual_plan(meta["visual_plan_id"])
+    if meta.get("source_ref"):
+        import storage_backend as storage
+        canonical = meta["source_ref"] if storage.is_storage_uri(meta["source_ref"]) else storage.storage_uri(meta["source_ref"])
+        current_source = storage.BACKEND.get_json(storage.uri_to_path(canonical), None)
+        if not isinstance(current_source, dict):
+            raise PermissionError("Recupere a história de origem antes de gerar painéis.")
+        source_status(project, current_source, meta["source_ref"])
     try:
         _validate_visual_plan_source(project, plan)
     except (ValueError, PermissionError) as exc:
@@ -415,15 +434,39 @@ def _authorize_personal_visual(project, plan_id, action, modality, quantity, con
     (checkpoint or save_comic)(project)
 
 
+def link_panel_emotion(project, panel_id, source_scene_number, *, reviewed=False, checkpoint=None):
+    """Author chooses the exact origin scene; no title/LLM inference or raw account copy."""
+    _require_script_review(project)
+    _panel(project, panel_id)
+    if not reviewed:
+        raise PermissionError("Confirme o vínculo do painel com a cena de origem.")
+    if isinstance(source_scene_number, bool) or source_scene_number not in [row.get("numero") for row in project["cenas_texto"]]:
+        raise ValueError("Escolha um número exato de cena da história de origem.")
+    entry = _meta(project)["panels"][panel_id]
+    entry["emotional_source"] = {"source_ref": _meta(project).get("source_ref", ""), "scene_number": source_scene_number,
+                                 "panel_fingerprint": _panel_hash(project, panel_id), "reviewed": True}
+    entry.pop("selected_direction", None)
+    (checkpoint or save_comic)(project)
+    return project
+
+
+def _panel_emotional_number(project, panel_id):
+    entry = _meta(project)["panels"][panel_id].get("emotional_source") or {}
+    if not entry.get("reviewed") or entry.get("panel_fingerprint") != _panel_hash(project, panel_id):
+        raise PermissionError("Vincule e confirme a cena de origem emocional deste painel antes da IA.")
+    return entry["scene_number"]
+
+
 def generate_panel_options(project, panel_id, *, confirmed=False, consent_confirmed=False, checkpoint=None):
     from visual_execution import generate_scene_options
     panel = _panel(project, panel_id)
     plan_id = _visual_gate(project)
+    source_number = _panel_emotional_number(project, panel_id)
     _authorize_personal_visual(project, plan_id, "comic.panel_options", "texto", 1,
                                confirmed, consent_confirmed, checkpoint)
     excerpt = panel["acao_visual"] + "\nEmoção: " + panel["emocao"] + "\nPersonagem em foco: " + panel["personagem_foco"]
     excerpt += "\nContexto de fala (somente expressão; nunca desenhar texto): " + " | ".join(item["fala"] for item in panel["dialogos"])
-    result = generate_scene_options(plan_id, _scene_key(project, panel_id), excerpt, confirmed=confirmed)
+    result = generate_scene_options(plan_id, _scene_key(project, panel_id), excerpt, confirmed=confirmed, source_scene_number=source_number, consent_confirmed=consent_confirmed)
     _meta(project)["panels"][panel_id]["options"] = deepcopy(result["results"][0]["ideas"])
     (checkpoint or save_comic)(project)
     return result
@@ -448,10 +491,11 @@ def _attach_results(project, panel_id, results):
 def generate_panel_images(project, panel_id, *, quantity=1, confirmed=False, consent_confirmed=False, checkpoint=None):
     from visual_execution import generate_selected_scene, VisualExecutionError
     plan_id = _visual_gate(project)
+    _panel_emotional_number(project, panel_id)
     _authorize_personal_visual(project, plan_id, "comic.panel_images", "imagem", quantity,
                                confirmed, consent_confirmed, checkpoint)
     try:
-        result = generate_selected_scene(plan_id, _scene_key(project, panel_id), quantity=quantity, confirmed=confirmed)
+        result = generate_selected_scene(plan_id, _scene_key(project, panel_id), quantity=quantity, confirmed=confirmed, consent_confirmed=consent_confirmed)
     except VisualExecutionError as exc:
         _attach_results(project, panel_id, exc.operation.get("results", []))
         (checkpoint or save_comic)(project)

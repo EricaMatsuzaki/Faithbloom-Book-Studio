@@ -1,5 +1,5 @@
 {
-  "schema": "faithbloom.agent-skills.v3",
+  "schema": "faithbloom.agent-skills.v4",
   "shared_editorial_dna": [
     "encantar antes de ensinar",
     "história precisa funcionar como história, não como sermão",
@@ -44,7 +44,7 @@
   ],
   "profiles": [
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "ai_governance",
       "module": "governanca_ia.py",
       "name": "Agente de Governança de IA",
@@ -97,10 +97,29 @@
         "não promover candidatos a Master nem publicar automaticamente",
         "não salvar prompts, manuscritos, credenciais ou dados pessoais no relatório",
         "evidência ausente permanece UNKNOWN; contrato não é certificação"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "run_diagnostic",
+          "check_generation_action"
+        ],
+        "essential_skills": [
+          "inventário de modelos",
+          "guardas de custos",
+          "aprovação humana"
+        ],
+        "inputs": [
+          "fontes, metadados e contexto da ação"
+        ],
+        "outputs": [
+          "achados sanitizados e decisão pré-ação, UNKNOWN sem evidência"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "audiobook_director",
       "module": "audiobook.py",
       "name": "Diretor de Audiobook",
@@ -134,7 +153,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: roteiro de performance semanticamente idêntico"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -178,10 +200,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "audiobook_node"
+        ],
+        "essential_skills": [
+          "read-aloud direction",
+          "pause design",
+          "TTS portability"
+        ],
+        "inputs": [
+          "texto aprovado",
+          "idioma, público e emoções"
+        ],
+        "outputs": [
+          "roteiro de performance semanticamente idêntico"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "character_creator",
       "module": "criador_personagem.py",
       "name": "Criador de Personagem",
@@ -215,7 +256,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: DNA e referência candidata sujeita à aprovação"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -259,10 +303,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "criar_personagem_a_partir_de_ideia"
+        ],
+        "essential_skills": [
+          "design de personagem",
+          "paleta canônica",
+          "marcas permanentes"
+        ],
+        "inputs": [
+          "ideia e estilo",
+          "idade e contexto do universo"
+        ],
+        "outputs": [
+          "DNA e referência candidata sujeita à aprovação"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "character_variations",
       "module": "personagens_variacoes.py",
       "name": "Variações de Personagem",
@@ -294,7 +357,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: variações versionadas e aprovação explícita"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -338,10 +404,31 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "gerar_primeira_referencia",
+          "gerar_variacao",
+          "aprovar_variacao"
+        ],
+        "essential_skills": [
+          "variações controladas",
+          "expressão",
+          "versionamento"
+        ],
+        "inputs": [
+          "personagem e DNA fixo",
+          "referência-base e variáveis autorizadas"
+        ],
+        "outputs": [
+          "variações versionadas e aprovação explícita"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "coloring_activity_creator",
       "module": "atividades_colorir.py",
       "name": "Atividades para Colorir",
@@ -371,7 +458,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: páginas de colorir derivadas sem substituir os Masters"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -415,10 +505,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "atividades_colorir_node"
+        ],
+        "essential_skills": [
+          "seleção de cenas",
+          "simplificação",
+          "continuidade de personagem"
+        ],
+        "inputs": [
+          "cenas da história",
+          "DNA e referências autorizadas"
+        ],
+        "outputs": [
+          "páginas de colorir derivadas sem substituir os Masters"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "coloring_idea_generator",
       "module": "gerador_ideias_colorir.py",
       "name": "Gerador de Ideias de Coloring",
@@ -448,7 +557,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: conceitos distintos de coloring book"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -492,10 +604,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "gerador_ideias_colorir_node"
+        ],
+        "essential_skills": [
+          "conceito de coloring book",
+          "variedade de páginas",
+          "faixa etária"
+        ],
+        "inputs": [
+          "quantidade",
+          "temas_usados"
+        ],
+        "outputs": [
+          "conceitos distintos de coloring book"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "coloring_layout",
       "module": "diagramador_colorir.py",
       "name": "Diagramador de Coloring",
@@ -526,7 +657,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: sequência física com alternância e versos em branco"
+      ],
       "execution": "deterministic",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -570,10 +704,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "montar_layout_colorir",
+          "diagramador_colorir_node"
+        ],
+        "essential_skills": [
+          "paginação",
+          "verso em branco",
+          "margens"
+        ],
+        "inputs": [
+          "páginas de colorir e opções editoriais"
+        ],
+        "outputs": [
+          "sequência física com alternância e versos em branco"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "cover_specialist",
       "module": "capa.py",
       "name": "Especialista de Capa",
@@ -608,7 +761,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: arte sem texto e composição técnica separada revisáveis"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -652,10 +808,31 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "prompt_arte_capa_frontal",
+          "gerar_artes_capa",
+          "montar_capa_fisica"
+        ],
+        "essential_skills": [
+          "character identity",
+          "print wrap",
+          "thumbnail readability"
+        ],
+        "inputs": [
+          "história e Masters",
+          "formato, páginas e especificação da plataforma"
+        ],
+        "outputs": [
+          "arte sem texto e composição técnica separada revisáveis"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "cybersecurity",
       "module": "ciberseguranca.py",
       "name": "Agente de Cibersegurança",
@@ -708,10 +885,29 @@
         "não tratar política escrita como segurança aplicada",
         "não declarar ambiente seguro sem evidências dos controles relevantes",
         "preservar Masters, originais e histórico"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "run_diagnostic",
+          "check_security_action"
+        ],
+        "essential_skills": [
+          "proteção de segredos",
+          "autenticação e autorização",
+          "auditoria sanitizada"
+        ],
+        "inputs": [
+          "fontes selecionadas e contexto de autorização"
+        ],
+        "outputs": [
+          "achados sanitizados; sem ataque, alteração ou certificação fictícia"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "data_governance",
       "module": "governanca_dados.py",
       "name": "Agente de Governança de Dados",
@@ -764,10 +960,29 @@
         "não apagar dados nem alterar Masters ou originais",
         "backup declarado não equivale a restauração testada",
         "isolamento de dados exige evidência; configuração desconhecida permanece UNKNOWN"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "run_diagnostic",
+          "check_data_action"
+        ],
+        "essential_skills": [
+          "classificação de dados",
+          "consentimento",
+          "linhagem"
+        ],
+        "inputs": [
+          "metadados e contexto de privacidade"
+        ],
+        "outputs": [
+          "achados sobre consentimento, retenção e escopo sem expor manuscrito"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "dedication",
       "module": "dedicatoria.py",
       "name": "Dedicatória",
@@ -796,7 +1011,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: dedicatória sem inventar biografia"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -840,10 +1058,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "dedicatoria_node"
+        ],
+        "essential_skills": [
+          "personalização",
+          "privacidade",
+          "não-invenção"
+        ],
+        "inputs": [
+          "pessoas e relações fornecidas",
+          "tom da obra"
+        ],
+        "outputs": [
+          "dedicatória sem inventar biografia"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "deep_code_review_engineer",
       "module": "engenheiro_code_review_profundo.py",
       "name": "Engenheiro de Code Review Profundo",
@@ -1044,10 +1281,29 @@
         "não desabilitar teste para obter pipeline verde",
         "segurança, dados, custos, Masters e publicação permanecem fail-closed",
         "release protegida e merge exigem autorização explícita"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "review_sources",
+          "build_deep_review_plan",
+          "correction_gate"
+        ],
+        "essential_skills": [
+          "line-by-line review"
+        ],
+        "inputs": [
+          "pedido e fontes selecionadas",
+          "evidência rastreável dos achados"
+        ],
+        "outputs": [
+          "revisão com citações verificadas sem executar o código proposto"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "diagrammer",
       "module": "diagramador.py",
       "name": "Diagramador",
@@ -1079,7 +1335,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: layout página a página, contagem e preflight"
+      ],
       "execution": "deterministic",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1123,10 +1382,30 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "montar_layout",
+          "diagramador_node"
+        ],
+        "essential_skills": [
+          "page sequencing",
+          "safe areas",
+          "print structure"
+        ],
+        "inputs": [
+          "conteúdo e imagens aprovados",
+          "perfil etário e formato"
+        ],
+        "outputs": [
+          "layout página a página, contagem e preflight"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "idea_generator",
       "module": "gerador_ideias.py",
       "name": "Gerador de Ideias",
@@ -1206,10 +1485,30 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "gerador_ideias_node"
+        ],
+        "essential_skills": [
+          "ideação infantil",
+          "adequação etária",
+          "originalidade"
+        ],
+        "inputs": [
+          "quantidade",
+          "temas_usados",
+          "faixa_etaria"
+        ],
+        "outputs": [
+          "ideias originais com título, conflito e promessa de leitura"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "illustrator",
       "module": "ilustrador.py",
       "name": "Ilustrador",
@@ -1247,7 +1546,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: imagem e prompt rastreáveis, histórico e aprovação separados"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1291,10 +1593,32 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "prompt_cena",
+          "ilustrador_node",
+          "gerar_cena_unica"
+        ],
+        "essential_skills": [
+          "character consistency",
+          "direção emocional",
+          "luz e cor"
+        ],
+        "inputs": [
+          "cena e mapa emocional",
+          "Character Master e Style DNA",
+          "referências autorizadas"
+        ],
+        "outputs": [
+          "imagem e prompt rastreáveis, histórico e aprovação separados"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "it_governance",
       "module": "governanca_ti.py",
       "name": "Agente de Governança de TI",
@@ -1347,10 +1671,29 @@
         "teste não executado permanece UNKNOWN",
         "não alegar ausência de vulnerabilidades sem análise e evidências apropriadas",
         "não ler segredos ou configurações privadas para preencher relatórios"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "run_diagnostic",
+          "check_it_action"
+        ],
+        "essential_skills": [
+          "gestão de mudanças",
+          "CI e regressão",
+          "release e rollback"
+        ],
+        "inputs": [
+          "fontes e evidências operacionais fornecidas"
+        ],
+        "outputs": [
+          "achados técnicos e limites de prontidão sem deploy automático"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "line_art_specialist",
       "module": "line_art_colorir.py",
       "name": "Especialista em Line Art",
@@ -1383,7 +1726,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: line art revisável com traços, margens e identidade verificáveis"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1427,10 +1773,32 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "prompt_pagina_colorir",
+          "gerar_pagina_colorir",
+          "gerar_variacao_line_art"
+        ],
+        "essential_skills": [
+          "line art",
+          "espessura de traço",
+          "áreas fechadas"
+        ],
+        "inputs": [
+          "descrição da página",
+          "idade e complexidade",
+          "DNA e referência quando vinculados"
+        ],
+        "outputs": [
+          "line art revisável com traços, margens e identidade verificáveis"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "market_categories",
       "module": "pesquisa_mercado.py",
       "name": "Especialista de Categorias",
@@ -1461,7 +1829,10 @@
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes",
         "recomendar categoria irrelevante para manipular ranking"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: categorias candidatas relevantes e proveniência"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1505,10 +1876,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "pesquisa_categorias_node"
+        ],
+        "essential_skills": [
+          "category fit",
+          "metadata taxonomy",
+          "compliance"
+        ],
+        "inputs": [
+          "livro e mercado-alvo",
+          "evidência de categorias quando disponível"
+        ],
+        "outputs": [
+          "categorias candidatas relevantes e proveniência"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "market_keywords",
       "module": "pesquisa_mercado.py",
       "name": "Especialista de Keywords",
@@ -1586,10 +1976,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "pesquisa_palavras_chave_node"
+        ],
+        "essential_skills": [
+          "search intent",
+          "metadata compliance",
+          "market evidence literacy"
+        ],
+        "inputs": [
+          "título e sinopse",
+          "mercado e evidência externa quando disponível"
+        ],
+        "outputs": [
+          "keywords e proveniência sem métricas inventadas"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "marketing_launch",
       "module": "marketing.py",
       "name": "Marketing de Lançamento",
@@ -1625,7 +2034,10 @@
         "pedir avaliação positiva em troca de benefício",
         "afirmar que reviews garantem ranking"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: materiais candidatos sem envio nem promessa de vendas"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1669,10 +2081,28 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "marketing_lancamento_node"
+        ],
+        "essential_skills": [
+          "launch messaging",
+          "review request compliance",
+          "campaign consistency"
+        ],
+        "inputs": [
+          "livro, público e sinopse"
+        ],
+        "outputs": [
+          "materiais candidatos sem envio nem promessa de vendas"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "narrator",
       "module": "audiobook.py",
       "name": "Narrador/TTS",
@@ -1703,7 +2133,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: arquivos de áudio rastreáveis preservando versões"
+      ],
       "execution": "tool",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1747,10 +2180,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "narracao_node"
+        ],
+        "essential_skills": [
+          "TTS rendering",
+          "version preservation",
+          "audio file integrity"
+        ],
+        "inputs": [
+          "roteiro aprovado e segmentos numerados",
+          "executor TTS configurado"
+        ],
+        "outputs": [
+          "arquivos de áudio rastreáveis preservando versões"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "pedagogical_editor",
       "module": "complementos_editoriais.py",
       "name": "Editor Pedagógico",
@@ -1782,7 +2234,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: complementos validados antes de substituir o conteúdo salvo"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1826,10 +2281,31 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "gerar_complementos_editoriais",
+          "validar_complementos",
+          "aplicar_complementos"
+        ],
+        "essential_skills": [
+          "leitura integral do manuscrito",
+          "perguntas abertas por idade",
+          "Bible Guard"
+        ],
+        "inputs": [
+          "história e mapa emocional",
+          "idade, moral e referência aprovadas"
+        ],
+        "outputs": [
+          "complementos validados antes de substituir o conteúdo salvo"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "photo_to_character",
       "module": "foto_para_personagem.py",
       "name": "Foto → Personagem",
@@ -1856,7 +2332,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: imagem derivada revisável sem aprovação automática"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -1900,10 +2379,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "gerar_personagem_a_partir_de_foto"
+        ],
+        "essential_skills": [
+          "image-to-image",
+          "preservação de atributos",
+          "controle de referência"
+        ],
+        "inputs": [
+          "foto autorizada",
+          "instruções e estilo"
+        ],
+        "outputs": [
+          "imagem derivada revisável sem aprovação automática"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "saas_automation_engineer",
       "module": "engenheiro_saas_automacao.py",
       "name": "Arquiteto SaaS, Full-Stack & Automação",
@@ -2198,10 +2696,31 @@
         "sites e landing pages devem separar conteúdo, apresentação e integrações para facilitar manutenção",
         "Security by Default é obrigatório: nenhum SaaS ou produto digital pode ser considerado pronto para produção sem Security Gate PASS",
         "isolamento de tenant, autorização e proteção de dados devem falhar de forma fechada quando a evidência estiver ausente"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "handle_saas_request",
+          "run_diagnostic",
+          "automation_safety_gate"
+        ],
+        "essential_skills": [
+          "full-stack application development",
+          "integration testing",
+          "human approval gates"
+        ],
+        "inputs": [
+          "pedido e fontes locais selecionadas",
+          "evidência de execução quando fornecida"
+        ],
+        "outputs": [
+          "plano e diagnóstico, nunca patch ou deploy executado por IA"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "sales_synopsis",
       "module": "sinopse.py",
       "name": "Sinopse de Vendas",
@@ -2234,7 +2753,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: sinopse curta e longa fiéis à obra"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2278,10 +2800,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "sinopse_node"
+        ],
+        "essential_skills": [
+          "copy editorial",
+          "adequação ao público",
+          "emotional hook"
+        ],
+        "inputs": [
+          "história completa",
+          "público e aprendizado"
+        ],
+        "outputs": [
+          "sinopse curta e longa fiéis à obra"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "scene_director",
       "module": "character_guide.py",
       "name": "Diretor de Cena",
@@ -2319,7 +2860,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: três propostas A/B/C distintas sem gerar imagens"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2364,10 +2908,32 @@
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
       ],
-      "module_directory": ""
+      "module_directory": "",
+      "runtime_contract": {
+        "entrypoints": [
+          "suggest_scene_concepts",
+          "validate_scene_concepts",
+          "compose_scene_prompt"
+        ],
+        "essential_skills": [
+          "Character DNA",
+          "World Masters",
+          "cor e iluminação"
+        ],
+        "inputs": [
+          "trecho e história completa",
+          "Masters, DNA e mapa emocional",
+          "idade e enquadramento"
+        ],
+        "outputs": [
+          "três propostas A/B/C distintas sem gerar imagens"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "story_editor",
       "module": "editor_historia.py",
       "name": "Editor de História",
@@ -2400,7 +2966,10 @@
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes",
         "trocar versículo sem aprovação explícita"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: cena editada ou sugestões sem substituir aprovações"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2444,10 +3013,32 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "editar_cena",
+          "sugerir_versiculos",
+          "sugerir_licoes"
+        ],
+        "essential_skills": [
+          "edição cena a cena",
+          "continuidade",
+          "preservação de intenção"
+        ],
+        "inputs": [
+          "cena e manuscrito",
+          "instrução delimitada",
+          "faixa_etaria"
+        ],
+        "outputs": [
+          "cena editada ou sugestões sem substituir aprovações"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "story_reviewer",
       "module": "revisor.py",
       "name": "Revisor Editorial",
@@ -2483,7 +3074,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: revisao_aprovada e notas rastreáveis por cena"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2527,10 +3121,30 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "revisor_node"
+        ],
+        "essential_skills": [
+          "continuidade",
+          "gramática",
+          "Heart Arc audit"
+        ],
+        "inputs": [
+          "manuscrito completo",
+          "faixa_etaria",
+          "referência e moral"
+        ],
+        "outputs": [
+          "revisao_aprovada e notas rastreáveis por cena"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "storyteller",
       "module": "roteirista.py",
       "name": "Roteirista",
@@ -2572,7 +3186,10 @@
         "tratar sugestão de IA como fato observado",
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: cenas numeradas, resolução, celebração e lição final"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2616,10 +3233,31 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "roteirista_node",
+          "montar_prompt"
+        ],
+        "essential_skills": [
+          "storytelling infantil",
+          "arco emocional",
+          "FaithBloom Heart Arc"
+        ],
+        "inputs": [
+          "tema e faixa etária",
+          "personagens e DNA",
+          "lição e referência aprovadas"
+        ],
+        "outputs": [
+          "cenas numeradas, resolução, celebração e lição final"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "theme_curator",
       "module": "curador_tema.py",
       "name": "Curador de Tema",
@@ -2653,7 +3291,10 @@
         "afirmar que a referência bíblica está validada sem fonte/contexto aprovados",
         "fornecer tradução livre de versículo"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: emoção, aprendizado e referência candidata não validada"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2697,10 +3338,29 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "curador_tema_node"
+        ],
+        "essential_skills": [
+          "curadoria temática",
+          "arco emocional",
+          "referência bíblica candidata"
+        ],
+        "inputs": [
+          "ideia ou tema livre",
+          "faixa_etaria"
+        ],
+        "outputs": [
+          "emoção, aprendizado e referência candidata não validada"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     },
     {
-      "schema": "faithbloom.agent-skills.v3",
+      "schema": "faithbloom.agent-skills.v4",
       "role_id": "translator_localizer",
       "module": "tradutor.py",
       "name": "Tradutor & Localizador",
@@ -2737,7 +3397,10 @@
         "copiar voz autoral, bordões, personagens, refrões, cenas ou identidade visual distintiva de obras existentes",
         "traduzir texto bíblico livremente"
       ],
-      "evidence_requirements": [],
+      "evidence_requirements": [
+        "entradas aprovadas ou fornecidas, identificáveis no projeto",
+        "saída revisável: tradução derivada com fonte preservada e revisão separada"
+      ],
       "execution": "llm",
       "shared_editorial_dna": [
         "encantar antes de ensinar",
@@ -2781,7 +3444,28 @@
         "potencial de coleção/série quando fizer sentido, sem repetição artificial",
         "qualidade técnica de publicação e experiência do leitor",
         "decisões de mercado baseadas em evidência quando houver alegações de demanda/competição"
-      ]
+      ],
+      "runtime_contract": {
+        "entrypoints": [
+          "tradutor_node",
+          "localizar_livro"
+        ],
+        "essential_skills": [
+          "translation",
+          "localization",
+          "Bible Guard"
+        ],
+        "inputs": [
+          "Master aprovado",
+          "locale e glossário",
+          "registro bíblico do idioma"
+        ],
+        "outputs": [
+          "tradução derivada com fonte preservada e revisão separada"
+        ],
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+      }
     }
   ],
   "inherited_modules": {
@@ -2812,5 +3496,68 @@
     "publishing_distribution": "publishing_distribution.py",
     "publishing_engine": "platform_registry.py",
     "quality_guardian": "quality_guardian.py"
+  },
+  "handoff_service_contracts": {
+    "asset_library": [
+      "get_asset",
+      "register_usage"
+    ],
+    "audio_qa": [
+      "qa_audio_clip",
+      "audio_readiness"
+    ],
+    "bestseller_readiness": [
+      "evaluate_bestseller_readiness"
+    ],
+    "biblical_reference_validator": [
+      "create_reference_candidate",
+      "reference_gate"
+    ],
+    "character_consistency": [
+      "auditar_caracteristicas"
+    ],
+    "character_universe": [
+      "carregar_personagem_oficial",
+      "personagem_para_prompt"
+    ],
+    "coloring_doctor": [
+      "analisar_line_art_avancada",
+      "auditar_lote_colorir"
+    ],
+    "cover_master": [
+      "carregar_cover_master",
+      "preflight_cover_master"
+    ],
+    "emotional_color_director": [
+      "construir_mapa_emocional",
+      "prompt_direcao_visual"
+    ],
+    "launch_strategy": [
+      "marketing_lancamento_node"
+    ],
+    "linguistic_reviewer": [
+      "revisar_localizacao_estrutural",
+      "revisar_localizacao_com_llm"
+    ],
+    "market_bestseller_intelligence": [
+      "validate_market_evidence",
+      "build_market_brief"
+    ],
+    "print_preflight": [
+      "preflight_livro",
+      "analisar_pdf_miolo"
+    ],
+    "publishing_distribution": [
+      "create_distribution_plan",
+      "build_channel_package"
+    ],
+    "publishing_engine": [
+      "get_platform",
+      "verification_state"
+    ],
+    "quality_guardian": [
+      "run_quality_guardian",
+      "register_author_final_approval"
+    ]
   }
 }

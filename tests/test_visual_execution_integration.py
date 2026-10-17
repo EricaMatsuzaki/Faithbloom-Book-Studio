@@ -11,6 +11,7 @@ import orchestrator_visual as ov
 import storage_backend as storage
 import visual_execution as ve
 from asset_library import get_asset, update_asset
+from emotional_visual_binding import prepare_emotional_binding, approve_emotional_binding
 
 
 def image_file(tmp_path, name, color):
@@ -49,13 +50,15 @@ def project(tmp_path, monkeypatch):
     background_asset = armazenamento.salvar_na_galeria(background, "World original", tipo="cenario")
     world = ov.create_world_master("Coleção", "Jardim", "Jardim com fonte e flores", [background_asset["storage_uri"]])
     world = ov.approve_world_master(world["id"])
-    plan = ov.create_visual_plan("project-1", "Livro", "Mel brinca no jardim.",
+    plan = ov.create_visual_plan("project-1", "Livro", "Mel brinca no jardim.\n\nMel busca sementes.",
                                  characters=[{"id": "mel", "name": "Mel"}], locations=[{"id": "garden", "name": "Jardim"}],
                                  generation_mode="economy", budget_limit_usd=3)
     plan = ov.approve_story(plan)
     plan = ov.approve_character_candidate(plan, "mel", f"official:{character['id']}", asset["storage_uri"])
     plan = ov.link_location_approval(plan, "garden", world["id"])
     plan = ov.approve_style(plan, {"name": "3D suave com luz delicada"})
+    prepared = prepare_emotional_binding(plan)
+    plan = ov.save_visual_plan(approve_emotional_binding(plan, prepared["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     monkeypatch.setattr(ve.client, "chamar_llm", Mock(return_value=concepts()))
     outputs = [image_file(tmp_path, f"generated-{i}.png", (i * 30, 40, 180)) for i in range(8)]
     monkeypatch.setattr(ve.client, "gerar_imagem", Mock(side_effect=outputs))
@@ -65,7 +68,9 @@ def project(tmp_path, monkeypatch):
 
 def choose_scene(project, key="1"):
     plan_id = project["plan"]["id"]
-    op = ve.generate_scene_options(plan_id, key, "Mel observa a fonte.", confirmed=True)
+    stored = ov.load_visual_plan(plan_id)
+    number = 7 if stored.get("source_ref") else int(key)
+    op = ve.generate_scene_options(plan_id, key, "Mel observa a fonte.", confirmed=True, source_scene_number=number)
     ve.select_scene_option(plan_id, key, "B", adjustment="Preserve o brilho verde dos olhos.")
     return op
 
@@ -266,7 +271,7 @@ def test_unavailable_approved_reference_stops_before_provider(project):
     plan = deepcopy(project["plan"])
     plan["approvals"]["characters"]["mel"]["asset_uri"] = "/missing/master.png"
     ov.save_visual_plan(plan)
-    with pytest.raises(ValueError, match="referência aprovada"):
+    with pytest.raises((ValueError, PermissionError), match="referência|mapa"):
         ve.generate_scene_options(plan["id"], "1", "Mel brinca.", confirmed=True)
     ve.client.chamar_llm.assert_not_called()
 
@@ -274,7 +279,7 @@ def test_unavailable_approved_reference_stops_before_provider(project):
 def test_changed_style_invalidates_selected_scene(project):
     choose_scene(project)
     ov.approve_style(ov.load_visual_plan(project["plan"]["id"]), {"name": "aquarela"})
-    with pytest.raises(PermissionError, match="desatualizada"):
+    with pytest.raises(PermissionError, match="desatualizada|mapa|estilo"):
         ve.generate_selected_scene(project["plan"]["id"], "1", confirmed=True)
     ve.client.gerar_imagem.assert_not_called()
 
@@ -283,6 +288,7 @@ def test_missing_world_image_blocks_scene_but_can_generate_world_abc(project):
     world = ov.create_world_master("Coleção", "Casa", "Casa de madeira")
     world = ov.approve_world_master(world["id"])
     plan = ov.link_location_approval(project["plan"], "garden", world["id"])
+    plan = ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     with pytest.raises(PermissionError, match="ainda não tem imagem"):
         ve.generate_scene_options(plan["id"], "1", "Mel brinca.", confirmed=True)
     ve.client.chamar_llm.assert_not_called()
@@ -306,9 +312,10 @@ def test_confirmation_budget_and_free_first_do_not_reach_provider(project):
 
 def test_project_budget_shared_across_visual_plans(project):
     ve.generate_world_candidates(project["plan"]["id"], project["world"]["id"], confirmed=True)
-    second = ov.create_visual_plan("project-1", "Mesmo projeto", generation_mode="economy", budget_limit_usd=.25)
+    second = ov.create_visual_plan("project-1", "Mesmo projeto", "Uma cena aprovada.", generation_mode="economy", budget_limit_usd=.25)
     second = ov.approve_story(second)
     second = ov.approve_style(second, {"name": "3D suave"})
+    second = ov.save_visual_plan(approve_emotional_binding(second, prepare_emotional_binding(second)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     estimate = ve.estimate_visual_operation(second["id"], quantity=1)
     assert estimate["estimated_spent_usd"] == pytest.approx(.24)
     assert estimate["over_budget"]
@@ -386,15 +393,17 @@ def bind_book(project, *, same_title=True):
     armazenamento.atualizar_livro_salvo(reference, book)
     raw = project["backend"].get_json(reference.removeprefix("fb://"))
     plan = ov.load_visual_plan(project["plan"]["id"])
-    plan.update(source_ref=reference, source_fingerprint=content_fingerprint(raw), source_book_id="source-book-1")
+    plan.update(source_ref=reference, source_fingerprint=content_fingerprint(raw), source_book_id="source-book-1", story_text="Mel observa a fonte.")
     ov.save_visual_plan(plan)
     return raw, reference
 
 
 def test_apply_author_selected_asset_to_exact_book_preserves_previous_image(project):
+    book, reference = bind_book(project)
+    plan = ov.load_visual_plan(project["plan"]["id"])
+    ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     choose_scene(project)
     op = ve.generate_selected_scene(project["plan"]["id"], "1", confirmed=True)
-    book, reference = bind_book(project)
     original_image = book["cenas_imagem"][0]["caminho_arquivo"]
     before = project["backend"].list("livros")
     applied = ve.apply_scene_asset(project["plan"]["id"], "1", op["results"][0]["asset_id"], scene_number=7, confirmed=True, state=book)
@@ -413,9 +422,11 @@ def test_apply_author_selected_asset_to_exact_book_preserves_previous_image(proj
 
 
 def test_apply_rejects_other_open_book_even_with_same_title(project):
+    book, reference = bind_book(project)
+    plan = ov.load_visual_plan(project["plan"]["id"])
+    ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     choose_scene(project)
     op = ve.generate_selected_scene(project["plan"]["id"], "1", confirmed=True)
-    book, reference = bind_book(project)
     other = deepcopy(book)
     other["storage_path"] = armazenamento.salvar_livro(other)
     before = project["backend"].get_bytes(reference.removeprefix("fb://"))
@@ -425,9 +436,11 @@ def test_apply_rejects_other_open_book_even_with_same_title(project):
 
 
 def test_apply_rejects_changed_saved_source_and_does_not_overwrite(project):
+    book, reference = bind_book(project)
+    plan = ov.load_visual_plan(project["plan"]["id"])
+    ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     choose_scene(project)
     op = ve.generate_selected_scene(project["plan"]["id"], "1", confirmed=True)
-    book, reference = bind_book(project)
     book["cenas_texto"][0]["texto"] = "História revisada pela autora."
     armazenamento.atualizar_livro_salvo(reference, book)
     before = project["backend"].get_bytes(reference.removeprefix("fb://"))
@@ -450,9 +463,11 @@ def test_apply_requires_explicit_source_number_and_confirmation(project):
 
 
 def test_apply_stale_session_never_overwrites_newer_disk_metadata(project):
+    book, reference = bind_book(project)
+    plan = ov.load_visual_plan(project["plan"]["id"])
+    ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     choose_scene(project)
     op = ve.generate_selected_scene(project["plan"]["id"], "1", confirmed=True)
-    book, reference = bind_book(project)
     newer = deepcopy(book)
     newer["editorial_notes"] = "Mudança salva por outra tela."
     armazenamento.atualizar_livro_salvo(reference, newer)

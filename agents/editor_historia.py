@@ -93,8 +93,8 @@ Pedido da autora:
             "Preserve numero e personagem_principal."
         ),
     )
-    if not isinstance(resposta, dict):
-        return deepcopy(cena)
+    if not isinstance(resposta, dict) or not isinstance(resposta.get("texto"), str) or not resposta["texto"].strip():
+        raise ValueError("O Editor não retornou uma cena com texto. A cena anterior foi preservada.")
 
     nova = deepcopy(cena)
     for campo in (

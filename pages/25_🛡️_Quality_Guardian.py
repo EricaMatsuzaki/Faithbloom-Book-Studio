@@ -10,6 +10,7 @@ from armazenamento import listar_livros, carregar_livro
 from editorial_dispatch import book_selection_labels, apply_studio_book_handoff, book_source_key, require_child_translation_source
 from activity_studio import list_activity_projects, load_activity_project
 from audiobook_studio import list_audiobook_projects, load_audiobook_project
+from governance_callbacks import governed_text_callback, render_personal_consent, text_route_configuration
 from quality_guardian import (
     SEVERITIES, DOMAIN_LABELS, run_quality_guardian, record_issue_decision,
     register_author_final_approval, issue_internal_certificate,
@@ -164,13 +165,17 @@ for x in [i for i in issues if i.get("severity") in filters]:
 # ---------- segunda opinião IA
 section_title("5 · Revisores independentes opcionais", "A segunda opinião não modifica o livro. Bible Guard envia referência/contexto, nunca o texto bíblico protegido para tradução/paráfrase.", "Specialist Review")
 focus = st.selectbox("Especialidade", ["editorial", "child_readability", "biblical_context", "cross_modal"], format_func=lambda x: {"editorial":"Editorial/continuidade", "child_readability":"Legibilidade infantil", "biblical_context":"Contexto bíblico/teológico", "cross_modal":"Texto × imagem / multimodal"}[x])
-has_key = bool(os.environ.get("OPENROUTER_API_KEY"))
+has_key = text_route_configuration()["configured"]
+guardian_source={"source_ref":book_path,"master":state,"activity":activity,"audio":audio,"focus":focus}
+guardian_consent=render_personal_consent(st,guardian_source,action="quality.specialist_review")
 if st.button("🤖 Solicitar segunda opinião independente", disabled=not has_key):
     try:
-        from openrouter_client import chamar_llm
         system, user = build_specialist_review_prompt(state, focus)
-        raw = chamar_llm(system, user)
+        callback=governed_text_callback("quality.specialist_review",guardian_source,
+            confirmed=True,consent_confirmed=guardian_consent)
+        raw = callback(system, user)
         review = normalize_specialist_review(raw, focus)
+        review["governance_receipts"]=callback.governance_receipts
         report = merge_specialist_review(report, review)
         # registra no estado em memória para que o check bíblico possa reconhecer a revisão no próximo rerun
         if focus == "biblical_context":
@@ -179,7 +184,7 @@ if st.button("🤖 Solicitar segunda opinião independente", disabled=not has_ke
     except Exception as exc:
         st.error(f"Revisor independente: {exc}")
 if not has_key:
-    st.caption("A revisão offline continua disponível. Configure OPENROUTER_API_KEY somente se quiser uma segunda opinião por IA.")
+    st.caption("A revisão offline continua disponível. Configure um provedor de texto somente se quiser uma segunda opinião por IA.")
 
 # ---------- assinatura e certificado
 section_title("6 · Aprovação final humana", "O Guardian só libera o certificado interno quando não há bloqueios nem alertas que exijam decisão.", "Final Sign-off")

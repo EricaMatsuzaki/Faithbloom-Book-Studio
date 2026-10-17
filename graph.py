@@ -13,7 +13,7 @@ from state import LivroState
 from state_prompt_master import LivroStatePromptMestre
 from agents.curador_tema import curador_tema_node
 from agents.roteirista import roteirista_node
-from agents.revisor import revisor_node, precisa_retrabalho
+from agents.revisor import revisor_node
 from agents.complementos_editoriais import gerar_complementos_editoriais
 from agents.ilustrador import ilustrador_node
 from agents.atividades_colorir import atividades_colorir_node
@@ -35,18 +35,65 @@ def _complementos_node(state: LivroState, chamar_llm) -> LivroState:
     return state
 
 
-def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
+def construir_grafo(chamar_llm, gerar_imagem, gerar_audio, *, max_editorial_reviews: int = 2, resume_after_emotional_review: bool = False):
     """
     chamar_llm, gerar_imagem e gerar_audio são injetados de fora (ver
     main.py) para manter os agentes desacoplados de qual provedor de IA
     está sendo usado - troca de modelo/API não exige reescrever os
     agentes.
     """
+    if isinstance(max_editorial_reviews, bool) or not isinstance(max_editorial_reviews, int) or not 1 <= max_editorial_reviews <= 5:
+        raise ValueError("Escolha entre uma e cinco revisões editoriais por execução.")
+    if not isinstance(resume_after_emotional_review, bool):
+        raise ValueError("Informe explicitamente se deseja retomar o mapa emocional revisado.")
+
+    def review(state):
+        result = revisor_node(state, chamar_llm)
+        result["editorial_review_attempts"] = int(state.get("editorial_review_attempts", 0)) + 1
+        if result.get("revisao_aprovada"):
+            result["pipeline_status"] = "editorial_review_approved"
+            from emotional_visual_binding import require_book_emotional_map
+            try:
+                require_book_emotional_map(result)
+            except PermissionError:
+                result["pipeline_status"] = "awaiting_emotional_review"
+        elif result["editorial_review_attempts"] >= max_editorial_reviews:
+            result["pipeline_status"] = "awaiting_human_review"
+        else:
+            result["pipeline_status"] = "editorial_revision_requested"
+        from generation_autosave import persist_generation_snapshot
+        persist_generation_snapshot(result, reason="editorial_review_checkpoint")
+        return result
+
+    def after_review(state):
+        if state.get("pipeline_status") == "awaiting_emotional_review":
+            return "human_review"
+        if state.get("revisao_aprovada"):
+            return "approved"
+        if int(state.get("editorial_review_attempts", 0)) >= max_editorial_reviews:
+            return "human_review"
+        return "revise"
+
+    def start(state):
+        # A new invocation has its own finite attempt budget, while preserving
+        # existing notes and drafts. A review pause never starts image/audio.
+        state["editorial_review_attempts"] = 0
+        state["pipeline_status"] = "editorial_review_started"
+        return curador_tema_node(state, chamar_llm)
+
+    def resume(state):
+        from emotional_visual_binding import require_book_emotional_map
+        if state.get("revisao_aprovada") is not True:
+            raise PermissionError("Conclua a revisão editorial da história antes de retomar as ilustrações.")
+        require_book_emotional_map(state)
+        state["pipeline_status"] = "emotional_review_approved"
+        return state
+
     grafo = StateGraph(LivroStatePromptMestre)
 
-    grafo.add_node("curador_tema", lambda s: curador_tema_node(s, chamar_llm))
+    grafo.add_node("curador_tema", start)
     grafo.add_node("roteirista", lambda s: roteirista_node(s, chamar_llm))
-    grafo.add_node("revisor", lambda s: revisor_node(s, chamar_llm))
+    grafo.add_node("revisor", review)
     grafo.add_node("complementos_editoriais", lambda s: _complementos_node(s, chamar_llm))
     grafo.add_node("ilustrador", lambda s: ilustrador_node(s, gerar_imagem))
     grafo.add_node("atividades_colorir", lambda s: atividades_colorir_node(s, gerar_imagem))
@@ -61,13 +108,18 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio):
     grafo.add_node("capa", lambda s: capa_node(s, gerar_imagem))
     grafo.add_node("marketing", lambda s: marketing_lancamento_node(s, chamar_llm))
 
-    grafo.set_entry_point("curador_tema")
+    if resume_after_emotional_review:
+        grafo.add_node("retomar_mapa_emocional", resume)
+        grafo.set_entry_point("retomar_mapa_emocional")
+        grafo.add_edge("retomar_mapa_emocional", "complementos_editoriais")
+    else:
+        grafo.set_entry_point("curador_tema")
     grafo.add_edge("curador_tema", "roteirista")
     grafo.add_edge("roteirista", "revisor")
     grafo.add_conditional_edges(
         "revisor",
-        precisa_retrabalho,
-        {"roteirista": "roteirista", "ilustrador": "complementos_editoriais"},
+        after_review,
+        {"revise": "roteirista", "approved": "complementos_editoriais", "human_review": END},
     )
     grafo.add_edge("complementos_editoriais", "ilustrador")
     grafo.add_edge("ilustrador", "atividades_colorir")

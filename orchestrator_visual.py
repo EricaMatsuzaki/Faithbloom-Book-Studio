@@ -134,6 +134,8 @@ def save_visual_plan(plan: dict) -> dict:
 
 
 def approve_story(plan: dict, approved: bool = True) -> dict:
+    if approved and not str(plan.get("story_text") or "").strip():
+        raise ValueError("Salve o texto da história antes de aprovar o conteúdo visual.")
     plan = deepcopy(plan)
     plan.setdefault("approvals", {})["story"] = bool(approved)
     plan.setdefault("history", []).append({"event": "story_approval", "approved": bool(approved), "at": int(time.time())})
@@ -260,7 +262,16 @@ def visual_preflight_status(plan: dict) -> dict:
         "missing_characters": missing_characters,
         "missing_locations": missing_locations,
     }
+    from emotional_visual_binding import require_emotional_binding
+    try:
+        require_emotional_binding(plan)
+        result["emotional_direction_approved"] = True
+        result["emotional_direction_issue"] = ""
+    except (PermissionError, ValueError, OSError) as exc:
+        result["emotional_direction_approved"] = False
+        result["emotional_direction_issue"] = str(exc)
     result["ready_for_scene_generation"] = (
+        result["emotional_direction_approved"] and
         result["story_approved"] and result["style_approved"]
         and not missing_characters and not missing_locations
     )
@@ -272,6 +283,8 @@ def require_scene_generation_ready(plan: dict) -> None:
     if status["ready_for_scene_generation"]:
         return
     reasons = []
+    if not status["emotional_direction_approved"]:
+        reasons.append(status["emotional_direction_issue"])
     if not status["story_approved"]:
         reasons.append("história não aprovada")
     if status["missing_characters"]:

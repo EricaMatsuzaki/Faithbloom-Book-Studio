@@ -25,7 +25,7 @@ class TestOrchestratorVisual(unittest.TestCase):
         _, patches = self._storage()
         with patches:
             plan = ov.create_visual_plan(
-                "p1", "Livro",
+                "p1", "Livro", "Mel descobre uma flor.",
                 characters=[{"id": "mel", "principal": True}],
                 locations=[{"id": "jardim", "required": True}],
             )
@@ -39,6 +39,8 @@ class TestOrchestratorVisual(unittest.TestCase):
             plan = ov.link_location_approval(plan, "jardim", world["id"])
             plan = ov.approve_style(plan, {"name": "Aquarela suave"})
 
+            from emotional_visual_binding import prepare_emotional_binding, approve_emotional_binding
+            plan = ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
             self.assertTrue(ov.visual_preflight_status(plan)["ready_for_scene_generation"])
             ov.require_scene_generation_ready(plan)
 

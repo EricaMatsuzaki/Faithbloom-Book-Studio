@@ -65,7 +65,7 @@ def visual_project(tmp_path, monkeypatch):
     other["storage_path"] = other_ref
     armazenamento.atualizar_livro_salvo(other_ref, other)
     other = backend.get_json(other_ref.removeprefix("fb://"))
-    plan = ov.create_visual_plan("book-a", source["titulo"], "Mel observa e retorna.",
+    plan = ov.create_visual_plan("book-a", source["titulo"], "Mel observa a fonte.\n\nMel retorna ao jardim.",
                                  characters=[{"id": "mel", "name": "Mel"}], locations=[{"id": "garden", "name": "Jardim"}],
                                  generation_mode="economy", budget_limit_usd=3)
     plan = ov.approve_story(plan)
@@ -73,7 +73,8 @@ def visual_project(tmp_path, monkeypatch):
     plan = ov.link_location_approval(plan, "garden", world["id"])
     plan = ov.approve_style(plan, {"name": "3D suave"})
     plan.update(source_ref=reference, source_fingerprint=dispatch.content_fingerprint(source), source_book_id="book-a")
-    plan = ov.save_visual_plan(plan)
+    from emotional_visual_binding import prepare_emotional_binding, approve_emotional_binding
+    plan = ov.save_visual_plan(approve_emotional_binding(plan, prepare_emotional_binding(plan)["emotional_binding"]["scenes"], reviewed=True, reviewer="Erica"))
     concepts = {"ideas": [{"id": label, "titulo": f"Direção {label}", "cenario": f"jardim {label}", "acao": "Mel observa",
                             "poses": {"Mel": "sentada"}, "emocao": "curiosa", "camera": f"ângulo {label}",
                             "psicologia_cores": "verde delicado", "iluminacao": "manhã", "por_que_funciona": "Leitura clara"} for label in "ABC"]}
@@ -147,7 +148,7 @@ def test_selection_refreshes_only_matching_open_book_from_fresh_disk_state(visua
     p = visual_project
     app = _app(p, p["source"])
     asset_id = _generate(app, p)
-    _select_scene(app, 11)
+    _select_scene(app, 7)
     newer = deepcopy(p["source"])
     newer["editorial_notes"] = "Metadado salvo em outra tela."
     armazenamento.atualizar_livro_salvo(p["reference"], newer)
@@ -155,11 +156,11 @@ def test_selection_refreshes_only_matching_open_book_from_fresh_disk_state(visua
     assert not app.exception and not app.error
     assert app.session_state["state"]["editorial_notes"] == newer["editorial_notes"]
     assert app.session_state["state"]["storage_path"] == p["reference"]
-    selected = next(row for row in app.session_state["state"]["cenas_imagem"] if row["numero"] == 11)
+    selected = next(row for row in app.session_state["state"]["cenas_imagem"] if row["numero"] == 7)
     assert selected["visual_asset_id"] == asset_id and selected["aprovado"]
     assert Path(selected["caminho_arquivo"]).is_file()
-    old = next(row for row in app.session_state["state"]["cenas_imagem"] if row["numero"] == 7)
-    assert Path(old["caminho_arquivo"]).read_bytes() == Path(storage.materializar(p["source"]["cenas_imagem"][0]["caminho_arquivo"])).read_bytes()
+    old = app.session_state["state"]["historico_imagens_cenas"]["7"][0]
+    assert Path(storage.materializar(old["caminho_arquivo"])).read_bytes() == Path(storage.materializar(p["source"]["cenas_imagem"][0]["caminho_arquivo"])).read_bytes()
 
 
 def test_changing_target_scene_requires_new_explicit_confirmation(visual_project):
@@ -178,7 +179,9 @@ def test_unbound_manual_plan_keeps_candidate_in_gallery_without_book_apply(visua
         plan.pop(key, None)
     ov.save_visual_plan(plan)
     app = _app(p, p["source"])
-    _generate(app, p)
+    _element(app.checkbox, "Confirmo gerar a ilustração da direção escolhida").check().run(timeout=15)
+    _element(app.button, "Gerar ilustração").click().run(timeout=15)
+    p["image_provider"].assert_not_called()
     assert any("mantém as candidatas na galeria" in item.value for item in app.info)
     assert not any(item.label == "Usar esta ilustração no livro" for item in app.button)
     assert p["backend"].get_json(p["reference"].removeprefix("fb://")) == p["source"]

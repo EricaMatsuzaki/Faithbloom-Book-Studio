@@ -7,7 +7,7 @@ from pathlib import Path
 from agents.engenheiro_saas_automacao import run_diagnostic
 from ai_provider_router import chamar_llm
 
-from agent_skills import all_agent_profiles, get_agent_profile, validate_registry
+from agent_skills import all_agent_profiles, get_agent_profile, validate_registry, agent_capability_inventory
 from bestseller_readiness import evaluate_bestseller_readiness
 from biblical_reference_validator import (
     create_reference_candidate, validate_reference_candidate, reference_gate,
@@ -83,6 +83,33 @@ with t1:
             for x in p["evidence_requirements"]:
                 st.write("•", x)
     st.caption(f"Módulo: {p.get('module_directory', 'agents')}/{p['module']} · execução: {p['execution']}")
+    contract = p.get("runtime_contract") or {}
+    st.markdown("**Entradas que este agente precisa receber**")
+    for item in contract.get("inputs", []):
+        st.write("•", item)
+    st.markdown("**Entregas esperadas deste agente**")
+    for item in contract.get("outputs", []):
+        st.write("•", item)
+    with st.expander("Verificar as conexões e os contratos dos agentes"):
+        st.caption("Esta verificação confere configuração e instruções por cargo. A qualidade da entrega e o acesso aos serviços reais precisam de evidência própria.")
+        if st.button("Verificar todos os agentes", key="agent_connections_inspect"):
+            try:
+                st.session_state["agent_connections_inventory"] = agent_capability_inventory()
+            except Exception:
+                st.error("Não foi possível conferir os contratos atuais. Nenhum agente foi executado por esta verificação.")
+        inventory = st.session_state.get("agent_connections_inventory")
+        if inventory:
+            rows = []
+            for role in inventory.get("roles", []):
+                config = role.get("configuration") or {}
+                rows.append({"Agente": role.get("name", role.get("role_id")),
+                             "Contrato": "Conferido" if config.get("ok") else "Precisa de ajuste",
+                             "Tipo": role.get("execution", ""),
+                             "Qualidade da entrega": "Exige revisão do resultado",
+                             "Serviço real": "Não utilizado por este executor local" if role.get("execution") == "deterministic" else "Validação externa pendente"})
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.download_button("Baixar inventário detalhado por cargo", json.dumps(inventory, ensure_ascii=False, indent=2),
+                               file_name="faithbloom_agentes_conexoes.json", mime="application/json", key="agent_connections_download")
 
 with t2:
     if state is None:

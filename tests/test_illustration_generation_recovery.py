@@ -3,6 +3,7 @@ from copy import deepcopy
 import pytest
 
 import agents.ilustrador as illustrator
+from emotional_visual_binding import approve_book_emotional_map
 
 
 def story():
@@ -35,6 +36,7 @@ def test_resuming_illustration_preserves_approved_image_without_provider_call():
 def test_character_name_variation_uses_matching_master_and_dna(monkeypatch):
     state = story()
     state["cenas_texto"][0]["personagem_principal"] = " LIA "
+    state = approve_book_emotional_map(state, reviewed=True, reviewer="Erica")
     calls = []
     monkeypatch.setattr(illustrator, "persist_generation_snapshot", lambda *a, **k: "fb://livros/teste.json", raising=False)
     illustrator.ilustrador_node(state, lambda **kwargs: calls.append(kwargs) or "new.png")
@@ -55,6 +57,7 @@ def test_unknown_named_character_does_not_generate_from_another_master():
 def test_interrupted_batch_keeps_first_image_and_durable_checkpoint(monkeypatch):
     state = story()
     state["cenas_texto"].append({"numero": 2, "personagem_principal": "Lia", "texto": "Lia espera."})
+    state = approve_book_emotional_map(state, reviewed=True, reviewer="Erica")
     snapshots = []
     monkeypatch.setattr(illustrator, "persist_generation_snapshot", lambda value, **kwargs: snapshots.append(deepcopy(value)) or "fb://livros/teste.json", raising=False)
     attempts = []
@@ -95,21 +98,14 @@ def test_single_scene_requires_reference_before_provider_call():
     assert calls == []
 
 
-def test_new_reference_is_checkpointed_if_the_scene_provider_fails(monkeypatch):
+def test_missing_character_master_requires_human_reference_review_before_any_provider(monkeypatch):
     state = story()
     state["personagens"]["Lia"].update(imagem_referencia="", aparencia_aprovada=False)
+    state = approve_book_emotional_map(state, reviewed=True, reviewer="Erica")
     snapshots = []
-    monkeypatch.setattr(illustrator, "persist_generation_snapshot", lambda value, **kwargs: snapshots.append(deepcopy(value)) or "fb://livros/teste.json")
+    monkeypatch.setattr(illustrator, "persist_generation_snapshot", lambda value, **kwargs: snapshots.append(deepcopy(value)))
     calls = []
-
-    def generate(**kwargs):
-        calls.append(kwargs)
-        if len(calls) == 2:
-            raise RuntimeError("Provedor indisponível")
-        return "new-reference.png"
-
-    with pytest.raises(RuntimeError, match="Provedor indisponível"):
-        illustrator.ilustrador_node(state, generate)
-    assert snapshots[0]["personagens"]["Lia"]["imagem_referencia"] == "new-reference.png"
-    assert snapshots[0]["personagens"]["Lia"]["aparencia_aprovada"] is False
-    assert state["personagens"]["Lia"]["imagem_referencia"] == "new-reference.png"
+    with pytest.raises(ValueError, match="referência aprovada"):
+        illustrator.ilustrador_node(state, lambda **kwargs: calls.append(kwargs) or "unexpected.png")
+    assert calls == [] and snapshots == []
+    assert state["personagens"]["Lia"]["imagem_referencia"] == ""

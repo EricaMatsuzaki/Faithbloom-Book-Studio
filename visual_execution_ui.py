@@ -26,6 +26,7 @@ def _show_asset(asset: dict) -> None:
 
 
 def _action(callback) -> None:
+    st.session_state["visual_data_consent_epoch"] = st.session_state.get("visual_data_consent_epoch", 0) + 1
     try:
         with st.spinner("Executando e salvando os resultados..."):
             callback()
@@ -75,11 +76,23 @@ def _apply_to_book(plan_id: str, scene_key: str, asset_id: str, number: int) -> 
     st.session_state[f"visual_applied_{plan_id}"] = f"Ilustração salva e aprovada na cena {number} do livro vinculado. A imagem anterior permanece no histórico."
 
 
+def _visual_data_consent(plan: dict, action_key: str) -> bool:
+    from emotional_visual_binding import source_for_plan
+    source = source_for_plan(plan)
+    marker = (source.get("comic_product") or {}).get("source_data") or {}
+    private = bool(source.get("real_experience") or source.get("real_life_brief") or source.get("uses_personal_data") or marker.get("uses_personal_data"))
+    if not private:
+        return False
+    epoch = st.session_state.get("visual_data_consent_epoch", 0)
+    return st.checkbox("Autorizo enviar os dados pessoais desta obra à IA somente para esta ação", key=f"visual_data_consent_{action_key}_{epoch}")
+
+
 def render_visual_execution(plan_id: str) -> None:
     plan = load_visual_plan(plan_id)
     if not plan:
         return
     st.subheader("Geração visual com aprovação")
+    render_emotional_review(plan_id)
     try:
         source = _story_source(plan)
     except PermissionError as exc:
@@ -131,9 +144,10 @@ def render_visual_execution(plan_id: str) -> None:
                 st.caption(f"Estimativa A/B/C: US$ {float(estimate.get('estimated_usd') or estimate.get('total_usd') or 0):.2f}. Conteúdo e estilo precisam estar aprovados.")
             except Exception as exc:
                 st.caption(str(exc))
+            world_consent = _visual_data_consent(plan, f"world_{plan_id}_{key}")
             confirmed = st.checkbox("Confirmo gerar três candidatas e consumir os créditos necessários", key=f"world_paid_{plan_id}_{key}")
             if st.button("Gerar candidatas do cenário", disabled=not confirmed, key=f"world_abc_{plan_id}_{key}"):
-                _action(lambda: generate_world_candidates(plan_id, world_id, confirmed=confirmed))
+                _action(lambda: generate_world_candidates(plan_id, world_id, confirmed=confirmed, consent_confirmed=world_consent))
             candidates = world.get("candidates") or []
             for col, candidate in zip(st.columns(max(1, min(3, len(candidates)))), candidates[:3]):
                 with col:
@@ -146,10 +160,13 @@ def render_visual_execution(plan_id: str) -> None:
                         _action(choose)
     with st.expander("Diretor de Cena — propostas A/B/C", expanded=True):
         key = st.text_input("Identificador da cena", value="cena_1", key=f"scene_key_{plan_id}")
-        excerpt = st.text_area("Trecho e direção desta cena", key=f"scene_excerpt_{plan_id}", help="Use o texto aprovado da cena. Personagens, cenários e estilo vêm do pré-voo.")
+        binding_rows = (plan.get("emotional_binding") or {}).get("scenes") or []
+        source_number = st.selectbox("Cena do mapa emocional para esta proposta", [row["numero"] for row in binding_rows], index=None, key=f"scene_emotional_number_{plan_id}", placeholder="Selecione a cena exata da obra") if binding_rows else None
+        excerpt = st.text_area("Trecho e direção desta cena", key=f"scene_excerpt_{plan_id}", help="Vincule esta proposta à cena exata do mapa aprovado. A direção emocional canônica prevalece sobre sugestões livres.")
+        options_consent = _visual_data_consent(plan, f"options_{plan_id}")
         confirm_text = st.checkbox("Confirmo gerar as três propostas de direção com IA", key=f"scene_text_paid_{plan_id}")
-        if st.button("Preparar opções A/B/C", disabled=not key.strip() or not excerpt.strip() or not confirm_text, key=f"scene_options_{plan_id}"):
-            _action(lambda: generate_scene_options(plan_id, key.strip(), excerpt.strip(), confirmed=confirm_text))
+        if st.button("Preparar opções A/B/C", disabled=not key.strip() or not excerpt.strip() or not confirm_text or source_number is None, key=f"scene_options_{plan_id}"):
+            _action(lambda: generate_scene_options(plan_id, key.strip(), excerpt.strip(), confirmed=confirm_text, source_scene_number=source_number, consent_confirmed=options_consent))
         scenes = plan.get("scene_execution") or {}
         for scene_key, record in scenes.items():
             st.markdown(f"**{scene_key}**")
@@ -168,9 +185,10 @@ def render_visual_execution(plan_id: str) -> None:
                     _action(lambda: select_scene_option(plan_id, scene_key, option_id))
             selected = ((plan.get("approvals") or {}).get("scene_options") or {}).get(scene_key)
             if selected:
+                image_consent = _visual_data_consent(plan, f"image_{plan_id}_{scene_key}")
                 confirmed = st.checkbox("Confirmo gerar a ilustração da direção escolhida", key=f"scene_image_paid_{plan_id}_{scene_key}")
                 if st.button("Gerar ilustração", disabled=not confirmed, key=f"scene_image_{plan_id}_{scene_key}"):
-                    _action(lambda: generate_selected_scene(plan_id, scene_key, confirmed=confirmed))
+                    _action(lambda: generate_selected_scene(plan_id, scene_key, confirmed=confirmed, consent_confirmed=image_consent))
             assets = record.get("assets") or []
             scene_number = None
             if assets and scene_rows:
@@ -197,11 +215,59 @@ def render_visual_execution(plan_id: str) -> None:
         selected_keys = list(((plan.get("approvals") or {}).get("scene_options") or {}))
         if selected_keys:
             batch = st.multiselect("Cenas escolhidas para o lote", selected_keys, key=f"scene_batch_keys_{plan_id}")
+            batch_consent = _visual_data_consent(plan, f"batch_{plan_id}")
             confirmed = st.checkbox("Confirmo gerar o lote selecionado dentro do orçamento do projeto", key=f"scene_batch_paid_{plan_id}")
             if st.button("Gerar lote de cenas escolhidas", disabled=not batch or not confirmed, key=f"scene_batch_{plan_id}"):
-                _action(lambda: generate_scene_batch(plan_id, batch, confirmed=confirmed))
+                _action(lambda: generate_scene_batch(plan_id, batch, confirmed=confirmed, consent_confirmed=batch_consent))
     with st.expander("Histórico de execuções e reservas"):
         operations = list_visual_operations(plan_id)
         st.dataframe([{"operação": row.get("kind"), "status": row.get("status"), "resultados": len(row.get("results") or [])} for row in operations], use_container_width=True, hide_index=True)
     capability = element_lock_capability()
     st.caption(capability.get("notice") or "Edição exata por máscara ainda depende de um provedor compatível; o contrato de Element Lock não garante preservação de pixels.")
+
+
+def render_emotional_review(plan_id: str) -> None:
+    """A local preparation/review action, separate from any paid AI action."""
+    from copy import deepcopy
+    from emotional_color_director import PALETAS_PRESET, direcao_emocional
+    from emotional_visual_binding import prepare_emotional_binding, approve_emotional_binding, require_emotional_binding, source_for_plan
+    from orchestrator_visual import save_visual_plan
+    plan = load_visual_plan(plan_id)
+    with st.expander("Psicologia das cores e emoções — mapa obrigatório por cena", expanded=not bool((plan.get("emotional_binding") or {}).get("approval"))):
+        st.caption("Esta é uma direção editorial da obra. Revise emoções, intensidade, transições e instruções antes da IA; as cores e os detalhes dos olhos dos Masters são preservados pelas referências e exigem revisão visual.")
+        try:
+            source = source_for_plan(plan)
+            prepared = prepare_emotional_binding(plan, source)
+        except Exception as exc:
+            st.warning(str(exc))
+            return
+        existing = plan.get("emotional_binding") or {}
+        same_source = existing.get("source_signature") == prepared["emotional_binding"]["source_signature"]
+        rows = deepcopy(existing.get("scenes") if same_source and existing.get("scenes") else prepared["emotional_binding"]["scenes"])
+        stamp = prepared["emotional_binding"]["source_signature"][:16]
+        edits = []
+        for item in rows:
+            number = item["numero"]
+            d = item.get("direcao") or {}
+            prefix = f"emotion_review_{plan_id}_{stamp}_{number}"
+            st.markdown(f"**Cena {number}**")
+            emotion = st.text_input("Emoção principal", value=str(d.get("emocao_narrativa") or "esperanca"), key=prefix + "_emotion")
+            sub = st.text_input("Subemoção", value=str(d.get("subemocao") or ""), key=prefix + "_sub")
+            intensity = st.slider("Intensidade emocional", 1, 5, int(d.get("intensidade") or 3), key=prefix + "_intensity")
+            transition = st.text_input("Transição emocional", value=str(d.get("transicao_emocional") or ""), key=prefix + "_transition")
+            author = st.text_input("Instrução emocional da autora", value=str(item.get("instrucao_autora") or ""), key=prefix + "_author")
+            presets = list(PALETAS_PRESET)
+            preset = st.selectbox("Paleta editorial", presets, index=presets.index(d.get("preset")) if d.get("preset") in presets else 0, key=prefix + "_preset")
+            direction = direcao_emocional(emotion, preset, intensity, sub, transition)
+            st.caption(f"Base: {direction['cor_principal']} · luz: {direction['luz_emocional']} · atmosfera: {direction['atmosfera']}")
+            item.update(direcao=direction, instrucao_autora=author)
+            edits.append(item)
+        reviewer = st.text_input("Responsável pela revisão emocional", key=f"emotion_reviewer_{plan_id}_{stamp}")
+        reviewed = st.checkbox("Revisei a direção emocional de todas as cenas e a preservação dos Masters", key=f"emotion_reviewed_{plan_id}_{stamp}")
+        if st.button("Aprovar e salvar este mapa emocional", disabled=not reviewed or not reviewer.strip(), key=f"emotion_approve_{plan_id}_{stamp}"):
+            _action(lambda: save_visual_plan(approve_emotional_binding(load_visual_plan(plan_id), edits, reviewed=reviewed, reviewer=reviewer)))
+        try:
+            require_emotional_binding(plan)
+            st.success("Mapa emocional aprovado e vinculado à versão exata da obra e do estilo.")
+        except Exception as exc:
+            st.info(str(exc))

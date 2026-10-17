@@ -75,8 +75,15 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += skill_contract("theme_curator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere a sugestão em JSON.")
-    if not isinstance(resposta, dict):
-        resposta = {}
+    required = {"emocao_central": "emocao_central", "versiculo_referencia": "versiculo_referencia",
+                "aprendizado_cristao": "aprendizado_cristao", "titulo": "titulo_sugerido"}
+    if not isinstance(resposta, dict) or any(
+        not state.get(target) and (not isinstance(resposta.get(key), str) or not resposta[key].strip())
+        for target, key in required.items()
+    ):
+        raise ValueError("A curadoria veio vazia ou incompleta. Os dados anteriores foram preservados.")
+    if not state.get("emocao_central") and resposta["emocao_central"] not in EMOCOES:
+        raise ValueError("O Curador sugeriu uma emoção fora da tabela canônica; revise antes de continuar.")
 
     # Só preenche o que não foi informado manualmente - nunca sobrescreve valor real.
     if not state.get("emocao_central"):

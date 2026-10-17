@@ -191,6 +191,35 @@
       "replay safety"
     ]
   },
+  "runtime_contract": {
+    "entrypoints": [
+      "review_sources",
+      "build_deep_review_plan",
+      "correction_gate"
+    ],
+    "essential_skills": [
+      "line-by-line review"
+    ],
+    "inputs": [
+      "pedido e fontes selecionadas",
+      "evidência rastreável dos achados"
+    ],
+    "outputs": [
+      "revisão com citações verificadas sem executar o código proposto"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "diagnóstico vinculado a evidência",
+    "plano não equivale a correção",
+    "teste de regressão e validação de runtime quando aplicável"
+  ],
+  "evidence_requirements": [
+    "fontes inspecionadas",
+    "resultado de testes",
+    "evidência de runtime quando aplicável"
+  ],
   "non_negotiables": [
     "reproduzir ou caracterizar a falha antes de corrigir",
     "ler chamador, função, dependências e efeitos colaterais antes de editar",

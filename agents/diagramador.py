@@ -40,6 +40,8 @@ def montar_layout(state: LivroState) -> list[dict]:
     padrão editorial sem apenas rotular o lado: a ORDEM das páginas passa a
     corresponder à encadernação real.
     """
+    from agent_skills import require_role_ready
+    require_role_ready("diagrammer")
     layout: list[dict] = [
         {"pagina": 3, "tipo": "boas_vindas", "lado": "direita"},
     ]
@@ -90,6 +92,8 @@ def montar_layout(state: LivroState) -> list[dict]:
 
 
 def diagramador_node(state: LivroState) -> LivroState:
+    from agent_skills import require_role_ready
+    require_role_ready("diagrammer")
     faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
     state["faixa_etaria"] = faixa
     state["age_profile_id"] = faixa

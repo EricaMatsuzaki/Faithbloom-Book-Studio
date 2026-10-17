@@ -22,7 +22,10 @@ from family_profiles import assign_saved_project_to_profile
 from state_colorir import LivroColorirState, PaginaColorir
 from openrouter_client import chamar_llm, gerar_imagem
 from agents.gerador_ideias_colorir import gerador_ideias_colorir_node
-from agents.line_art_colorir import gerar_pagina_colorir, gerar_variacao_line_art, criar_registro_variacao
+from agents.line_art_colorir import (
+    gerar_pagina_colorir, gerar_variacao_line_art, criar_registro_variacao,
+    prompt_identidade_capa_colorir, sujeitos_capa_colorir, referencias_capa_colorir,
+)
 from agents.diagramador_colorir import diagramador_colorir_node
 from armazenamento import (
     salvar_livro_colorir, atualizar_livro_colorir_salvo, listar_livros_colorir, temas_colorir_usados,
@@ -135,6 +138,7 @@ def _referencias_biblioteca(colecao: str) -> list[dict]:
                                                       "visual_status": label, "colecao": colecao}),
                 "master_role": role, "asset_id": asset["id"],
                 "dna_prompt": personagem_para_prompt(personagem, "line_art", contexto="coloring"),
+                "color_dna_prompt": personagem_para_prompt(personagem, "color", contexto="coloring"),
             })
             break
     biblioteca = carregar_biblioteca_personagens(colecao) if colecao else {}
@@ -183,8 +187,9 @@ def _gerar_uma_pagina(state: dict, pagina: dict) -> str:
         imagem_referencia=referencia,
         preset=preset,
         prompt_livre=pagina.get("prompt_livre", ""),
-        instrucao_extra="\n".join(x for x in (pagina.get("prompt_adicional", ""), pagina.get("character_dna_prompt", "")) if x),
+        instrucao_extra=pagina.get("prompt_adicional", ""),
         transformar_referencia=transformar,
+        character_dna_prompt=pagina.get("character_dna_prompt", ""),
     )
 
 
@@ -329,7 +334,8 @@ def _pagina_from_form(state: dict) -> dict | None:
             pagina.update({"character_id": personagem_oficial["character_id"],
                            "character_master_role": personagem_oficial["master_role"],
                            "character_master_asset_id": personagem_oficial["asset_id"],
-                           "character_dna_prompt": personagem_oficial["dna_prompt"]})
+                           "character_dna_prompt": personagem_oficial["dna_prompt"],
+                           "character_color_dna_prompt": personagem_oficial["color_dna_prompt"]})
         return pagina
     return None
 
@@ -386,7 +392,7 @@ def _render_pagina_card(state: dict, pagina: dict, i: int):
                     try:
                         with st.spinner("Criando variação..."):
                             v = gerar_variacao_line_art(pagina, gerar_imagem, preset=preset,
-                                instrucao="\n".join(x for x in (instr, pagina.get("character_dna_prompt", "")) if x))
+                                instrucao=instr)
                     except Exception:
                         st.error("Não foi possível criar a variação. A imagem atual e o histórico foram preservados; tente novamente.")
                         return
@@ -556,21 +562,24 @@ def render_coloring_studio():
         st.subheader("📕 Capa física profissional")
         st.caption("A arte é gerada separadamente; o FaithBloom monta contracapa + lombada + frente matematicamente, preservando as melhorias da Fase 7.")
         if st.button("✨ Gerar artes e montar capa paperback", disabled=not s.get("paginas")):
-            referencia = next((p.get("caminho_arquivo") for p in s.get("paginas", []) if p.get("caminho_arquivo")), None)
+            referencias = referencias_capa_colorir(s)
+            direcao_identidade = prompt_identidade_capa_colorir(sujeitos_capa_colorir(s))
             prompt_frente = (
                 f"Arte COLORIDA original para capa de livro de colorir chamado '{s.get('titulo','')}'. "
                 f"Tema: {s.get('tema_geral','')}. Manter coerência visual com a referência do miolo, "
                 "cores planas/limpas, composição atraente, SEM texto, título, logotipo ou barcode. "
-                "Deixar respiro visual na parte superior para tipografia posterior."
+                "Deixar respiro visual na parte superior para tipografia posterior.\n"
+                + direcao_identidade
             )
             prompt_verso = (
                 f"Arte COLORIDA original e mais discreta para CONTRACAPA do livro '{s.get('titulo','')}', "
                 f"tema {s.get('tema_geral','')}. Mesma linguagem visual da capa e do miolo, SEM texto, "
-                "sem barcode desenhado, com áreas calmas para sinopse e código de barras serem colocados depois."
+                "sem barcode desenhado, com áreas calmas para sinopse e código de barras serem colocados depois.\n"
+                + direcao_identidade
             )
             with st.spinner("Gerando artes de frente e verso..."):
-                frente = gerar_imagem(prompt=prompt_frente, imagem_base=referencia)
-                verso = gerar_imagem(prompt=prompt_verso, imagem_base=referencia)
+                frente = gerar_imagem(prompt=prompt_frente, **referencias)
+                verso = gerar_imagem(prompt=prompt_verso, **referencias)
                 pasta_saida = os.path.join("exportacoes_kdp", "colorir-" + uuid.uuid4().hex[:10])
                 capa = gerar_capa_print_ready(
                     frente, verso, pasta_saida,

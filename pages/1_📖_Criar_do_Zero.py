@@ -18,6 +18,8 @@ Fluxo da tela:
 """
 
 import os
+import hashlib
+import uuid
 
 import streamlit as st
 from family_profiles import assign_saved_project_to_profile
@@ -55,6 +57,8 @@ from agents.personagens_variacoes import (
     gerar_variacao, selecionar_variacao, aprovar_variacao, favoritar_variacao,
 )
 from emotion_colors import EMOCOES
+from emotional_review_ui import (render_emotional_gate, consume_emotional_consent,
+                                 stage_emotional_action, take_emotional_action)
 
 st.set_page_config(page_title="Pequenas Histórias, Grandes Lições", page_icon="📖", layout="wide")
 aplicar_estilo()
@@ -278,13 +282,23 @@ elif st.session_state.etapa == "personagens":
     elif origem == "Transformar uma foto real (photo-to-cartoon)":
         foto = st.file_uploader("Foto real (sua, de familiar ou do pet)", type=["png", "jpg", "jpeg"])
         detalhe = st.text_input("Algum detalhe extra a manter? (opcional)")
-        if foto is not None and nome and st.button("✨ Transformar foto em personagem"):
-            caminho_foto = os.path.join("saida_imagens", f"foto_original_{nome}.png")
+        photo_context = hashlib.sha256(bytes(foto.getbuffer()) + repr((nome, papel, detalhe)).encode()).hexdigest() if foto is not None else ""
+        cached = st.session_state.get("fb_photo_character_handoff") or {}
+        if photo_context and cached.get("context") == photo_context:
+            foto_transformada = cached.get("character")
+        consent_epoch = st.session_state.get("fb_photo_consent_epoch", 0)
+        photo_consent = st.checkbox("Tenho autorização para enviar esta foto ao provedor de IA e criar o personagem", key=f"fb_photo_consent_{photo_context}_{consent_epoch}")
+        if foto is not None and nome and st.button("✨ Transformar foto em personagem", disabled=not photo_consent):
+            caminho_foto = os.path.join("saida_imagens", f"foto_original_{uuid.uuid4().hex}.png")
             os.makedirs("saida_imagens", exist_ok=True)
             with open(caminho_foto, "wb") as f:
                 f.write(foto.getbuffer())
             with st.spinner("Transformando a foto no estilo da coleção..."):
-                foto_transformada = gerar_personagem_a_partir_de_foto(caminho_foto, nome, papel, gerar_imagem, detalhe)
+                try:
+                    foto_transformada = gerar_personagem_a_partir_de_foto(caminho_foto, nome, papel, gerar_imagem, detalhe, consent_confirmed=photo_consent)
+                    st.session_state["fb_photo_character_handoff"] = {"context": photo_context, "character": foto_transformada}
+                finally:
+                    st.session_state["fb_photo_consent_epoch"] = consent_epoch + 1
             st.image(foto_transformada["imagem_referencia"], width=250)
 
     if st.button("Adicionar personagem") and nome:
@@ -293,7 +307,7 @@ elif st.session_state.etapa == "personagens":
             origem_referencia="", papel=papel,
         )
         if imagem_enviada is not None:
-            caminho = os.path.join("saida_imagens", f"ref_{nome}.png")
+            caminho = os.path.join("saida_imagens", f"ref_{uuid.uuid4().hex}.png")
             os.makedirs("saida_imagens", exist_ok=True)
             with open(caminho, "wb") as f:
                 f.write(imagem_enviada.getbuffer())
@@ -671,17 +685,29 @@ elif st.session_state.etapa == "aprovar_personagens":
     st.progress(aprovados / max(total, 1), text=f"{aprovados} de {total} personagem(ns) aprovados")
     if aprovados < total:
         st.warning("A geração das cenas está bloqueada até todos os personagens terem uma aparência aprovada.")
+    emotional_ready, scene_consent, scene_token = render_emotional_gate(
+        st, 'state', 'pages/1_📖_Criar_do_Zero.py', action='create_book_scenes')
     if st.button(
         "🎬 Personagens aprovados — gerar ilustrações do livro",
-        type="primary", use_container_width=True, disabled=(aprovados < total or total == 0),
+        type="primary", use_container_width=True, disabled=(aprovados < total or total == 0 or not emotional_ready),
     ):
+        stage_emotional_action(st.session_state, s, action='create_book_scenes', consent_confirmed=scene_consent)
+        consume_emotional_consent(st.session_state, scene_token)
         st.session_state.etapa = "finalizando"
         st.rerun()
 
 # ------------------------------------------------------------ FINALIZANDO
 elif st.session_state.etapa == "finalizando":
+    try:
+        scene_consent = take_emotional_action(st.session_state, s, action='create_book_scenes')
+    except (PermissionError, ValueError) as exc:
+        st.session_state.etapa = 'aprovar_personagens'
+        st.warning(str(exc))
+        if st.button('Voltar à aprovação antes de continuar'):
+            st.rerun()
+        st.stop()
     progresso = st.progress(0, text="Ilustrando cada cena...")
-    s.update(ilustrador_node(s, gerar_imagem))
+    s.update(ilustrador_node(s, gerar_imagem, consent_confirmed=scene_consent))
     progresso.progress(35, text="Gerando 3 páginas de colorir (line-art)...")
     s.update(atividades_colorir_node(dict(s), gerar_imagem))
     progresso.progress(42, text="Gerando roteiro de audiobook...")

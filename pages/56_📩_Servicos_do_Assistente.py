@@ -65,13 +65,22 @@ def show_draft(channel: str, client) -> None:
         else:
             st.write("Modelo aprovado:", payload["template"]["name"])
             st.write("Idioma:", payload["template"]["language"]["code"])
-        checked = st.checkbox("Confirmo o destinatário e o conteúdo acima", key=f"{suffix}_{channel}_confirm_{draft['id']}")
+        price_ready = True
+        if channel == "whatsapp":
+            price = draft.get("pricing") or {}
+            price_ready = price.get("configured") is True
+            if price_ready:
+                st.caption(f"Estimativa configurada por envio: US$ {price['estimated_cost_usd']:.4f}. O valor final depende da tarifa da conta.")
+            else:
+                st.info("Configure a estimativa da tarifa WhatsApp antes de enviar esta mensagem.")
+        confirmation_label = "Confirmo o destinatário e o conteúdo acima" if channel == "gmail" else "Autorizo enviar o conteúdo acima ao destinatário e confirmo a estimativa apresentada"
+        checked = st.checkbox(confirmation_label, key=f"{suffix}_{channel}_confirm_{draft['id']}")
         opt_in = window = False
         if channel == "whatsapp":
             opt_in = st.checkbox("O destinatário autorizou mensagens desta conta", key=f"{suffix}_wa_opt_{draft['id']}")
             if payload["type"] == "text":
                 window = st.checkbox("O cliente iniciou uma conversa nas últimas 24 horas", key=f"{suffix}_wa_window_{draft['id']}")
-        if st.button("Confirmar e enviar esta mensagem", key=f"{suffix}_{channel}_send_{draft['id']}", disabled=not checked or not readiness[channel]["write_enabled"]):
+        if st.button("Confirmar e enviar esta mensagem", key=f"{suffix}_{channel}_send_{draft['id']}", disabled=not checked or not price_ready or not readiness[channel]["write_enabled"]):
             kwargs = {"profile_id": profile_id, "confirmation_fingerprint": draft["fingerprint"], "receipts": store.receipts()}
             if channel == "whatsapp":
                 kwargs.update(recipient_opt_in=opt_in, customer_window_open=window)

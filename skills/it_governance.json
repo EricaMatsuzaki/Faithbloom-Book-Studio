@@ -24,6 +24,34 @@
       "limites de diagnóstico estático"
     ]
   },
+  "runtime_contract": {
+    "entrypoints": [
+      "run_diagnostic",
+      "check_it_action"
+    ],
+    "essential_skills": [
+      "gestão de mudanças",
+      "CI e regressão",
+      "release e rollback"
+    ],
+    "inputs": [
+      "fontes e evidências operacionais fornecidas"
+    ],
+    "outputs": [
+      "achados técnicos e limites de prontidão sem deploy automático"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "achados com fonte e escopo",
+    "UNKNOWN quando não há evidência",
+    "nenhuma alteração destrutiva automática"
+  ],
+  "evidence_requirements": [
+    "fontes locais inspecionadas",
+    "evidência observada e rastreável de execução"
+  ],
   "non_negotiables": [
     "não executar código inspecionado nem instalar dependências no diagnóstico",
     "não executar merge, deploy ou mudança destrutiva automaticamente",

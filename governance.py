@@ -11,6 +11,7 @@ import ast
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
+import hmac
 import importlib
 import json
 from pathlib import Path
@@ -29,7 +30,14 @@ LIMITATIONS = [
     "Verificação local de evidências; não é certificação de conformidade.",
     "Sem evidência verificável, o controle permanece UNKNOWN.",
     "As evidências fornecidas devem ter origem validada pelo chamador; estes relatórios não substituem autenticação ou autorização.",
+    "O histórico versionado verifica um digest de integridade; não é log assinado nem armazenamento externo append-only.",
 ]
+SPECIALIST_ACTION_CHECKS = {
+    "ai_governance": ("governanca_ia", "check_generation_action"),
+    "data_governance": ("governanca_dados", "check_data_action"),
+    "it_governance": ("governanca_ti", "check_it_action"),
+    "cybersecurity": ("ciberseguranca", "check_security_action"),
+}
 
 
 def _token(value: str) -> str:
@@ -176,6 +184,42 @@ def run_all_diagnostics(root: str | Path | None = None, state: dict | None = Non
     return reports
 
 
+def evaluate_specialist_action(role_id: str, action: str, **policy_kwargs: Any) -> dict:
+    """Invoke the specialist's real policy entry point for this exact action.
+
+    Static diagnostics remain separate from execution permission. A missing or
+    malformed specialist cannot be replaced by a successful source-file check.
+    The caller owns the applicability decision for private-pilot tenant controls.
+    """
+    module_name, entrypoint = SPECIALIST_ACTION_CHECKS[role_id]
+    module = importlib.import_module(f"agents.{module_name}")
+    if module.ROLE_ID != role_id:
+        raise ValueError("Identidade do agente de governança incompatível.")
+    result = getattr(module, entrypoint)(action, **policy_kwargs)
+    if not isinstance(result, dict) or result.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("Evidência da ação indisponível no agente de governança.")
+    findings = result.get("findings")
+    if not isinstance(findings, list) or not findings:
+        raise ValueError("Controles da ação indisponíveis no agente de governança.")
+    result = dict(result)
+    result["findings"] = [finding(item["code"], item["status"], item["title"],
+        item.get("evidence", []), item.get("recommendation", "")) for item in findings]
+    codes = [item["code"] for item in result["findings"]]
+    if len(codes) != len(set(codes)):
+        raise ValueError("Controles duplicados na decisão do agente de governança.")
+    declared_allowed = result.get("allowed")
+    all_pass = all(item["status"] == "PASS" for item in result["findings"])
+    if not isinstance(declared_allowed, bool):
+        result["findings"].append(finding("specialist_decision", "UNKNOWN",
+            "Decisão explícita do agente ausente", [], "O agente deve registrar sua decisão da ação."))
+    elif declared_allowed is False and all_pass:
+        result["findings"].append(finding("specialist_decision", "FAIL",
+            "O agente negou a ação", ["runtime:specialist:" + role_id],
+            "A negativa explícita do agente não pode ser substituída pela política central."))
+    result["allowed"] = declared_allowed is True and all_pass
+    return redact_sensitive(result)
+
+
 def verify_control(context: Mapping, name: str) -> tuple[str, list[str]]:
     """Require explicit evidence and observation time, rather than a truthy flag."""
     controls = context.get("controls", context) if isinstance(context, Mapping) else {}
@@ -249,6 +293,7 @@ def preflight_action(
     budget_currency: str | None = None, tenant_id: str | None = None,
     resource_tenant_id: str | None = None, tenant_evidence: Mapping | None = None,
     uses_personal_data: bool = False, consent: Mapping | None = None,
+    requires_confirmation: bool = False,
 ) -> dict:
     """Evaluate scoped approval, cost, tenant and consent gates; execute nothing.
 
@@ -261,7 +306,10 @@ def preflight_action(
     projected = _amount(projected_cost)
     remaining = _amount(budget_remaining)
     paid_required = paid is True or (projected is not None and projected > 0)
-    requires_approval = paid_required or bool(set(_token(action).split("_")) & _APPROVAL_TERMS)
+    requires_approval = requires_confirmation is True or paid_required or bool(set(_token(action).split("_")) & _APPROVAL_TERMS)
+    if not isinstance(requires_confirmation, bool):
+        controls.append(finding("approval_classification", "UNKNOWN", "Classificação de aprovação inválida", [],
+            "Classifique explicitamente a necessidade de confirmação desta ação."))
     if requires_approval:
         approval = approval if isinstance(approval, Mapping) else {}
         valid = (
@@ -348,8 +396,21 @@ def save_report(report: Mapping, workspace_id: str = "local") -> str:
     normalized["snapshot_id"] = str(uuid.uuid4())
     path = f"{prefix}/{identifier}/{normalized['snapshot_id']}.json"
     safe = redact_sensitive(normalized)
+    safe["integrity_sha256"] = _snapshot_digest(safe)
     storage.BACKEND.put_json(path, safe)
     return storage.storage_uri(path)
+
+
+def _snapshot_digest(report: Mapping) -> str:
+    """Detect changed evidence; this unkeyed digest is not a signed audit log.
+
+    Summary fields are derived on read and deliberately excluded. Existing
+    snapshots without a digest retain their historical compatibility.
+    """
+    authoritative = {key: value for key, value in report.items()
+        if key not in {"integrity_sha256", "status", "counts", "allowed"}}
+    return hashlib.sha256(json.dumps(authoritative, sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
 
 
 def _validate_report_path(path: str, workspace_id: str) -> tuple[str, str, str]:
@@ -390,6 +451,14 @@ def load_report(path: str, workspace_id: str = "local") -> dict:
         raise storage.StorageError("Relatório de governança ilegível.") from None
     if not isinstance(report, dict) or report.get("schema_version") != SCHEMA_VERSION or report.get("report_id") != identifier or report.get("snapshot_id") != snapshot:
         raise storage.StorageError("Identidade ou versão do relatório de governança inválida.")
+    integrity = report.get("integrity_sha256")
+    if integrity is not None:
+        try:
+            valid = isinstance(integrity, str) and hmac.compare_digest(integrity, _snapshot_digest(report))
+        except (ValueError, TypeError):
+            valid = False
+        if not valid:
+            raise storage.StorageError("A evidência do relatório de governança foi alterada.")
     try:
         findings = [finding(item["code"], item["status"], item["title"], item.get("evidence", []), item.get("recommendation", "")) for item in report["findings"]]
     except (KeyError, ValueError, TypeError):

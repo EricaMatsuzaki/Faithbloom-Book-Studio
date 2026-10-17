@@ -334,6 +334,8 @@ def run_diagnostic(text: str, *, modules: list[str] | None = None,
     Static diagnostics are local and free. The injected LLM is used only when
     the caller explicitly requests a semantic review with selected sources.
     """
+    from agent_skills import require_role_ready
+    require_role_ready("saas_automation_engineer")
     from agent_skills import validate_registry
     from scripts_fullstack_audit import audit_repository
     from agents import engenheiro_code_review_profundo as deep
