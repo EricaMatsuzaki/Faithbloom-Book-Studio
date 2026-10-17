@@ -294,6 +294,37 @@
       "refactoring safety"
     ]
   },
+  "runtime_contract": {
+    "entrypoints": [
+      "handle_saas_request",
+      "run_diagnostic",
+      "automation_safety_gate"
+    ],
+    "essential_skills": [
+      "full-stack application development",
+      "integration testing",
+      "human approval gates"
+    ],
+    "inputs": [
+      "pedido e fontes locais selecionadas",
+      "evidência de execução quando fornecida"
+    ],
+    "outputs": [
+      "plano e diagnóstico, nunca patch ou deploy executado por IA"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "diagnóstico vinculado a evidência",
+    "plano não equivale a correção",
+    "teste de regressão e validação de runtime quando aplicável"
+  ],
+  "evidence_requirements": [
+    "fontes inspecionadas",
+    "resultado de testes",
+    "evidência de runtime quando aplicável"
+  ],
   "non_negotiables": [
     "verificar antes de criar para evitar duplicação",
     "reutilizar e estender componentes existentes antes de criar novos",

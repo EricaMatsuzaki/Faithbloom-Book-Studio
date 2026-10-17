@@ -24,6 +24,34 @@
       "monitoramento de falhas"
     ]
   },
+  "runtime_contract": {
+    "entrypoints": [
+      "run_diagnostic",
+      "check_generation_action"
+    ],
+    "essential_skills": [
+      "inventário de modelos",
+      "guardas de custos",
+      "aprovação humana"
+    ],
+    "inputs": [
+      "fontes, metadados e contexto da ação"
+    ],
+    "outputs": [
+      "achados sanitizados e decisão pré-ação, UNKNOWN sem evidência"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "achados com fonte e escopo",
+    "UNKNOWN quando não há evidência",
+    "nenhuma alteração destrutiva automática"
+  ],
+  "evidence_requirements": [
+    "fontes locais inspecionadas",
+    "evidência observada e rastreável de execução"
+  ],
   "non_negotiables": [
     "não chamar provedores durante o diagnóstico",
     "não confundir modelo configurado com modelo validado",

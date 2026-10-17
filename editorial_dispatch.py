@@ -59,8 +59,8 @@ def _path(run_id: str) -> str:
 
 
 def content_fingerprint(state: dict) -> str:
-    fields = ("titulo", "cenas_texto", "licao_final", "units", "unidades", "editorial_units", "paginas", "pages", "brief", "personagens",
-              "title", "collection", "audience_id", "faixa_etaria", "editorial_audience", "idioma_original", "language", "editorial_line", "publico", "theme")
+    fields = ("book_id", "project_id", "id", "colecao", "titulo", "cenas_texto", "licao_final", "units", "unidades", "editorial_units", "paginas", "pages", "brief", "personagens",
+              "title", "collection", "audience_id", "faixa_etaria", "editorial_audience", "idioma_original", "language", "editorial_line", "publico", "theme", "mapa_emocional", "paleta_emocional_preset", "style_dna", "style_dna_id")
     content = {k: state.get(k) for k in fields}
     if isinstance(state.get("editorial_product"), dict):
         content["editorial_product"] = {k: state["editorial_product"].get(k) for k in ("spec", "units")}
@@ -273,7 +273,8 @@ def bind_visual_plan_to_run(run_id: str, *, characters: list[dict], locations: l
         raise ValueError("Salve o conteúdo do projeto no Studio antes de criar o plano visual.")
     plan = create_visual_plan(project_id=run["id"], title=run["title"], story_text="\n\n".join(texts), characters=characters, locations=locations, generation_mode=generation_mode, budget_limit_usd=budget_limit_usd)
     plan.update(editorial_run_id=run["id"], source_ref=run["source_ref"], source_fingerprint=content_fingerprint(source), collection=run["collection"])
-    plan = save_visual_plan(plan)
+    from emotional_visual_binding import prepare_emotional_binding
+    plan = save_visual_plan(prepare_emotional_binding(plan, source))
     run["visual_plan_id"] = plan["id"]
     save_run(run)
     return plan

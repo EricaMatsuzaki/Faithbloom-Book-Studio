@@ -40,6 +40,7 @@ def no_real_network(monkeypatch):
         "GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_CALENDAR_REFRESH_TOKEN",
         "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_APP_SECRET", "WHATSAPP_WEBHOOK_VERIFY_TOKEN",
         "WHATSAPP_GRAPH_API_VERSION", "JARVIS_GMAIL_WRITE_ENABLED", "JARVIS_WHATSAPP_WRITE_ENABLED",
+        "WHATSAPP_ESTIMATED_COST_USD",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -60,6 +61,7 @@ def google_config(monkeypatch, *, prefix="GOOGLE_GMAIL", write=True):
 def whatsapp_config(monkeypatch, *, write=True):
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "fake-access")
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "123456789")
+    monkeypatch.setenv("WHATSAPP_ESTIMATED_COST_USD", "0.05")
     if write:
         monkeypatch.setenv("JARVIS_WHATSAPP_WRITE_ENABLED", "true")
 

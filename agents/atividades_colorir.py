@@ -14,6 +14,8 @@ personagem do miolo colorido.
 
 from state import LivroState, CenaImagem
 from agent_skills import skill_contract
+from agents.ilustrador import _personagem_para_cena
+from generation_autosave import persist_generation_snapshot
 
 ESTILO_LINE_ART = (
     "Ilustração em LINE ART: apenas contorno em preto e branco, SEM "
@@ -46,30 +48,45 @@ def prompt_colorir(cena: dict, dna_personagem: str) -> str:
 
 def atividades_colorir_node(state: LivroState, gerar_imagem) -> LivroState:
     cenas_escolhidas = escolher_cenas_chave(state["cenas_texto"])
-    paginas_colorir: list[CenaImagem] = []
-
+    paginas_colorir: list[CenaImagem] = list(state.get("paginas_colorir") or [])
+    if any(not isinstance(pagina, dict) for pagina in paginas_colorir):
+        raise ValueError("O histórico de atividades de colorir está inválido; revise-o antes de gerar.")
+    existentes = {str(pagina.get("numero")): pagina for pagina in paginas_colorir}
+    if len(existentes) != len(paginas_colorir):
+        raise ValueError("O histórico de atividades de colorir repete cenas; revise-o antes de gerar.")
+    pendentes = []
     for cena in cenas_escolhidas:
-        protagonista = state["personagens"].get(
-            cena.get("personagem_principal", "")
-        )
-        dna = protagonista["descricao_fixa"] if protagonista else ""
-        imagem_base = protagonista["imagem_referencia"] if protagonista else None
+        if existentes.get(str(cena["numero"]), {}).get("caminho_arquivo"):
+            continue
+        protagonista = _personagem_para_cena(cena, state.get("personagens") or {})
+        if not protagonista or not protagonista.get("descricao_fixa") or not protagonista.get("imagem_referencia"):
+            raise ValueError(f"Cena {cena['numero']}: selecione o DNA e a referência do personagem antes de gerar a atividade.")
+        pendentes.append((cena, protagonista))
+
+    for cena, protagonista in pendentes:
+        dna = protagonista["descricao_fixa"]
+        imagem_base = protagonista["imagem_referencia"]
 
         prompt = prompt_colorir(cena, dna)
         # Opção 1: gera do zero como line-art (não converte a colorida),
         # usando a referência do personagem pra manter reconhecível.
         caminho = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
+        if not isinstance(caminho, str) or not caminho.strip():
+            raise ValueError("O gerador não retornou uma imagem de colorir utilizável. As páginas anteriores foram preservadas.")
 
-        paginas_colorir.append(
-            CenaImagem(
+        item = CenaImagem(
                 numero=cena["numero"],
                 prompt_final=prompt,
                 caminho_arquivo=caminho,
                 aprovado=False,
             )
-        )
-
-    state["paginas_colorir"] = paginas_colorir
+        existente = existentes.get(str(cena["numero"]))
+        if existente:
+            paginas_colorir[paginas_colorir.index(existente)] = item
+        else:
+            paginas_colorir.append(item)
+        state["paginas_colorir"] = list(paginas_colorir)
+        persist_generation_snapshot(state, reason=f"coloring_activity_generated:{cena['numero']}")
     return state
 
 

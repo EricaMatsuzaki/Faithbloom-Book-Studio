@@ -153,21 +153,20 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
     """Gera a história, exceto quando a autora já escolheu uma versão completa."""
     estilo = normalizar_estilo(state.get("estilo_narrativo"))
     faixa = normalizar_faixa_etaria(state.get("faixa_etaria"))
-    state["faixa_etaria"] = faixa
-    state["age_profile_id"] = faixa
-    state["estilo_narrativo"] = estilo
-    state["estilo_narrativo_label"] = TODOS_ESTILOS[estilo]["label"]
+    prepared = dict(state, faixa_etaria=faixa, age_profile_id=faixa, estilo_narrativo=estilo,
+                    estilo_narrativo_label=TODOS_ESTILOS[estilo]["label"])
 
     if (
         state.get("historia_escolhida_preservar")
         and state.get("cenas_texto")
         and str(state.get("licao_final") or "").strip()
     ):
+        state.update(prepared)
         state["historia_escolhida_preservar"] = False
         state["revisao_aprovada"] = False
         return state
 
-    prompt = montar_prompt(state)
+    prompt = montar_prompt(prepared)
     resposta = chamar_llm(
         sistema=prompt,
         instrucao=(
@@ -177,9 +176,25 @@ def roteirista_node(state: LivroState, chamar_llm) -> LivroState:
             "contexto_visual, personagem_principal e expressao."
         ),
     )
+    if not isinstance(resposta, dict):
+        raise ValueError("O Roteirista retornou uma resposta sem história estruturada. A versão anterior foi preservada.")
+    cenas = resposta.get("cenas_texto")
+    if not isinstance(cenas, list) or not cenas or any(
+        not isinstance(cena, dict) or not isinstance(cena.get("texto"), str) or not cena["texto"].strip()
+        for cena in cenas
+    ):
+        raise ValueError("O Roteirista retornou uma história vazia ou incompleta. A versão anterior foi preservada.")
+    numeros = [cena.get("numero") for cena in cenas]
+    if any(type(numero) is not int or numero < 1 for numero in numeros) or len(set(numeros)) != len(numeros):
+        raise ValueError("O Roteirista retornou cenas sem números únicos. A versão anterior foi preservada.")
+    licao = normalizar_licao_final(resposta.get("licao_final", ""))
+    if not licao.strip():
+        raise ValueError("O Roteirista não retornou a Lição de Moral obrigatória. A versão anterior foi preservada.")
+    state.update(prepared)
     state["sinopse_poetica"] = resposta.get("sinopse_poetica", "")
     state["cenas_texto"] = resposta.get("cenas_texto", [])
-    state["licao_final"] = normalizar_licao_final(resposta.get("licao_final", ""))
+    state["licao_final"] = licao
+    state["revisao_aprovada"] = False
     state["historia_escolhida_preservar"] = False
     return state
 

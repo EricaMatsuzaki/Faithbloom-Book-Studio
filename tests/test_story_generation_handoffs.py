@@ -419,11 +419,13 @@ def test_finalization_passes_live_session_state_to_illustrator_for_interruption_
     from streamlit.testing.v1 import AppTest
     import armazenamento
     import agents.ilustrador
+    from emotional_visual_binding import approve_book_emotional_map
+    from emotional_review_ui import stage_emotional_action
 
-    state = _editor_project()
+    state = approve_book_emotional_map(_editor_project(), reviewed=True, reviewer="Autora de teste")
     generated = {"numero": 1, "caminho_arquivo": "completed-first-scene.png", "aprovado": False}
 
-    def partial_generation(live_state, _provider):
+    def partial_generation(live_state, _provider, *, consent_confirmed=False):
         live_state["cenas_imagem"] = [generated]
         raise RuntimeError("Interrupção na próxima cena")
 
@@ -432,6 +434,10 @@ def test_finalization_passes_live_session_state_to_illustrator_for_interruption_
     app = AppTest.from_file(ROOT / "app.py").switch_page("pages/1_📖_Criar_do_Zero.py")
     app.session_state["state"] = state
     app.session_state["etapa"] = "finalizando"
+    pending_action = {}
+    stage_emotional_action(pending_action, state, action="create_book_scenes")
+    for key, value in pending_action.items():
+        app.session_state[key] = value
     app.run(timeout=15)
 
     assert len(app.exception) == 1

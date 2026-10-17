@@ -19,6 +19,7 @@ from armazenamento import listar_livros, carregar_livro, listar_colecoes
 from editorial_dispatch import book_selection_labels
 from ui_saved_choices import select_saved_or_new
 from character_universe import listar_personagens_oficiais, carregar_personagem_oficial, personagem_para_prompt
+from governance_callbacks import governed_text_callback, render_personal_consent, text_route_configuration
 
 st.set_page_config(page_title="Activity Book Studio · FaithBloom", page_icon="🧩", layout="wide")
 aplicar_estilo()
@@ -126,17 +127,21 @@ examples={
 }
 default_json=json.dumps(examples.get(atype,{}),ensure_ascii=False,indent=2)
 ai_key=f"r08_ai_{atype}"
-if os.environ.get("OPENROUTER_API_KEY"):
+activity_source={"project":project,"source_ref":f"fb://activity_studio/projects/{project['id']}.json"}
+activity_consent=render_personal_consent(st,activity_source,action="activity.suggest_structure")
+if text_route_configuration()["configured"]:
     if st.button("✨ Sugerir estrutura com IA",key=f"ai_generate_{atype}"):
         try:
-            from openrouter_client import chamar_llm
             sys_prompt,user_prompt=generation_prompt(atype,project["audience_id"],project["difficulty"],project.get("theme",""),objective,{})
-            suggestion=normalize_llm_activity_result(chamar_llm(sys_prompt,user_prompt))
+            callback=governed_text_callback("activity.suggest_structure",activity_source,
+                confirmed=True,consent_confirmed=activity_consent)
+            suggestion=normalize_llm_activity_result(callback(sys_prompt,user_prompt))
+            suggestion["governance_receipts"]=callback.governance_receipts
             st.session_state[ai_key]=suggestion
             st.success("Sugestão criada como rascunho. Revise antes de salvar e rode o Activity QA.")
         except Exception as exc: st.error(f"Não foi possível gerar a sugestão: {exc}")
 else:
-    st.caption("🔐 Sem OPENROUTER_API_KEY nesta sessão: exemplos estruturados e edição manual continuam disponíveis sem custo.")
+    st.caption("🔐 Sem provedor de texto configurado nesta sessão: exemplos estruturados e edição manual continuam disponíveis sem custo.")
 ai=st.session_state.get(ai_key) or {}
 if ai.get("designer_notes"): st.info("Designer IA: "+ai["designer_notes"])
 if ai.get("instruction") and not instruction: instruction=ai["instruction"]

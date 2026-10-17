@@ -2,6 +2,8 @@
 
 Atualização de integração: [funcionalidades, testes e pendências de produção](SAAS_INTEGRATION_STATUS.md). Os relatórios da auditoria original preservam a base examinada naquela ocasião; o documento de integração acompanha os avanços posteriores. Código implementado e testes locais não equivalem a validação dos provedores ou implantação no Streamlit.
 
+Conexões dos agentes: [estado por cargo, competências exigidas e evidências de execução](docs/AGENT_CONNECTIONS_STATUS.md). A direção emocional aprovada acompanha as cenas e a HQ; o cadastro de agentes distingue configuração, execução em testes e validação de serviços reais.
+
 > **Estúdio editorial inteligente, visual e multimodal** — com controle humano, consistência de personagens, produção editorial, publicação e evolução futura para um assistente pessoal integrado.
 >
 > Autoria / direção do produto: **Erica Matsuzaki**

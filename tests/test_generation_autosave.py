@@ -20,11 +20,8 @@ def _state():
     }
 
 
-def test_autosave_reusa_projeto_existente(monkeypatch):
+def test_autosave_reusa_referencia_explicita_do_projeto(monkeypatch):
     saved = {}
-    monkeypatch.setattr(ga, "listar_livros", lambda colecao: [
-        {"titulo": "Clara e o Corredor", "storage_path": "livros/piloto/clara.json"}
-    ])
     monkeypatch.setattr(ga, "salvar_livro", lambda state: (_ for _ in ()).throw(AssertionError("não deve criar duplicata")))
 
     def fake_update(path, state):
@@ -34,6 +31,7 @@ def test_autosave_reusa_projeto_existente(monkeypatch):
 
     monkeypatch.setattr(ga, "atualizar_livro_salvo", fake_update)
     state = _state()
+    state["storage_path"] = "livros/piloto/clara.json"
     out = ga.persist_generation_snapshot(state, reason="teste", updates={"comparativo_estilos": {"x": {}}})
     assert out == "fb://livros/piloto/clara.json"
     assert saved["path"] == "livros/piloto/clara.json"

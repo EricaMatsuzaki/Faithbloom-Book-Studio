@@ -12,7 +12,7 @@ from comic_studio import (
     SCHEMA, approve_panel_image, approve_script, attach_panel_image, comic_readiness,
     create_comic, export_comic, generate_panel_images, generate_panel_options,
     generate_script, link_visual_plan, list_comics, load_comic, prepare_visual_plan,
-    revise_panel, save_comic, select_panel_direction, set_script, source_status, uses_personal_data,
+    revise_panel, save_comic, select_panel_direction, link_panel_emotion, set_script, source_status, uses_personal_data,
 )
 from controle_geracao import estimar_custo
 from estilo import aplicar_estilo, hero, section_title
@@ -230,6 +230,8 @@ with st.expander("Pré-voo visual para geração com IA"):
     plan = load_visual_plan(meta["visual_plan_id"]) if meta.get("visual_plan_id") else {}
     status = visual_preflight_status(plan) if plan else {}
     if plan:
+        from visual_execution_ui import render_emotional_review
+        render_emotional_review(plan["id"])
         st.write("Pré-voo aprovado para geração." if status.get("ready_for_scene_generation") else "Conclua a aprovação do conteúdo, personagens, cenários e estilo no Orquestrador.")
         if st.button("Revisar pré-voo no Orquestrador"):
             st.session_state.orchestrator_visual_plan_id = plan["id"]
@@ -246,6 +248,12 @@ for page in meta["script"]["paginas"]:
         prefix = f"comic_art_{project['book_id']}_{panel_id}_{script_key}"
         with st.expander(f"Imagem do painel {panel_id}"):
             st.write(panel["acao_visual"])
+            origin_numbers = [row["numero"] for row in project["cenas_texto"]]
+            selected_number = (entry.get("emotional_source") or {}).get("scene_number")
+            origin_number = st.selectbox("Cena de origem da direção emocional deste painel", origin_numbers, index=origin_numbers.index(selected_number) if selected_number in origin_numbers else None, key=prefix + "_emotional_source", placeholder="Escolha a cena de origem")
+            st.caption("O painel herdará emoção, intensidade, paleta, transição e instrução da cena aprovada, sem modificar os Masters.")
+            if st.button("Confirmar vínculo emocional do painel", disabled=origin_number is None or not script_approved, key=prefix + "_emotional_link"):
+                action(lambda: link_panel_emotion(project, panel_id, origin_number, reviewed=True))
             upload = st.file_uploader("Enviar imagem candidata sem IA", type=["png", "jpg", "jpeg", "webp"], key=prefix + "_upload")
             if st.button("Adicionar imagem enviada", disabled=upload is None, key=prefix + "_attach"):
                 def attach():

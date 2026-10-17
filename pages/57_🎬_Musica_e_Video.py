@@ -38,8 +38,9 @@ with media_tab:
             title = st.text_input("Título")
             kind = st.radio("Produzir", ["animation_video", "music"], format_func=lambda value: "Vídeo / animatic" if value == "animation_video" else "Música", horizontal=True)
             source_ref = st.text_input("Referência do livro ou Master de origem (opcional)")
+            personal = st.checkbox("Este projeto usa relatos, dados ou imagens de pessoas reais")
             if st.form_submit_button("Criar projeto"):
-                created = attempt(lambda: store.create(title, kind, source_ref=source_ref))
+                created = attempt(lambda: store.create(title, kind, source_ref=source_ref, uses_personal_data=personal))
                 if created:
                     st.session_state["fb57_project_id"] = created["id"]
                     st.rerun()
@@ -120,8 +121,14 @@ with media_tab:
                         review = {k: v for k, v in draft["input"].items() if k != provider.get("image_input_field")}
                         st.json({"model": draft["model"], "input": review, "source_id": draft["source_id"], "estimated_cost_usd": draft["estimated_cost_usd"]})
                         confirmed = st.checkbox("Confirmo esta entrada, a fonte aprovada e o custo estimado", key=f"{prefix}_confirm_{draft['fingerprint']}")
-                        if st.button("Confirmar e enviar esta geração", disabled=not confirmed, key=f"{prefix}_submit_{draft['fingerprint']}"):
-                            if attempt(lambda: client.submit(draft, confirmed_fingerprint=draft["fingerprint"])):
+                        consent = False
+                        if draft.get("uses_personal_data"):
+                            epoch_key = f"{prefix}_consent_epoch"
+                            consent = st.checkbox("Tenho autorização para enviar os dados e imagens pessoais desta geração ao provedor", key=f"{prefix}_data_consent_{draft['fingerprint']}_{st.session_state.get(epoch_key, 0)}")
+                        if st.button("Confirmar e enviar esta geração", disabled=not confirmed or (draft.get("uses_personal_data") and not consent), key=f"{prefix}_submit_{draft['fingerprint']}"):
+                            result = attempt(lambda: client.submit(draft, confirmed_fingerprint=draft["fingerprint"], consent_confirmed=consent))
+                            st.session_state[f"{prefix}_consent_epoch"] = st.session_state.get(f"{prefix}_consent_epoch", 0) + 1
+                            if result:
                                 st.session_state.pop(f"{prefix}_draft_value", None)
                                 st.rerun()
 

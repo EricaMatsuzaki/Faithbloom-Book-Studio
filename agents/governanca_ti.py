@@ -31,10 +31,14 @@ def all_skills() -> list[str]:
 
 
 def check_it_action(action: str, **kwargs: Any) -> dict:
+    from agent_skills import require_role_ready
+    require_role_ready("it_governance")
     return preflight_action(action, **kwargs)
 
 
 def run_diagnostic(root: str | Path | None = None, *, context: dict | None = None, **_: Any) -> dict:
+    from agent_skills import require_role_ready
+    require_role_ready("it_governance")
     root = Path(root or Path(__file__).resolve().parents[1]).resolve()
     context = dict(context or {})
     findings = []

@@ -159,13 +159,13 @@ class MediaStudioStore:
     def _path(self, project_id: str) -> str:
         return f"media_studio/projects/{_identifier(project_id)}.json"
 
-    def create(self, title: str, kind: str, *, source_ref: str = "") -> dict:
+    def create(self, title: str, kind: str, *, source_ref: str = "", uses_personal_data: bool = False) -> dict:
         title = str(title or "").strip()
         if not title or len(title) > 240 or kind not in KINDS:
             raise MediaStudioError("Informe um título e um tipo de mídia válidos.")
         state = {"schema": SCHEMA, "id": uuid.uuid4().hex, "title": title, "kind": kind, "source_ref": str(source_ref or "")[:1000],
                  "created_at": _now(), "status": "draft", "sources": [], "jobs": [], "outputs": [],
-                 "auto_promote_master": False, "auto_publish": False}
+                 "auto_promote_master": False, "auto_publish": False, "uses_personal_data": uses_personal_data is True}
         self.save(state)
         return state
 
@@ -393,7 +393,7 @@ class ReplicateMediaClient:
             raise MediaStudioError("Entrada JSON inválida ou maior que 10 MB.") from None
         draft = {"project_id": project_id, "kind": state["kind"], "model": config["model"], "input": deepcopy(model_input),
                  "estimated_cost_usd": config["estimated_cost_usd"], "max_cost_usd": config["max_cost_usd"],
-                 "source_id": source_id, "source_sha256": source_hash}
+                 "source_id": source_id, "source_sha256": source_hash, "uses_personal_data": state.get("uses_personal_data") is True}
         draft["fingerprint"] = _digest(draft)
         return draft
 
@@ -409,7 +409,7 @@ class ReplicateMediaClient:
         except (requests.RequestException, ValueError):
             raise MediaStudioError("Não foi possível confirmar a resposta do provedor. Consulte o processamento antes de iniciar outro.") from None
 
-    def submit(self, draft: dict, *, confirmed_fingerprint: str) -> dict:
+    def submit(self, draft: dict, *, confirmed_fingerprint: str, consent_confirmed: bool = False) -> dict:
         with _project_lock(draft.get("project_id", "")):
             original_input = deepcopy(draft.get("input"))
             if draft.get("kind") == "animation_video" and isinstance(original_input, dict):
@@ -430,6 +430,15 @@ class ReplicateMediaClient:
                    "input": deepcopy(expected["input"]), "estimated_cost_usd": expected["estimated_cost_usd"],
                    "status": "submission_pending", "created_at": _now(), "prediction_id": "",
                    "source_id": expected["source_id"], "source_sha256": expected["source_sha256"]}
+            from governance_runtime import authorize_generation
+            job["governance"] = authorize_generation(
+                "media.generate", confirmed=True, projected_cost=expected["estimated_cost_usd"],
+                provider_configured=provider_configuration(state["kind"])["available"],
+                operation_id=job["id"], source_module="media_studio.py", state=state,
+                budget_remaining=expected["max_cost_usd"] - (estimated_total - expected["estimated_cost_usd"]),
+                uses_personal_data=bool(state.get("uses_personal_data")),
+                consent_confirmed=consent_confirmed is True,
+            )
             state["jobs"].append(job)
             # A failed checkpoint stops BEFORE POST; an interrupted POST remains
             # pending/uncertain and cannot be duplicated by rerun or restart.

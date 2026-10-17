@@ -12,8 +12,9 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import json
 import ast
+from functools import lru_cache
 
-SCHEMA = "faithbloom.agent-skills.v3"
+SCHEMA = "faithbloom.agent-skills.v4"
 
 COMMON_FORBIDDEN = [
     "prometer best-seller, ranking, vendas ou aprovação por plataforma",
@@ -369,9 +370,254 @@ HANDOFF_SERVICES = {
     "publishing_engine": "platform_registry.py", "quality_guardian": "quality_guardian.py",
 }
 
+# Operational requirements are maintained separately from the editable profile.
+# Removing a skill, an executor or a required handoff must not silently turn the
+# remaining text into a "valid" profile. These are local contracts, not claims
+# that an LLM has mastered a discipline or that an external provider is ready.
+# role: (real entrypoints, indispensable skills, input context, reviewable output)
+ROLE_EXECUTION_REQUIREMENTS = {
+    "idea_generator": (("gerador_ideias_node",), ("ideação infantil", "adequação etária", "originalidade"), ("quantidade", "temas_usados", "faixa_etaria"), ("ideias originais com título, conflito e promessa de leitura",)),
+    "theme_curator": (("curador_tema_node",), ("curadoria temática", "arco emocional", "referência bíblica candidata"), ("ideia ou tema livre", "faixa_etaria"), ("emoção, aprendizado e referência candidata não validada",)),
+    "storyteller": (("roteirista_node", "montar_prompt"), ("storytelling infantil", "arco emocional", "FaithBloom Heart Arc"), ("tema e faixa etária", "personagens e DNA", "lição e referência aprovadas"), ("cenas numeradas, resolução, celebração e lição final",)),
+    "story_editor": (("editar_cena", "sugerir_versiculos", "sugerir_licoes"), ("edição cena a cena", "continuidade", "preservação de intenção"), ("cena e manuscrito", "instrução delimitada", "faixa_etaria"), ("cena editada ou sugestões sem substituir aprovações",)),
+    "story_reviewer": (("revisor_node",), ("continuidade", "gramática", "Heart Arc audit"), ("manuscrito completo", "faixa_etaria", "referência e moral"), ("revisao_aprovada e notas rastreáveis por cena",)),
+    "character_creator": (("criar_personagem_a_partir_de_ideia",), ("design de personagem", "paleta canônica", "marcas permanentes"), ("ideia e estilo", "idade e contexto do universo"), ("DNA e referência candidata sujeita à aprovação",)),
+    "photo_to_character": (("gerar_personagem_a_partir_de_foto",), ("image-to-image", "preservação de atributos", "controle de referência"), ("foto autorizada", "instruções e estilo"), ("imagem derivada revisável sem aprovação automática",)),
+    "character_variations": (("gerar_primeira_referencia", "gerar_variacao", "aprovar_variacao"), ("variações controladas", "expressão", "versionamento"), ("personagem e DNA fixo", "referência-base e variáveis autorizadas"), ("variações versionadas e aprovação explícita",)),
+    "illustrator": (("prompt_cena", "ilustrador_node", "gerar_cena_unica"), ("character consistency", "direção emocional", "luz e cor"), ("cena e mapa emocional", "Character Master e Style DNA", "referências autorizadas"), ("imagem e prompt rastreáveis, histórico e aprovação separados",)),
+    "coloring_idea_generator": (("gerador_ideias_colorir_node",), ("conceito de coloring book", "variedade de páginas", "faixa etária"), ("quantidade", "temas_usados"), ("conceitos distintos de coloring book",)),
+    "line_art_specialist": (("prompt_pagina_colorir", "gerar_pagina_colorir", "gerar_variacao_line_art"), ("line art", "espessura de traço", "áreas fechadas"), ("descrição da página", "idade e complexidade", "DNA e referência quando vinculados"), ("line art revisável com traços, margens e identidade verificáveis",)),
+    "coloring_activity_creator": (("atividades_colorir_node",), ("seleção de cenas", "simplificação", "continuidade de personagem"), ("cenas da história", "DNA e referências autorizadas"), ("páginas de colorir derivadas sem substituir os Masters",)),
+    "coloring_layout": (("montar_layout_colorir", "diagramador_colorir_node"), ("paginação", "verso em branco", "margens"), ("páginas de colorir e opções editoriais",), ("sequência física com alternância e versos em branco",)),
+    "sales_synopsis": (("sinopse_node",), ("copy editorial", "adequação ao público", "emotional hook"), ("história completa", "público e aprendizado"), ("sinopse curta e longa fiéis à obra",)),
+    "market_keywords": (("pesquisa_palavras_chave_node",), ("search intent", "metadata compliance", "market evidence literacy"), ("título e sinopse", "mercado e evidência externa quando disponível"), ("keywords e proveniência sem métricas inventadas",)),
+    "market_categories": (("pesquisa_categorias_node",), ("category fit", "metadata taxonomy", "compliance"), ("livro e mercado-alvo", "evidência de categorias quando disponível"), ("categorias candidatas relevantes e proveniência",)),
+    "marketing_launch": (("marketing_lancamento_node",), ("launch messaging", "review request compliance", "campaign consistency"), ("livro, público e sinopse",), ("materiais candidatos sem envio nem promessa de vendas",)),
+    "cover_specialist": (("prompt_arte_capa_frontal", "gerar_artes_capa", "montar_capa_fisica"), ("character identity", "print wrap", "thumbnail readability"), ("história e Masters", "formato, páginas e especificação da plataforma"), ("arte sem texto e composição técnica separada revisáveis",)),
+    "diagrammer": (("montar_layout", "diagramador_node"), ("page sequencing", "safe areas", "print structure"), ("conteúdo e imagens aprovados", "perfil etário e formato"), ("layout página a página, contagem e preflight",)),
+    "dedication": (("dedicatoria_node",), ("personalização", "privacidade", "não-invenção"), ("pessoas e relações fornecidas", "tom da obra"), ("dedicatória sem inventar biografia",)),
+    "translator_localizer": (("tradutor_node", "localizar_livro"), ("translation", "localization", "Bible Guard"), ("Master aprovado", "locale e glossário", "registro bíblico do idioma"), ("tradução derivada com fonte preservada e revisão separada",)),
+    "audiobook_director": (("audiobook_node",), ("read-aloud direction", "pause design", "TTS portability"), ("texto aprovado", "idioma, público e emoções"), ("roteiro de performance semanticamente idêntico",)),
+    "narrator": (("narracao_node",), ("TTS rendering", "version preservation", "audio file integrity"), ("roteiro aprovado e segmentos numerados", "executor TTS configurado"), ("arquivos de áudio rastreáveis preservando versões",)),
+    "pedagogical_editor": (("gerar_complementos_editoriais", "validar_complementos", "aplicar_complementos"), ("leitura integral do manuscrito", "perguntas abertas por idade", "Bible Guard"), ("história e mapa emocional", "idade, moral e referência aprovadas"), ("complementos validados antes de substituir o conteúdo salvo",)),
+    "scene_director": (("suggest_scene_concepts", "validate_scene_concepts", "compose_scene_prompt"), ("Character DNA", "World Masters", "cor e iluminação"), ("trecho e história completa", "Masters, DNA e mapa emocional", "idade e enquadramento"), ("três propostas A/B/C distintas sem gerar imagens",)),
+    "saas_automation_engineer": (("handle_saas_request", "run_diagnostic", "automation_safety_gate"), ("full-stack application development", "integration testing", "human approval gates"), ("pedido e fontes locais selecionadas", "evidência de execução quando fornecida"), ("plano e diagnóstico, nunca patch ou deploy executado por IA",)),
+    "deep_code_review_engineer": (("review_sources", "build_deep_review_plan", "correction_gate"), ("line-by-line review",), ("pedido e fontes selecionadas", "evidência rastreável dos achados"), ("revisão com citações verificadas sem executar o código proposto",)),
+    "ai_governance": (("run_diagnostic", "check_generation_action"), ("inventário de modelos", "guardas de custos", "aprovação humana"), ("fontes, metadados e contexto da ação",), ("achados sanitizados e decisão pré-ação, UNKNOWN sem evidência",)),
+    "data_governance": (("run_diagnostic", "check_data_action"), ("classificação de dados", "consentimento", "linhagem"), ("metadados e contexto de privacidade",), ("achados sobre consentimento, retenção e escopo sem expor manuscrito",)),
+    "it_governance": (("run_diagnostic", "check_it_action"), ("gestão de mudanças", "CI e regressão", "release e rollback"), ("fontes e evidências operacionais fornecidas",), ("achados técnicos e limites de prontidão sem deploy automático",)),
+    "cybersecurity": (("run_diagnostic", "check_security_action"), ("proteção de segredos", "autenticação e autorização", "auditoria sanitizada"), ("fontes selecionadas e contexto de autorização",), ("achados sanitizados; sem ataque, alteração ou certificação fictícia",)),
+}
+
+# Services retain their actual deterministic/tool implementation; a handoff is
+# validated as an executable function, never as a path string alone.
+HANDOFF_SERVICE_CONTRACTS = {
+    "asset_library": ("get_asset", "register_usage"),
+    "audio_qa": ("qa_audio_clip", "audio_readiness"),
+    "bestseller_readiness": ("evaluate_bestseller_readiness",),
+    "biblical_reference_validator": ("create_reference_candidate", "reference_gate"),
+    "character_consistency": ("auditar_caracteristicas",),
+    "character_universe": ("carregar_personagem_oficial", "personagem_para_prompt"),
+    "coloring_doctor": ("analisar_line_art_avancada", "auditar_lote_colorir"),
+    "cover_master": ("carregar_cover_master", "preflight_cover_master"),
+    "emotional_color_director": ("construir_mapa_emocional", "prompt_direcao_visual"),
+    "launch_strategy": ("marketing_lancamento_node",),
+    "linguistic_reviewer": ("revisar_localizacao_estrutural", "revisar_localizacao_com_llm"),
+    "market_bestseller_intelligence": ("validate_market_evidence", "build_market_brief"),
+    "print_preflight": ("preflight_livro", "analisar_pdf_miolo"),
+    "publishing_distribution": ("create_distribution_plan", "build_channel_package"),
+    "publishing_engine": ("get_platform", "verification_state"),
+    "quality_guardian": ("run_quality_guardian", "register_author_final_approval"),
+}
+
+# Preserve the required graph independently of the mutable exported document.
+_REQUIRED_ROLE_HANDOFFS = {role: tuple(profile["required_handoffs"]) for role, profile in AGENT_PROFILES.items()}
+for _rid, (_entrypoints, _skills, _inputs, _outputs) in ROLE_EXECUTION_REQUIREMENTS.items():
+    AGENT_PROFILES[_rid]["runtime_contract"] = {
+        "entrypoints": list(_entrypoints), "essential_skills": list(_skills),
+        "inputs": list(_inputs), "outputs": list(_outputs),
+        "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+        "quality_boundary": "configuration verified; output quality and live integrations require independent evidence",
+    }
+    if not AGENT_PROFILES[_rid]["evidence_requirements"]:
+        AGENT_PROFILES[_rid]["evidence_requirements"] = [
+            "entradas aprovadas ou fornecidas, identificáveis no projeto",
+            "saída revisável: " + "; ".join(_outputs),
+        ]
+
 
 def profile_module_path(profile: dict, root: Path | None = None) -> Path:
     return (root or Path(__file__).resolve().parent) / profile.get("module_directory", "agents") / profile["module"]
+
+
+class SkillReadinessError(ValueError):
+    """A role is not configured for its declared job; no provider should run."""
+
+
+@lru_cache(maxsize=512)
+def _function_names(path: str, modified_ns: int, size: int) -> frozenset[str]:
+    # Stat identity invalidates this cache when local code changes. Parse only:
+    # importing a handoff here could perform I/O or create a circular import.
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    def implemented(node):
+        body = [item for item in node.body if not isinstance(item, ast.Pass)
+                and not (isinstance(item, ast.Expr) and isinstance(item.value, ast.Constant))]
+        return bool(body) and not (len(body) == 1 and isinstance(body[0], ast.Raise)
+                                  and "NotImplementedError" in ast.unparse(body[0]))
+    return frozenset(node.name for node in tree.body
+                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and implemented(node))
+
+
+def _consumed_contract_roles(tree: ast.AST) -> set[str]:
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    roles = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "skill_contract" and node.args
+                and isinstance(node.args[0], ast.Constant)):
+            continue
+        # A detached call has no effect on a prompt. Constants and comments at
+        # module scope are not evidence of an active agent either.
+        if isinstance(parents.get(node), ast.Expr):
+            continue
+        ancestor = parents.get(node)
+        while ancestor is not None and not isinstance(ancestor, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            ancestor = parents.get(ancestor)
+        if ancestor is not None:
+            roles.add(node.args[0].value)
+    return roles
+
+
+def _entrypoint_errors(path: Path, entrypoints, label: str) -> list[str]:
+    if not path.is_file():
+        return [f"{label}: executor ausente {path.name}"]
+    try:
+        stat = path.stat()
+        names = _function_names(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+    except (OSError, SyntaxError, UnicodeError):
+        return [f"{label}: executor ilegível ou com sintaxe inválida {path.name}"]
+    return [f"{label}: entrypoint ausente {name} em {path.name}" for name in entrypoints if name not in names]
+
+
+def _role_configuration_errors(role_id: str, root: Path) -> list[str]:
+    profile = AGENT_PROFILES.get(role_id)
+    spec = ROLE_EXECUTION_REQUIREMENTS.get(role_id)
+    if not profile or not spec:
+        return [f"{role_id}: contrato operacional ausente"]
+    entrypoints, essential_skills, inputs, outputs = spec
+    errors = []
+    if profile.get("role_id") != role_id:
+        errors.append(f"{role_id}: role_id divergente")
+    declared = profile.get("skills") or []
+    for skill in essential_skills:
+        if skill not in declared:
+            errors.append(f"{role_id}: skill essencial ausente: {skill}")
+    contract = profile.get("runtime_contract") or {}
+    for field, expected in (("entrypoints", entrypoints), ("essential_skills", essential_skills), ("inputs", inputs), ("outputs", outputs)):
+        if contract.get(field) != list(expected):
+            errors.append(f"{role_id}: contrato operacional divergente: {field}")
+    for target in _REQUIRED_ROLE_HANDOFFS.get(role_id, ()):
+        if target not in (profile.get("required_handoffs") or []):
+            errors.append(f"{role_id}: handoff obrigatório removido: {target}")
+    try:
+        errors.extend(_entrypoint_errors(profile_module_path(profile, root), entrypoints, role_id))
+    except (KeyError, TypeError):
+        errors.append(f"{role_id}: módulo de execução inválido")
+    return errors
+
+
+def role_readiness(role_id: str, *, root: Path | None = None) -> dict:
+    """Verify local capability configuration without executing external work.
+
+    This checks the role and its direct handoff executors. It does not infer
+    that an LLM output, credentials, customer isolation or production is ready.
+    """
+    folder = Path(root or Path(__file__).resolve().parent)
+    errors = _role_configuration_errors(role_id, folder)
+    for target in (AGENT_PROFILES.get(role_id, {}).get("required_handoffs") or []):
+        if target in AGENT_PROFILES:
+            errors.extend(_role_configuration_errors(target, folder))
+        elif target in HANDOFF_SERVICES:
+            entrypoints = HANDOFF_SERVICE_CONTRACTS.get(target)
+            if not entrypoints:
+                errors.append(f"{role_id}: handoff sem contrato executável: {target}")
+            else:
+                errors.extend(_entrypoint_errors(folder / HANDOFF_SERVICES[target], entrypoints, target))
+        else:
+            errors.append(f"{role_id}: handoff desconhecido: {target}")
+    return {"role_id": role_id, "ok": not errors,
+            "status": "configured_for_execution" if not errors else "blocked_configuration",
+            "quality_validated": False, "production_validated": False,
+            "errors": list(dict.fromkeys(errors))}
+
+
+def require_role_ready(role_id: str, *, root: Path | None = None) -> dict:
+    """Fail before provider/tool execution if the job contract is incomplete."""
+    report = role_readiness(role_id, root=root)
+    if not report["ok"]:
+        raise SkillReadinessError("Agente indisponível: " + "; ".join(report["errors"]))
+    return report
+
+
+def agent_capability_inventory(root: Path | None = None, *, runtime_evidence: dict | None = None) -> dict:
+    """Evidence-aware inventory for the Agent Skills UI and engineering report.
+
+    A function found in source is not a callable tested in a live process. The
+    caller can attach scoped test evidence, which remains separate from static
+    configuration, provider checks and qualitative acceptance.
+    """
+    folder = Path(root or Path(__file__).resolve().parent)
+    supplied = runtime_evidence or {}
+    rows = []
+    for role_id in sorted(AGENT_PROFILES):
+        profile = get_agent_profile(role_id)
+        path = profile_module_path(profile, folder)
+        source = path.read_text(encoding="utf-8") if path.is_file() else ""
+        try:
+            tree = ast.parse(source)
+            functions = {node.name: node.lineno for node in tree.body
+                         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            injected = role_id in _consumed_contract_roles(tree)
+            gates = [node.lineno for node in ast.walk(tree)
+                     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                     and node.func.id == "require_role_ready" and node.args
+                     and isinstance(node.args[0], ast.Constant) and node.args[0].value == role_id]
+        except SyntaxError:
+            functions, injected, gates = {}, False, []
+        entrypoints = profile["runtime_contract"]["entrypoints"]
+        rows.append({
+            "role_id": role_id, "name": profile["name"], "kind": "registered_role",
+            "execution": profile["execution"], "module": str(path.relative_to(folder)),
+            "skills_declared": profile["skills"],
+            "essential_skills": profile["runtime_contract"]["essential_skills"],
+            "inputs": profile["runtime_contract"]["inputs"], "outputs": profile["runtime_contract"]["outputs"],
+            "quality_criteria": profile["quality_criteria"], "required_handoffs": profile["required_handoffs"],
+            "configuration": role_readiness(role_id, root=folder),
+            "contract_injected_in_source": injected,
+            "deterministic_gate_source_lines": gates,
+            "entrypoint_static_presence": {name: name in functions for name in entrypoints},
+            "source_evidence": [f"{path.relative_to(folder)}:{functions[name]}" for name in entrypoints if name in functions],
+            "provided_runtime_evidence": deepcopy(supplied.get(role_id, [])),
+            "imported_callable_verified_by_inventory": False,
+            "output_quality_verified_by_inventory": False,
+            "external_limits": (["provedor e resultado em produção não testados por este inventário"]
+                                if profile["execution"] in {"llm", "hybrid", "tool"}
+                                else ["análise local não comprova produção, certificação ou execução de correções"]),
+        })
+    return {
+        "schema": "faithbloom.agent-capability-inventory.v1", "roles": rows,
+        "role_count": len(rows),
+        "inherited_modules": deepcopy(INHERITED_MODULE_PROFILES),
+        "services": [{"service_id": key, "kind": "service_not_llm_role", "module": value,
+                      "entrypoints": list(HANDOFF_SERVICE_CONTRACTS.get(key, ())),
+                      "static_errors": _entrypoint_errors(folder / value, HANDOFF_SERVICE_CONTRACTS.get(key, ()), key),
+                      "provided_runtime_evidence": deepcopy(supplied.get(key, [])),
+                      "execution_verified_by_inventory": False}
+                     for key, value in sorted(HANDOFF_SERVICES.items())],
+        "caveats": ["skills declaradas não medem excelência profissional", "AST verifica configuração, não execução",
+                    "handoffs são contratos de destinos; o registro não executa um pipeline automaticamente",
+                    "validar cada saída, aprovações e integrações externas no contexto de uso"],
+    }
 
 
 MODULE_TO_ROLES = {}
@@ -413,16 +659,22 @@ def shared_literary_contract(*, compact: bool = False) -> str:
 
 
 def skill_contract(role_id: str, *, compact: bool = False) -> str:
+    require_role_ready(role_id)
     p = get_agent_profile(role_id)
+    operational = p["runtime_contract"]
+    io_contract = (f"Entradas necessárias: {'; '.join(operational['inputs'])}.\n"
+                   f"Saídas esperadas: {'; '.join(operational['outputs'])}.\n")
     shared = ("REGRAS TÉCNICAS: " + "; ".join(p.get("operating_rules", []))
               if p.get("scope") == "technical" else shared_literary_contract(compact=compact))
     if compact:
         return (
             f"\n[FAITHBLOOM SKILL CONTRACT: {p['name']}]\n"
             f"Missão: {p['mission']}\n"
+            f"{io_contract}"
             f"Skills obrigatórias: {', '.join(p['skills'])}.\n"
             f"Critérios: {'; '.join(p['quality_criteria'])}.\n"
             f"Evidências necessárias: {'; '.join(p['evidence_requirements']) or 'resultado revisável'}.\n"
+            f"Handoffs esperados: {', '.join(p['required_handoffs']) or 'nenhum'}.\n"
             f"Heart Arc mode: {p['heart_arc_mode']}.\n"
             f"Limites: {'; '.join(p['forbidden'])}.\n"
             f"{shared}\n"
@@ -430,6 +682,7 @@ def skill_contract(role_id: str, *, compact: bool = False) -> str:
     return (
         f"\n\n=== FAITHBLOOM SKILL CONTRACT · {p['name']} ===\n"
         f"MISSÃO: {p['mission']}\n"
+        f"{io_contract}"
         f"SKILLS OBRIGATÓRIAS: {', '.join(p['skills'])}.\n"
         f"QUALITY CRITERIA: {'; '.join(p['quality_criteria'])}.\n"
         f"HEART ARC MODE: {p['heart_arc_mode']}.\n"
@@ -450,8 +703,10 @@ def validate_registry(root: Path | None = None, *, check_export: bool = True) ->
         "required_handoffs", "forbidden", "evidence_requirements", "execution",
         "shared_editorial_dna", "heart_arc", "heart_arc_principles",
         "heart_arc_mode", "bestseller_readiness_principles",
+        "runtime_contract",
     }
     for rid, p in AGENT_PROFILES.items():
+        errors.extend(role_readiness(rid, root=root)["errors"])
         missing = sorted(required - set(p))
         if missing:
             errors.append(f"{rid}: campos ausentes {missing}")
@@ -499,9 +754,7 @@ def validate_registry(root: Path | None = None, *, check_export: bool = True) ->
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
-            contracts = {n.args[0].value for n in ast.walk(tree) if isinstance(n, ast.Call)
-                         and isinstance(n.func, ast.Name) and n.func.id == "skill_contract"
-                         and n.args and isinstance(n.args[0], ast.Constant)}
+            contracts = _consumed_contract_roles(tree)
             if rid not in contracts:
                 errors.append(f"{path.name}: contrato de {rid} não utilizado")
         except SyntaxError:
@@ -525,7 +778,7 @@ def validate_registry(root: Path | None = None, *, check_export: bool = True) ->
         "ok": not errors,
         "role_count": len(AGENT_PROFILES),
         "module_count": len(modules),
-        "errors": errors,
+        "errors": list(dict.fromkeys(errors)),
         "modules": modules,
     }
 
@@ -538,6 +791,9 @@ def technical_profile_document(role_id: str) -> dict:
         "role_id": role_id, "name": engineer.NAME, "mission": engineer.MISSION,
         "module": "agents/" + Path(engineer.__file__).name,
         "skill_domains": {key: list(values) for key, values in engineer.SKILL_DOMAINS.items()},
+        "runtime_contract": deepcopy(AGENT_PROFILES[role_id]["runtime_contract"]),
+        "quality_criteria": list(AGENT_PROFILES[role_id]["quality_criteria"]),
+        "evidence_requirements": list(AGENT_PROFILES[role_id]["evidence_requirements"]),
         "non_negotiables": list(engineer.NON_NEGOTIABLES),
         "runtime_entrypoints": ["run_diagnostic"] if is_governance else ["run_diagnostic", "handle_saas_request"] if engineer is _saas else ["review_sources", "build_deep_review_plan"],
         "activation": "Governança / Agent Skills; diagnóstico determinístico" if is_governance else "Jarvis / Agent Skills / Engenharia; contrato técnico aplicado pelo executor autorizado",
@@ -562,6 +818,7 @@ def registry_document() -> dict:
         "profiles": all_agent_profiles(),
         "inherited_modules": INHERITED_MODULE_PROFILES,
         "handoff_services": HANDOFF_SERVICES,
+        "handoff_service_contracts": {key: list(value) for key, value in HANDOFF_SERVICE_CONTRACTS.items()},
     }
 
 

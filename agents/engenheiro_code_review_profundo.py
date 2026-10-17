@@ -286,6 +286,8 @@ def review_sources(request: str, sources: dict[str, str], chamar_llm) -> dict[st
     Findings are hypotheses even when their cited source line is verified. Test
     results and runtime validation must come from an independent executor.
     """
+    from agent_skills import require_role_ready
+    require_role_ready("deep_code_review_engineer")
     import json
     from agent_skills import skill_contract
     if not sources or not all(isinstance(v, str) and v.strip() for v in sources.values()):

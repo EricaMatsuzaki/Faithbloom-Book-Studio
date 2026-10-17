@@ -12,6 +12,7 @@ from estilo import aplicar_estilo, hero
 
 from openrouter_client import chamar_llm, gerar_imagem, gerar_audio
 from armazenamento import listar_livros, carregar_livro, salvar_livro
+from emotional_review_ui import render_emotional_gate, consume_emotional_consent
 
 from agents.roteirista import roteirista_node
 from agents.revisor import revisor_node
@@ -36,12 +37,15 @@ if not livros:
     st.info("Nenhum livro salvo ainda. Crie um primeiro em 'Criar do Zero' ou 'Retomar Livro'.")
     st.stop()
 
-opcoes = {f"{l['titulo']} ({l['colecao']})": l for l in livros}
-escolha = st.selectbox("Livro", list(opcoes.keys()))
+# Titles/collections may repeat. The durable reference selects the exact work.
+opcoes = {l['storage_path']: l for l in livros}
+escolha = st.selectbox("Livro", list(opcoes), format_func=lambda ref: (
+    f"{opcoes[ref]['titulo']} ({opcoes[ref]['colecao']}) · {ref.rsplit('/', 1)[-1]}"))
 livro_info = opcoes[escolha]
 
 if "state_etapa" not in st.session_state or st.session_state.get("livro_carregado") != escolha:
-    st.session_state.state_etapa = carregar_livro(livro_info["colecao"], livro_info["arquivo"])
+    st.session_state.state_etapa = carregar_livro(livro_info["colecao"], escolha)
+    st.session_state.state_etapa['storage_path'] = escolha if escolha.startswith('fb://') else 'fb://' + escolha
     st.session_state.livro_carregado = escolha
 
 s = st.session_state.state_etapa
@@ -64,13 +68,27 @@ ETAPAS = {
 }
 
 etapa_escolhida = st.selectbox("Qual agente rodar?", list(ETAPAS.keys()))
+is_illustration = etapa_escolhida == 'Ilustrador (personagens + cenas)'
+image_ready, image_consent, image_token = True, False, ''
+if is_illustration:
+    image_ready, image_consent, image_token = render_emotional_gate(
+        st, 'state_etapa', 'pages/4_🎯_Ir_Direto_para_Etapa.py', action='direct_book_illustration')
+    masters = list((s.get('personagens') or {}).values())
+    masters_ready = bool(masters) and all(p.get('aparencia_aprovada') is True and p.get('imagem_referencia') for p in masters)
+    if not masters_ready:
+        st.info('Aprove as referências dos personagens antes de gerar novas ilustrações.')
+    image_ready = image_ready and masters_ready
 
 with st.expander("Ver estado atual do livro (o que já foi gerado)"):
     st.json({k: v for k, v in s.items() if not isinstance(v, list) or len(v) < 5})
 
-if st.button(f"▶️ Rodar: {etapa_escolhida}"):
+if st.button(f"▶️ Rodar: {etapa_escolhida}", disabled=not image_ready):
     with st.spinner("Rodando..."):
-        novo_estado = ETAPAS[etapa_escolhida](dict(s))
+        if is_illustration:
+            consume_emotional_consent(st.session_state, image_token)
+            novo_estado = ilustrador_node(dict(s), gerar_imagem, consent_confirmed=image_consent)
+        else:
+            novo_estado = ETAPAS[etapa_escolhida](dict(s))
     st.session_state.state_etapa = novo_estado
     s = novo_estado
     st.success("Etapa concluída — resultado atualizado no estado do livro.")

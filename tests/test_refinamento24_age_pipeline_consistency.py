@@ -114,7 +114,7 @@ def test_audiobook_adapta_performance_sem_pedir_reescrita():
     def fake_llm(*, sistema, instrucao):
         capturado["sistema"] = sistema
         capturado["instrucao"] = instrucao
-        return {"roteiro": []}
+        return {"roteiro": [{"numero": 1, "texto_narrado": "[voz suave] Texto aprovado.", "nota_producao": "Leitura natural."}]}
 
     audiobook_node(
         {
@@ -188,7 +188,7 @@ def test_marketing_respeita_faixa_e_claims_seguros():
 
     def fake_llm(*, sistema, instrucao):
         capturado["sistema"] = sistema
-        return {"legenda_instagram": "Post"}
+        return {"legenda_instagram": "Post", "descricao_pinterest": "Uma jornada.", "email_lancamento": "Conheça o livro.", "pedido_avaliacao": "Compartilhe sua avaliação honesta."}
 
     out = marketing_lancamento_node(
         {

@@ -16,6 +16,7 @@ from email.utils import parseaddr
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 from threading import RLock
@@ -67,6 +68,19 @@ def _fingerprint(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
+def _whatsapp_pricing() -> dict:
+    """Server-configured estimate, never an invented free-message tariff."""
+    raw = os.environ.get("WHATSAPP_ESTIMATED_COST_USD", "").strip()
+    try:
+        cost = float(raw)
+        if not math.isfinite(cost) or cost < 0:
+            raise ValueError
+    except (TypeError, ValueError, OverflowError):
+        cost = None
+    return {"currency": "USD", "estimated_cost_usd": cost,
+            "configured": cost is not None, "source": "operator_configuration", "actual_billing_verified": False}
+
+
 def _google_credentials() -> dict[str, str]:
     # Reuse the existing Google OAuth deployment; Gmail scopes must be granted
     # when issuing the refresh token. Never infer Gmail permission from Calendar.
@@ -100,6 +114,7 @@ def connector_readiness() -> dict[str, dict[str, Any]]:
                   "required_scopes": ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"]},
         "whatsapp": {"configured": not missing_wa, "status": "configured_not_tested" if not missing_wa else "configuration_missing", "missing": missing_wa,
                      "write_enabled": _flag("JARVIS_WHATSAPP_WRITE_ENABLED"), "live_tested": False,
+                     "pricing": _whatsapp_pricing(),
                      "webhook_signature_configured": bool(whatsapp["app_secret"]), "webhook_verification_configured": bool(whatsapp["verify_token"]),
                      "webhook_receiver_status": "infrastructure_pending"},
         "routines": {"configured": True, "status": "on_demand", "scheduler_status": "infrastructure_pending", "timezone": DEFAULT_TIMEZONE},
@@ -160,10 +175,12 @@ class AutonomyPolicy:
         return callback()
 
 
-def _draft(channel: str, profile_id: str, payload: dict, account: str, now: datetime | None) -> dict:
+def _draft(channel: str, profile_id: str, payload: dict, account: str, now: datetime | None, *, pricing: dict | None = None) -> dict:
     stamp = _aware(now or _now(), "UTC")
     core = {"channel": channel, "profile_id": _profile_id(profile_id), "payload": deepcopy(payload), "account": account,
             "id": uuid.uuid4().hex, "created_at": stamp.isoformat(), "expires_at": (stamp + timedelta(minutes=10)).isoformat()}
+    if pricing is not None:
+        core["pricing"] = deepcopy(pricing)
     return {**core, "fingerprint": _fingerprint(core), "status": "draft"}
 
 
@@ -171,6 +188,8 @@ def _confirm_draft(draft: dict, channel: str, profile_id: str, account: str, con
     if draft.get("channel") != channel or draft.get("profile_id") != _profile_id(profile_id) or draft.get("account") != account:
         raise ConfirmationRequired("O rascunho não pertence ao perfil e à conexão atuais. Prepare-o novamente.")
     core = {key: draft.get(key) for key in ("channel", "profile_id", "payload", "account", "id", "created_at", "expires_at")}
+    if "pricing" in draft:
+        core["pricing"] = draft["pricing"]
     expected = _fingerprint(core)
     if not confirmation_fingerprint or not hmac.compare_digest(expected, str(draft.get("fingerprint") or "")) or not hmac.compare_digest(expected, confirmation_fingerprint):
         raise ConfirmationRequired("A confirmação não corresponde ao destinatário e conteúdo deste rascunho.")
@@ -182,16 +201,16 @@ def _confirm_draft(draft: dict, channel: str, profile_id: str, account: str, con
         raise ConfirmationRequired("Rascunho de envio inválido.") from exc
 
 
-def _send_once(draft: dict, receipts: MutableMapping, callback: Callable[[], dict]) -> dict:
+def _send_once(draft: dict, receipts: MutableMapping, callback: Callable[[], dict], *, authorize: Callable[[], dict] | None = None) -> dict:
     """Persist dispatch intent first; network uncertainty must never auto-retry."""
     # Streamlit can run concurrent session threads. Serialize the receipt claim
     # within this worker; a multi-worker deployment still needs an atomic remote
     # claim/transaction, which is explicitly reported as infrastructure pending.
     with _DISPATCH_LOCK:
-        return _send_once_locked(draft, receipts, callback)
+        return _send_once_locked(draft, receipts, callback, authorize=authorize)
 
 
-def _send_once_locked(draft: dict, receipts: MutableMapping, callback: Callable[[], dict]) -> dict:
+def _send_once_locked(draft: dict, receipts: MutableMapping, callback: Callable[[], dict], *, authorize: Callable[[], dict] | None = None) -> dict:
     key = draft["id"]
     old = receipts.get(key)
     if old:
@@ -200,16 +219,20 @@ def _send_once_locked(draft: dict, receipts: MutableMapping, callback: Callable[
         if old.get("status") == "sent":
             return deepcopy(old["result"])
         raise AssistantServiceError("Esse envio já foi iniciado. Confira o provedor antes de preparar outro, para evitar duplicidade.")
-    receipts[key] = {"fingerprint": draft["fingerprint"], "status": "dispatching", "created_at": _now().isoformat()}
+    # A blocked preflight did not dispatch anything: keep it retryable after
+    # correcting the configuration. A previous successful send needs no new
+    # authorization or network call.
+    evidence = authorize() if authorize is not None else {}
+    receipts[key] = {"fingerprint": draft["fingerprint"], "status": "dispatching", "created_at": _now().isoformat(), "governance": evidence}
     try:
         result = callback()
-        receipts[key] = {"fingerprint": draft["fingerprint"], "status": "sent", "result": deepcopy(result), "created_at": _now().isoformat()}
+        receipts[key] = {"fingerprint": draft["fingerprint"], "status": "sent", "result": deepcopy(result), "created_at": _now().isoformat(), "governance": evidence}
         return result
     except Exception:
         # Includes a failed receipt write after success: retaining dispatching
         # prevents blind retry if the external provider already accepted it.
         try:
-            receipts[key] = {"fingerprint": draft["fingerprint"], "status": "unknown", "created_at": _now().isoformat()}
+            receipts[key] = {"fingerprint": draft["fingerprint"], "status": "unknown", "created_at": _now().isoformat(), "governance": evidence}
         except Exception:
             pass
         raise
@@ -324,7 +347,14 @@ class GmailClient:
                 raise AssistantServiceError("O Gmail não confirmou o identificador do envio. Confira a pasta Enviados.")
             return {"id": str(result["id"]), "thread_id": str(result.get("threadId") or ""), "status": "sent"}
 
-        return _send_once(draft, receipts, send)
+        def authorize():
+            from governance_runtime import authorize_external_action
+            return authorize_external_action("gmail.send", confirmed=True, paid=False,
+                provider_configured=connector_readiness()["gmail"]["configured"],
+                operation_id=draft["id"], source_module="assistant_services.py", state=draft,
+                uses_personal_data=True, consent_confirmed=True)
+
+        return _send_once(draft, receipts, send, authorize=authorize)
 
 
 class WhatsAppBusinessClient:
@@ -367,7 +397,7 @@ class WhatsAppBusinessClient:
             if not body or len(body) > 4096:
                 raise ValueError("Informe uma mensagem WhatsApp de até 4096 caracteres.")
             payload.update({"type": "text", "text": {"preview_url": False, "body": body}})
-        return _draft("whatsapp", profile_id, payload, self._account(), now)
+        return _draft("whatsapp", profile_id, payload, self._account(), now, pricing=_whatsapp_pricing())
 
     def send_confirmed(self, draft: dict, *, profile_id: str, confirmation_fingerprint: str, receipts: MutableMapping, recipient_opt_in: bool = False, customer_window_open: bool = False, now: datetime | None = None) -> dict:
         _confirm_draft(draft, "whatsapp", profile_id, self._account(), confirmation_fingerprint, now)
@@ -377,6 +407,12 @@ class WhatsAppBusinessClient:
             raise ConfirmationRequired("Confirme que o destinatário autorizou receber mensagens desta conta.")
         if draft["payload"]["type"] == "text" and not customer_window_open:
             raise ConfirmationRequired("Uma mensagem livre exige conversa iniciada pelo cliente nas últimas 24 horas; fora dessa janela use um modelo aprovado pela Meta.")
+
+        pricing = _whatsapp_pricing()
+        if not pricing["configured"]:
+            raise AssistantServiceError("Configure WHATSAPP_ESTIMATED_COST_USD com a estimativa por mensagem antes de enviar. A tarifa não é presumida como gratuita.")
+        if draft.get("pricing") != pricing:
+            raise ConfirmationRequired("A estimativa de envio mudou. Prepare e revise um novo rascunho com o custo atual.")
 
         def send() -> dict:
             url = self._url("/messages")
@@ -389,7 +425,15 @@ class WhatsAppBusinessClient:
                 raise AssistantServiceError("O WhatsApp não confirmou o identificador do envio.")
             return {"id": str(rows[0]["id"]), "status": "accepted", "delivery_confirmed": False}
 
-        return _send_once(draft, receipts, send)
+        def authorize():
+            from governance_runtime import authorize_external_action
+            cost = pricing["estimated_cost_usd"]
+            return authorize_external_action("whatsapp.send", confirmed=True, paid=cost > 0,
+                projected_cost=cost, provider_configured=connector_readiness()["whatsapp"]["configured"],
+                operation_id=draft["id"], source_module="assistant_services.py", state=draft,
+                uses_personal_data=True, consent_confirmed=True)
+
+        return _send_once(draft, receipts, send, authorize=authorize)
 
 
 def verify_whatsapp_webhook(query: dict, *, verify_token: str | None = None) -> str:

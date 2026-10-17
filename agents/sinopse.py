@@ -69,10 +69,13 @@ def sinopse_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += skill_contract("sales_synopsis")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as duas versões em JSON.")
-    if not isinstance(resposta, dict):
-        resposta = {}
-    state["sinopse_vendas_curta"] = resposta.get("sinopse_vendas_curta", "")
-    state["sinopse_contracapa"] = resposta.get("sinopse_contracapa", "")
+    if not isinstance(resposta, dict) or any(
+        not isinstance(resposta.get(chave), str) or not resposta[chave].strip()
+        for chave in ("sinopse_vendas_curta", "sinopse_contracapa")
+    ):
+        raise ValueError("A sinopse veio vazia ou incompleta. As versões anteriores foram preservadas.")
+    state["sinopse_vendas_curta"] = resposta["sinopse_vendas_curta"].strip()
+    state["sinopse_contracapa"] = resposta["sinopse_contracapa"].strip()
     return state
 
 

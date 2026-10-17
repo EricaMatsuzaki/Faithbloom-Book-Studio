@@ -30,10 +30,14 @@ def all_skills() -> list[str]:
 
 def check_generation_action(action: str = "generate_book", **kwargs: Any) -> dict:
     """Pré-ação reutilizável; nenhuma chamada de IA é realizada aqui."""
+    from agent_skills import require_role_ready
+    require_role_ready("ai_governance")
     return preflight_action(action, **kwargs)
 
 
 def run_diagnostic(root: str | Path | None = None, *, state: dict | None = None, context: dict | None = None) -> dict:
+    from agent_skills import require_role_ready
+    require_role_ready("ai_governance")
     root = Path(root or Path(__file__).resolve().parents[1])
     context = dict(context or {})
     findings = []

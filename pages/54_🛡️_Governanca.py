@@ -42,6 +42,7 @@ if st.checkbox("Incluir os metadados de um livro salvo", value=False):
         st.error("Não foi possível abrir a biblioteca. Confira o armazenamento e tente novamente.")
 
 st.info("PASS = o controle descrito foi observado. WARN = requer revisão. FAIL = falha observada. UNKNOWN = faltam evidências. Um PASS de código não confirma funcionamento em produção.")
+st.caption("Nas ações conectadas, os quatro agentes conferem a ação atual antes da geração ou do envio. O histórico registra a decisão, a versão do código e a identidade da entrada por hash; não guarda a história, os destinatários ou as credenciais.")
 if st.button("Verificar agora", type="primary", use_container_width=True):
     with st.spinner("Conferindo fontes e metadados…"):
         if selection == "all":
@@ -61,6 +62,15 @@ for report in reports:
     for column, status in zip(columns, ("PASS", "WARN", "FAIL", "UNKNOWN")):
         column.metric(status, counts[status])
     st.caption(report["scope"])
+    metadata = report.get("metadata", {})
+    decision = metadata.get("execution_decision") if isinstance(metadata, dict) else None
+    if isinstance(decision, dict):
+        if decision.get("mode") == "pilot":
+            st.warning("Execução autorizada no piloto privado." if decision.get("allowed") else "Ação bloqueada no piloto privado.")
+            st.caption("Os controles comerciais e a identidade de cliente permanecem sem comprovação no piloto. Esta decisão vale somente para a ação registrada.")
+        else:
+            st.info("Ação autorizada pelos controles registrados." if decision.get("allowed") else "Ação bloqueada pelos controles registrados.")
+        st.caption("Acesso real ao provedor não verificado por este pré-voo. O resultado precisa de validação após a execução.")
     for item in report["findings"]:
         with st.expander(f"{item['status']} · {item['title']}"):
             if item["evidence"]:

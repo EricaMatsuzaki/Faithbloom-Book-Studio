@@ -23,6 +23,7 @@ from audiobook_studio import (
     with_approved_audio_translation,
 )
 from fila_producao import listar_jobs, processar_proximo, processar_lote, pausar_job, continuar_job, cancelar_job, resumo_job
+from governance_callbacks import governed_text_callback, render_personal_consent, source_with_linked_book, text_route_configuration
 
 st.set_page_config(page_title="Audiobook Studio · FaithBloom", page_icon="🎧", layout="wide")
 aplicar_estilo()
@@ -173,6 +174,14 @@ else:
     else:
         seg_json=json.dumps([{"speaker":"narrator","text":scene.get("source_text",""),"emotion":emotion,"pace_wpm":pace,"pause_after_ms":0}],ensure_ascii=False)
 
+    try:
+        voice_source=source_with_linked_book(project)
+        voice_consent=render_personal_consent(st,voice_source,action="audiobook.direct_voice")
+        voice_source_ready=True
+    except PermissionError:
+        voice_source={}; voice_consent=False; voice_source_ready=False
+        st.warning("Confira a fonte salva antes de enviar esta cena ao AI Voice Director.")
+    text_provider_ready=text_route_configuration()["configured"]
     b1,b2,b3=st.columns(3)
     if b1.button("💾 Salvar direção / nova versão"):
         try:
@@ -181,10 +190,12 @@ else:
             new=revise_script_scene(scene,change_request="Direção de voz editada pela pessoa responsável",patch=patch,preserve_text=True)
             project["script_scenes"][idx]=new; project=save_audiobook_project(project); st.success(f"Versão {new['version_label']} salva."); st.rerun()
         except Exception as exc: st.error(str(exc))
-    if b2.button("✨ Sugerir direção com AI Voice Director",disabled=not provider_ready):
+    if b2.button("✨ Sugerir direção com AI Voice Director",disabled=not (text_provider_ready and voice_source_ready)):
         try:
-            from openrouter_client import chamar_llm
-            system,user=voice_director_prompt(scene,project); result=chamar_llm(system,user); directed=normalize_voice_director_result(scene,result)
+            callback=governed_text_callback("audiobook.direct_voice",voice_source,
+                confirmed=True,consent_confirmed=voice_consent)
+            system,user=voice_director_prompt(scene,project); result=callback(system,user); directed=normalize_voice_director_result(scene,result)
+            directed["governance_receipts"]=callback.governance_receipts
             project["script_scenes"][idx]=directed; project=save_audiobook_project(project)
             if directed.get("voice_director_alert"): st.warning(directed["voice_director_alert"])
             else: st.success("Direção sugerida. Revise antes de aprovar.")
@@ -194,7 +205,7 @@ else:
         try:
             project["script_scenes"][idx]=approve_script_scene(scene); project=save_audiobook_project(project); st.success("Roteiro de performance aprovado."); st.rerun()
         except Exception as exc: st.error(str(exc))
-    if not provider_ready:
+    if not text_provider_ready:
         st.caption("Configure Gemini ou OpenRouter para usar o AI Voice Director. A edição manual continua funcionando.")
 
 # ---------------- Generate queue

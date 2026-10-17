@@ -30,7 +30,10 @@ def test_gerador_de_ideias_recebe_faixa_etaria():
 
     def fake_llm(*, sistema, instrucao):
         chamadas.append((sistema, instrucao))
-        return []
+        return [{"titulo_sugerido": f"Uma escolha corajosa {i}",
+                 "situacao": "Amigos aprendem a resolver um desacordo.",
+                 "emocao_central": "coragem", "pista_licao": "Ouvir com respeito."}
+                for i in range(4)]
 
     gerador_ideias_node(
         4,

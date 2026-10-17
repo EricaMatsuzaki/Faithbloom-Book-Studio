@@ -24,6 +24,7 @@ import character_guide as guide
 import orchestrator_visual as ov
 import openrouter_client as client
 import storage_backend as storage
+from emotional_visual_binding import require_emotional_binding, scene_direction, direction_prompt, source_scene_text, IDENTITY_RULE
 from armazenamento import salvar_na_galeria
 from asset_library import create_version, get_asset, get_asset_by_uri, update_asset
 from character_universe import carregar_personagem_oficial
@@ -251,7 +252,8 @@ def _scene_context(plan: dict) -> tuple[list[dict], list[dict], dict, str]:
         raise PermissionError("O estilo aprovado precisa conter uma descrição ou Style DNA oficial.")
     context = {"titulo": plan.get("title"), "colecao": plan.get("collection", ""),
                "style_dna": style, "world_masters": [{k: w.get(k) for k in ("id", "name", "description", "reference_assets", "selected_asset_id")} for w in worlds],
-               "faixa_etaria": plan.get("faixa_etaria", "4-8"), "cenas_texto": plan.get("story_text", "")}
+               "faixa_etaria": plan.get("faixa_etaria", "4-8"), "cenas_texto": plan.get("story_text", ""),
+               "mapa_emocional": require_emotional_binding(plan)["scenes"]}
     style_id = style.get("style_dna_id")
     if style_id:
         from style_dna import carregar_style
@@ -260,7 +262,7 @@ def _scene_context(plan: dict) -> tuple[list[dict], list[dict], dict, str]:
             raise PermissionError("O Style DNA aprovado não está disponível como estilo oficial.")
         context["style_dna_id"] = style_id
         context["style_dna"] = canonical
-    signature = _fingerprint({"story": plan.get("story_text"), "style": context["style_dna"],
+    signature = _fingerprint({"story": plan.get("story_text"), "emotional_map": context["mapa_emocional"], "style": context["style_dna"],
                               "characters": [{"id": c.get("id"), "dna": c.get("dna"), "reference_digest": _asset_digest(c["color_master"])} for c in characters],
                               "worlds": [{"id": w["id"], "description": w.get("description"), "refs": [_asset_digest(p) for p in w["resolved_references"]]} for w in worlds]})
     return characters, worlds, context, signature
@@ -280,7 +282,7 @@ def list_visual_operations(plan_id: str) -> list[dict]:
 
 
 def _run(plan_id: str, kind: str, payload: dict, count: int, modality: str, confirmed: bool,
-         operation_key: str | None, produce, persist) -> dict:
+         operation_key: str | None, produce, persist, *, consent_confirmed: bool = False) -> dict:
     with _LOCK:
         plan = _plan(plan_id)
         ledger = _ledger(plan)
@@ -316,10 +318,15 @@ def _run(plan_id: str, kind: str, payload: dict, count: int, modality: str, conf
                 float(limit) - totals["estimated_spent_usd"] - totals["reserved_usd"]
                 + sum(x["estimated_usd"] for x in pending_items if x.get("reserved"))
             )
+            from emotional_visual_binding import source_for_plan
+            canonical_source = source_for_plan(plan)
+            source_markers = (canonical_source.get("comic_product") or {}).get("source_data") or {}
+            uses_personal = bool(canonical_source.get("real_experience") or canonical_source.get("real_life_brief") or canonical_source.get("uses_personal_data") or source_markers.get("uses_personal_data"))
             governance_receipt = authorize_generation(
                 "visual." + kind, confirmed=confirmed, projected_cost=pending_cost,
                 provider_configured=bool(estimate.get("provider")), operation_id=operation_id,
                 source_module="visual_execution.py", state=plan, budget_remaining=available,
+                uses_personal_data=uses_personal, consent_confirmed=consent_confirmed,
             )
         if operation is None:
             if estimate["over_budget"]:
@@ -415,21 +422,23 @@ def _persist_candidate(raw: str, *, name: str, kind: str, metadata: dict, operat
             "label": "ABC"[index % 3], "visual_status": item.get("visual_status", "VARIATION_CANDIDATE"), "approved": bool(item.get("approved"))}
 
 
-def generate_world_candidates(plan_id: str, world_master_id: str, *, confirmed: bool = False, operation_key: str | None = None) -> dict:
+def generate_world_candidates(plan_id: str, world_master_id: str, *, confirmed: bool = False, operation_key: str | None = None, consent_confirmed: bool = False) -> dict:
     plan, world = _plan(plan_id), ov.load_world_master(world_master_id)
     if not world or not str(world.get("description") or "").strip():
         raise ValueError("Cadastre a descrição do cenário antes de gerar A/B/C.")
     if not plan.get("approvals", {}).get("story") or not plan.get("approvals", {}).get("style"):
         raise PermissionError("Aprove o conteúdo-base e o estilo antes de gerar cenários.")
+    emotional = require_emotional_binding(plan)
+    emotional_context = "\n".join(direction_prompt(item) for item in emotional["scenes"])
     refs = [_asset_path(str(x)) for x in (world.get("reference_assets") or [])]
     style = plan.get("style_master") or {}
     if not style:
         raise PermissionError("Estilo aprovado não encontrado.")
-    payload = {"world": world_master_id, "description": world["description"], "style": style, "references": [_asset_digest(x) for x in refs]}
+    payload = {"world": world_master_id, "description": world["description"], "style": style, "emotional_map": emotional["scenes"], "references": [_asset_digest(x) for x in refs]}
 
     def produce(index, route):
         direction = ["composição ampla com ponto de vista acolhedor", "novo ângulo, mantendo a mesma arquitetura e identidade", "detalhes ambientais claros e profundidade editorial"][index]
-        prompt = f"WORLD / LOCATION CANDIDATE {'ABC'[index]}. {world.get('name', '')}. {world['description']}\nSTYLE MASTER: {json.dumps(style, ensure_ascii=False)}\nDireção: {direction}. Sem personagens nem alterações em referências originais.\n{guide.artwork_text_policy()}"
+        prompt = f"WORLD / LOCATION CANDIDATE {'ABC'[index]}. {world.get('name', '')}. {world['description']}\nSTYLE MASTER: {json.dumps(style, ensure_ascii=False)}\nDireção: {direction}. Sem personagens nem alterações em referências originais.\nCONTEXTO EMOCIONAL APROVADO DA OBRA (não aplicar todas as paletas ao mesmo tempo nem recolorir o Master; representar uma base neutra coerente com materiais, cores e identidade do lugar; aplicar a iluminação emocional específica somente nas cenas vinculadas):\n{emotional_context}\n{guide.artwork_text_policy()}"
         return _generate_image(prompt, refs, route)
 
     def persist(raw, index, operation_id):
@@ -442,7 +451,7 @@ def generate_world_candidates(plan_id: str, world_master_id: str, *, confirmed: 
             ov.save_world_master(fresh)
         return item
 
-    return _run(plan_id, "world_candidates", payload, 3, "imagem", confirmed, operation_key, produce, persist)
+    return _run(plan_id, "world_candidates", payload, 3, "imagem", confirmed, operation_key, produce, persist, consent_confirmed=consent_confirmed)
 
 
 def select_world_candidate(world_master_id: str, asset_id: str) -> dict:
@@ -467,20 +476,26 @@ def select_world_candidate(world_master_id: str, asset_id: str) -> dict:
         return result
 
 
-def generate_scene_options(plan_id: str, scene_key: str, excerpt: str, *, confirmed: bool = False, operation_key: str | None = None) -> dict:
+def generate_scene_options(plan_id: str, scene_key: str, excerpt: str, *, confirmed: bool = False, operation_key: str | None = None, source_scene_number: int | None = None, consent_confirmed: bool = False) -> dict:
     scene_key, excerpt = str(scene_key).strip(), str(excerpt).strip()
     if not scene_key or not excerpt:
         raise ValueError("Informe a identificação da cena e seu trecho aprovado.")
     plan = _plan(plan_id)
     characters, _world, context, signature = _scene_context(plan)
-    payload = {"scene_key": scene_key, "excerpt": excerpt, "context_fingerprint": signature}
+    emotional_item = scene_direction(plan, scene_key, source_scene_number=source_scene_number, excerpt=excerpt)
+    context["direcao_emocional_aprovada"] = emotional_item
+    canonical_excerpt = source_scene_text(plan, emotional_item["numero"])
+    payload = {"scene_key": scene_key, "excerpt": excerpt, "context_fingerprint": signature, "source_scene_number": emotional_item["numero"], "emotional_direction": emotional_item}
 
     def produce(_index, route):
         def one_shot(system, instruction):
             return client.chamar_llm(system, instruction, strict_provider=route["provider"], no_paid_fallback=True, no_retries=True)
-        ideas = guide.suggest_scene_concepts(excerpt, characters, project_context=context, text_generator=one_shot)
+        ideas = guide.suggest_scene_concepts("TEXTO CANÔNICO DA CENA: " + canonical_excerpt + "\nDIREÇÃO ADICIONAL DA PROPOSTA/PAINEL: " + excerpt, characters, project_context=context, text_generator=one_shot)
         for idea in ideas:
-            idea.setdefault("editorial_context", {})["style_dna"] = context["style_dna"]
+            idea.setdefault("editorial_context", {}).update(style_dna=context["style_dna"], direcao_emocional_aprovada=deepcopy(emotional_item))
+            idea["emocao"] = emotional_item["direcao"]["emocao_narrativa"]
+            idea["psicologia_cores"] = direction_prompt(emotional_item)
+            idea["iluminacao"] = emotional_item["direcao"]["luz_emocional"]
         return ideas
 
     def persist(ideas, _index, operation_id):
@@ -489,12 +504,13 @@ def generate_scene_options(plan_id: str, scene_key: str, excerpt: str, *, confir
         current = scenes.get(scene_key) or {}
         if current.get("options_operation_id") != operation_id:
             scenes[scene_key] = {"scene_key": scene_key, "excerpt": excerpt, "options": ideas, "context_fingerprint": signature,
+                                "source_scene_number": emotional_item["numero"], "emotional_direction": deepcopy(emotional_item),
                                 "options_operation_id": operation_id, "history": [*current.get("history", []), {"event": "scene_options_generated", "operation_id": operation_id}], "assets": []}
             fresh.setdefault("approvals", {}).setdefault("scene_options", {}).pop(scene_key, None)
             ov.save_visual_plan(fresh)
         return {"scene_key": scene_key, "ideas": ideas, "options": ideas, "context_fingerprint": signature}
 
-    return _run(plan_id, "scene_options", payload, 1, "texto", confirmed, operation_key, produce, persist)
+    return _run(plan_id, "scene_options", payload, 1, "texto", confirmed, operation_key, produce, persist, consent_confirmed=consent_confirmed)
 
 
 def select_scene_option(plan_id: str, scene_key: str, option_id: str, *, adjustment: str = "") -> dict:
@@ -524,21 +540,21 @@ def _selected_scene(plan: dict, scene_key: str, signature: str) -> tuple[dict, d
     return scene, approval
 
 
-def generate_selected_scene(plan_id: str, scene_key: str, *, quantity: int = 1, confirmed: bool = False, operation_key: str | None = None) -> dict:
+def generate_selected_scene(plan_id: str, scene_key: str, *, quantity: int = 1, confirmed: bool = False, operation_key: str | None = None, consent_confirmed: bool = False) -> dict:
     if int(quantity) not in {1, 3}:
         raise ValueError("Escolha uma imagem ou três variações A/B/C.")
-    return _generate_scenes(plan_id, [str(scene_key)] * int(quantity), confirmed=confirmed, operation_key=operation_key)
+    return _generate_scenes(plan_id, [str(scene_key)] * int(quantity), confirmed=confirmed, operation_key=operation_key, consent_confirmed=consent_confirmed)
 
 
-def generate_scene_batch(plan_id: str, scene_keys: list[str], *, confirmed: bool = False, operation_key: str | None = None) -> dict:
+def generate_scene_batch(plan_id: str, scene_keys: list[str], *, confirmed: bool = False, operation_key: str | None = None, consent_confirmed: bool = False) -> dict:
     keys = [str(x) for x in scene_keys]
     if len(set(keys)) != len(keys):
         raise ValueError("Uma cena não pode aparecer duas vezes no mesmo lote.")
     validar_lote_imagens(len(keys))
-    return _generate_scenes(plan_id, keys, confirmed=confirmed, operation_key=operation_key)
+    return _generate_scenes(plan_id, keys, confirmed=confirmed, operation_key=operation_key, consent_confirmed=consent_confirmed)
 
 
-def _generate_scenes(plan_id: str, keys: list[str], *, confirmed: bool, operation_key: str | None) -> dict:
+def _generate_scenes(plan_id: str, keys: list[str], *, confirmed: bool, operation_key: str | None, consent_confirmed: bool = False) -> dict:
     plan = _plan(plan_id)
     characters, worlds, context, signature = _scene_context(plan)
     selected = [_selected_scene(plan, key, signature) for key in keys]
@@ -548,9 +564,15 @@ def _generate_scenes(plan_id: str, keys: list[str], *, confirmed: bool, operatio
 
     def produce(index, route):
         _scene, approval = selected[index]
+        emotional_item = scene_direction(plan, keys[index], source_scene_number=_scene.get("source_scene_number"))
         concept = deepcopy(approval["concept"])
         concept.setdefault("editorial_context", {}).update(style_dna=context["style_dna"], world_masters=context["world_masters"])
+        concept["emocao"] = emotional_item["direcao"]["emocao_narrativa"]
+        concept["psicologia_cores"] = direction_prompt(emotional_item)
+        concept["iluminacao"] = emotional_item["direcao"]["luz_emocional"]
+        concept["editorial_context"]["direcao_emocional_aprovada"] = deepcopy(emotional_item)
         prompt = guide.compose_scene_prompt(concept, characters, adjustment=approval.get("adjustment", ""))
+        prompt += "\nDIREÇÃO CANÔNICA OBRIGATÓRIA (prevalece sobre sugestões livres de cor):\n" + direction_prompt(emotional_item)
         prompt += f"\nComposição candidata {'ABC'[index % 3]}. STYLE MASTER aprovado: {json.dumps(context['style_dna'], ensure_ascii=False)}. Preserve identidade e geografia dos World Masters de referência."
         return _generate_image(prompt, refs, route)
 
@@ -566,7 +588,7 @@ def _generate_scenes(plan_id: str, keys: list[str], *, confirmed: bool, operatio
             ov.save_visual_plan(fresh)
         return {**item, "scene_key": key}
 
-    return _run(plan_id, "scene_images", payload, len(keys), "imagem", confirmed, operation_key, produce, persist)
+    return _run(plan_id, "scene_images", payload, len(keys), "imagem", confirmed, operation_key, produce, persist, consent_confirmed=consent_confirmed)
 
 
 def apply_scene_asset(plan_id: str, scene_key: str, asset_id: str, *, scene_number: int,
@@ -615,6 +637,8 @@ def apply_scene_asset(plan_id: str, scene_key: str, asset_id: str, *, scene_numb
             raise ValueError("O número deve identificar exatamente uma cena existente neste livro.")
         _, _, _, signature = _scene_context(plan)
         scene, approval = _selected_scene(plan, str(scene_key), signature)
+        if scene.get("source_scene_number") != number:
+            raise PermissionError("A ilustração pertence a outra cena do mapa emocional aprovado. Gere uma direção para a cena de destino.")
         candidate = next((x for x in scene.get("assets", []) if x.get("asset_id") == asset_id), None)
         asset = get_asset(asset_id, materialize_file=False)
         if not candidate or not asset or asset.get("status") == "archived":

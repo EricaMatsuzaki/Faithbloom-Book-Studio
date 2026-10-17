@@ -24,6 +24,34 @@
       "evidências de hardening"
     ]
   },
+  "runtime_contract": {
+    "entrypoints": [
+      "run_diagnostic",
+      "check_security_action"
+    ],
+    "essential_skills": [
+      "proteção de segredos",
+      "autenticação e autorização",
+      "auditoria sanitizada"
+    ],
+    "inputs": [
+      "fontes selecionadas e contexto de autorização"
+    ],
+    "outputs": [
+      "achados sanitizados; sem ataque, alteração ou certificação fictícia"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "achados com fonte e escopo",
+    "UNKNOWN quando não há evidência",
+    "nenhuma alteração destrutiva automática"
+  ],
+  "evidence_requirements": [
+    "fontes locais inspecionadas",
+    "evidência observada e rastreável de execução"
+  ],
   "non_negotiables": [
     "não imprimir, copiar ou testar credenciais",
     "não executar ataques, scans de redes ou operações destrutivas",

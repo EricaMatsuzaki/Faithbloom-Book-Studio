@@ -10,7 +10,7 @@ import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import listar_livros, carregar_livro
-from openrouter_client import chamar_llm
+from governance_callbacks import governed_text_callback, render_personal_consent
 from age_profiles import normalizar_faixa_etaria, opcoes_faixa_etaria
 from editorial_dispatch import book_selection_labels, apply_studio_book_handoff, require_child_translation_source
 from japanese_reading_level import japanese_reading_profile
@@ -175,11 +175,19 @@ with st.expander("🔎 Ver regras-base que serão enviadas ao tradutor",expanded
     if locale == "ja-JP":
         st.caption("Além destas regras-base, o Japanese Child Reading Guard injeta automaticamente a política MEXT-aware e o suporte de furigana.")
 
+governance_source={"source_ref":source_ref,"master":master,"locale":locale}
+localization_consent=render_personal_consent(st,governance_source,action="translation.localize")
 if st.button("🌍 Gerar localização",type="primary",use_container_width=True):
-    with st.spinner("Localizando o livro sem tocar no Master..."):
-        traducao=localizar_livro_com_reading_guard(master,chamar_llm,locale,modo=modo,faixa_etaria=idade,intensidade_sons=sons,glossario=st.session_state.r06_glossary,bible_record=bible,instrucoes=instrucoes)
-    st.session_state.r06_translation=traducao
-    st.session_state.r06_review=revisar_localizacao_estrutural(master,traducao,bible_record=bible,glossario=st.session_state.r06_glossary)
+    try:
+        callback=governed_text_callback("translation.localize",governance_source,
+            confirmed=True,consent_confirmed=localization_consent)
+        with st.spinner("Localizando o livro sem tocar no Master..."):
+            traducao=localizar_livro_com_reading_guard(master,callback,locale,modo=modo,faixa_etaria=idade,intensidade_sons=sons,glossario=st.session_state.r06_glossary,bible_record=bible,instrucoes=instrucoes)
+        traducao["governance_receipts"]=callback.governance_receipts
+        st.session_state.r06_translation=traducao
+        st.session_state.r06_review=revisar_localizacao_estrutural(master,traducao,bible_record=bible,glossario=st.session_state.r06_glossary)
+    except Exception:
+        st.error("A localização não foi concluída. Confira confirmação, consentimento, orçamento e provedor no histórico de governança.")
 
 trad=st.session_state.get("r06_translation")
 if trad:
@@ -198,9 +206,16 @@ if trad:
     if locale == "ja-JP" and trad.get("furigana_metadata_supported"):
         st.success("ふりがな対応 · O rascunho japonês pode carregar `furigana_annotations` por cena para a diagramação em ruby/furigana.")
 
+    review_consent=render_personal_consent(st,governance_source,action="translation.review")
     if st.button("🧑‍🏫 Rodar Revisor Linguístico Independente"):
-        with st.spinner("Comparando Master × localização..."):
-            st.session_state.r06_ai_review=revisar_localizacao_com_reading_guard(master,trad,chamar_llm,locale,idade)
+        try:
+            callback=governed_text_callback("translation.review",governance_source,
+                confirmed=True,consent_confirmed=review_consent,max_calls=2 if locale=="ja-JP" else 1)
+            with st.spinner("Comparando Master × localização..."):
+                st.session_state.r06_ai_review=revisar_localizacao_com_reading_guard(master,trad,callback,locale,idade)
+            st.session_state.r06_ai_review["governance_receipts"]=callback.governance_receipts
+        except Exception:
+            st.error("A revisão não foi concluída. Confira consentimento, orçamento e provedor no histórico de governança.")
     if st.session_state.get("r06_ai_review"):
         st.markdown("#### Parecer do Revisor Linguístico")
         st.json(st.session_state.r06_ai_review)
@@ -254,11 +269,18 @@ if existing_pdf is not None:
     else:
         with st.expander("Ver amostra do texto importado"):
             st.text("\n\n".join(f"[p.{x['pagina']}] {x['texto'][:1200]}" for x in audit['paginas'][:6]))
+        imported_source={**governance_source,"imported_pdf_sha256":sha256(existing_pdf.getvalue()).hexdigest(),"existing_locale":existing_locale}
+        imported_consent=render_personal_consent(st,imported_source,action="translation.audit_imported")
         if st.button("🧑‍🏫 Auditar edição existente com Revisor Linguístico"):
             imported={"locale":existing_locale,"texto_importado_por_pagina":audit["paginas"],"bible_ai_translation_allowed":False}
             prompt=construir_prompt_revisor_linguistico(master,imported,existing_locale,idade)
-            with st.spinner("Comparando a edição existente com o Master..."):
-                st.session_state.r06_legacy_review=chamar_llm(sistema=prompt,instrucao="Audite a edição importada. Não gere nem traduza texto bíblico.")
+            try:
+                callback=governed_text_callback("translation.audit_imported",imported_source,
+                    confirmed=True,consent_confirmed=imported_consent)
+                with st.spinner("Comparando a edição existente com o Master..."):
+                    st.session_state.r06_legacy_review=callback(sistema=prompt,instrucao="Audite a edição importada. Não gere nem traduza texto bíblico.")
+            except Exception:
+                st.error("A auditoria não foi concluída. Confira consentimento, orçamento e provedor no histórico de governança.")
         if st.session_state.get("r06_legacy_review"):
             st.json(st.session_state.r06_legacy_review)
 

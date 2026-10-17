@@ -34,12 +34,16 @@ Papel na história: {papel}
 
 
 def gerar_personagem_a_partir_de_foto(
-    caminho_foto: str, nome: str, papel: str, gerar_imagem, detalhe_extra: str = ""
+    caminho_foto: str, nome: str, papel: str, gerar_imagem, detalhe_extra: str = "", *, consent_confirmed: bool = False
 ) -> PersonagemDNA:
     """
     caminho_foto: a foto real enviada pela autora (usada como
     imagem-base / image-to-image, não só como inspiração textual).
     """
+    if consent_confirmed is not True:
+        raise PermissionError("Confirme autorização para enviar esta foto ao provedor de imagens antes de criar o personagem.")
+    if not isinstance(caminho_foto, str) or not caminho_foto.strip() or not isinstance(nome, str) or not nome.strip():
+        raise ValueError("Selecione uma foto e informe o nome do personagem antes de gerar.")
     prompt = PROMPT_FOTO_PARA_PERSONAGEM.format(
         estilo_visual=ESTILO_VISUAL_FIXO,
         detalhe_extra=detalhe_extra or "(nenhum)",
@@ -47,6 +51,8 @@ def gerar_personagem_a_partir_de_foto(
     )
     prompt += skill_contract("photo_to_character", compact=True)
     caminho_gerado = gerar_imagem(prompt=prompt, imagem_base=caminho_foto)
+    if not isinstance(caminho_gerado, str) or not caminho_gerado.strip():
+        raise ValueError("O gerador não retornou uma imagem utilizável; nenhum personagem foi criado.")
     return PersonagemDNA(
         nome=nome,
         descricao_fixa=(

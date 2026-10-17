@@ -296,10 +296,13 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
         "As ideias devem ser práticas para ilustração editorial, com composição clara, movimento, leitura visual infantil e reaproveitamento futuro. "
         f"Responda apenas JSON válido. Toda direção deve respeitar {TEXT_POLICY}: nenhuma tipografia na arte."
     )
+    if context.get("direcao_emocional_aprovada"):
+        from emotional_visual_binding import direction_prompt
+        system += "\nA emoção, intensidade, transição e paleta aprovadas são obrigatórias em A/B/C. Varie composição, nunca substitua essa direção:\n" + direction_prompt(context["direcao_emocional_aprovada"])
     system += skill_contract("scene_director") + "\n" + instrucao_faixa_etaria(faixa)
     instruction = {
         "contexto_editorial": {key: context.get(key) for key in (
-            "titulo", "colecao", "licao_final", "cenas_texto", "mapa_emocional", "style_dna", "world_masters"
+            "titulo", "colecao", "licao_final", "cenas_texto", "mapa_emocional", "direcao_emocional_aprovada", "style_dna", "world_masters"
         )},
         "faixa_etaria": faixa,
         "trecho": excerpt,
