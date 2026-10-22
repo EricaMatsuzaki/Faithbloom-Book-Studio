@@ -4,6 +4,8 @@ Atualização de integração: [funcionalidades, testes e pendências de produç
 
 Conexões dos agentes: [estado por cargo, competências exigidas e evidências de execução](docs/AGENT_CONNECTIONS_STATUS.md). A direção emocional aprovada acompanha as cenas e a HQ; o cadastro de agentes distingue configuração, execução em testes e validação de serviços reais.
 
+Operação: [correções de fila, perfis, arquivos por conta e próximas prioridades](docs/OPERATIONAL_READINESS.md). O relatório separa implementação, testes locais, aceitação no Streamlit e requisitos para oferecer o SaaS comercialmente.
+
 > **Estúdio editorial inteligente, visual e multimodal** — com controle humano, consistência de personagens, produção editorial, publicação e evolução futura para um assistente pessoal integrado.
 >
 > Autoria / direção do produto: **Erica Matsuzaki**

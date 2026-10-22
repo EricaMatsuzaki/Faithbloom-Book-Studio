@@ -1,6 +1,6 @@
 # Estado da integração do FaithBloom
 
-Atualizado em 17/10/2026 (Japão). Este documento descreve o código desta revisão. A existência de um módulo, uma tela ou um teste simulado não comprova que o respectivo serviço já esteja ativo no site. O [relatório por agente](docs/AGENT_CONNECTIONS_STATUS.md) detalha competências, conexões e evidências de execução.
+Atualizado em 19/10/2026 (Japão). Este documento descreve o código desta revisão. A existência de um módulo, uma tela ou um teste simulado não comprova que o respectivo serviço já esteja ativo no site. O [relatório por agente](docs/AGENT_CONNECTIONS_STATUS.md) detalha competências e conexões; o [relatório operacional](docs/OPERATIONAL_READINESS.md) lista as correções adicionais e o que ainda falta.
 
 ## Entrega para o piloto
 
@@ -19,7 +19,9 @@ Atualizado em 17/10/2026 (Japão). Este documento descreve o código desta revis
 | Mídia e ideias | Animatic MP4 local a partir das imagens originais aprovadas, áudio opcional, biblioteca de ideias e adaptador Replicate configurável | Animatic não equivale a animação corporal de personagens; modelo pago precisa de configuração e teste real |
 | Tradução, narração e publicação | Guardas de idioma, identidade da origem, traduções aprovadas e consistência dos arquivos | Credenciais, voz e saída real precisam de teste; nenhuma publicação automática em loja |
 | Interface e Jarvis | Banner original preservado, animações e aceno por interação verificados pelos contratos existentes | Microfone depende da permissão e do navegador; não foi validado ao vivo nesta revisão |
-| Persistência | Leitura estrita, paginação completa e API opcional de atualização atômica/CAS, com testes locais entre processos | SQL Supabase fornecido, mas não executado; consumidores legados ainda precisam migrar para a API de atualização |
+| Persistência | Leitura estrita, paginação completa e API opcional de atualização atômica/CAS; perfis, vínculos e transições da fila migrados | Piloto Supabase legado serializa esses consumidores somente no mesmo host, por opt-in explícito. SQL não executado; demais consumidores e gastos compartilhados ainda precisam migrar |
+| Fila e recuperação | Tentativa exclusiva por job, pausa/cancelamento preservados e reconciliação explícita de resultados incertos; abrir uma página não interrompe outro executor | Não constitui worker distribuído; resultado recebido pode precisar de recuperação no provedor se armazenamento e sessão falharem juntos |
+| Limites de conta | Cache/ativação de projetos, Book Doctor, registros locais, biblioteca e exportadores corrigidos revalidam conta e caminhos | Outros caminhos legados ainda precisam de migração. Interface comercial permanece bloqueada |
 
 ## Bloqueios antes de disponibilizar o SaaS comercialmente
 

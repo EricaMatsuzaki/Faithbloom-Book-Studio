@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,7 @@ from reportlab.platypus import Paragraph
 
 from author_profiles import author_display_from_state
 from age_profiles import perfil_etario
+from storage_backend import materializar, resolve_local_output
 from qualidade_impressao import (
     BLEED_IN,
     gutter_minimo_in,
@@ -114,7 +116,10 @@ def _mapear_por_numero(itens: list[dict] | None) -> dict[int, dict]:
 
 
 def _draw_image_cover(c: canvas.Canvas, caminho: str, x: float, y: float, w: float, h: float) -> bool:
-    if not caminho or not os.path.exists(caminho):
+    if not caminho:
+        return False
+    caminho = materializar(caminho)
+    if not os.path.exists(caminho):
         return False
     try:
         with Image.open(caminho) as im:
@@ -136,7 +141,10 @@ def _draw_image_cover(c: canvas.Canvas, caminho: str, x: float, y: float, w: flo
 
 
 def _draw_image_contain(c: canvas.Canvas, caminho: str, x: float, y: float, w: float, h: float) -> bool:
-    if not caminho or not os.path.exists(caminho):
+    if not caminho:
+        return False
+    caminho = materializar(caminho)
+    if not os.path.exists(caminho):
         return False
     try:
         with Image.open(caminho) as im:
@@ -336,6 +344,23 @@ def _desenhar_ficha_pedagogica(c: canvas.Canvas, state: dict, page_w: float, pag
 def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = True,
                           forcar: bool = False) -> dict[str, Any]:
     """Gera o PDF físico do miolo e devolve metadados do arquivo."""
+    destino = resolve_local_output(destino, default_path=os.path.join(
+        PASTA_EXPORTACOES, f"{_slug(state.get('titulo','livro'))}-miolo-print-ready.pdf"))
+    # Resolve all preflight/render inputs before opening media or writing output;
+    # the caller's Book Master keeps its durable references unchanged.
+    state = deepcopy(state)
+    inputs = []
+    for key in ("cenas_imagem", "paginas_colorir", "paginas"):
+        for item in state.get(key, []) or []:
+            if isinstance(item, dict) and item.get("caminho_arquivo"):
+                item["caminho_arquivo"] = materializar(item["caminho_arquivo"])
+                inputs.append(item["caminho_arquivo"])
+    for key in ("capa_ebook", "capa_fisica_wrap"):
+        if state.get(key):
+            state[key] = materializar(state[key])
+            inputs.append(state[key])
+    if any(Path(destino).resolve() == Path(source).resolve() for source in inputs):
+        raise ValueError("O destino do PDF deve preservar os arquivos de origem.")
     _registrar_fontes()
     pf = preflight_livro(state, bleed=bleed)
     if pf["bloqueios"] and not forcar:
@@ -352,8 +377,6 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
     if total % 2:
         total += 1
 
-    Path(PASTA_EXPORTACOES).mkdir(parents=True, exist_ok=True)
-    destino = destino or os.path.join(PASTA_EXPORTACOES, f"{_slug(state.get('titulo','livro'))}-miolo-print-ready.pdf")
     Path(destino).parent.mkdir(parents=True, exist_ok=True)
 
     cenas = _mapear_por_numero(state.get("cenas_texto"))

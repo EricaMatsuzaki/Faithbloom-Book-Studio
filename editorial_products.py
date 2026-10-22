@@ -593,14 +593,16 @@ def build_export_state(project: dict, *, draft: bool = False, bleed: bool = Fals
 def export_product(project: dict, format: str, *, output_path: str | None = None,
                    draft: bool = False, bleed: bool = False, checkpoint=None) -> dict:
     """Export through shared PDF/EPUB engines; never publish automatically."""
+    from saas_access import access_mode
+    from storage_backend import CACHE_DIR, resolve_local_output
     if format not in {"pdf", "epub"}:
         raise ValueError("Formato precisa ser pdf ou epub.")
+    default_path = Path("editorial-products") / project["book_id"] / uuid.uuid4().hex / f"product-{project['book_id']}.{format}"
+    if access_mode() == "pilot":
+        default_path = CACHE_DIR / default_path
+    output_path = resolve_local_output(output_path, default_path=default_path)
     state = build_export_state(project, draft=draft, bleed=bleed)
-    if output_path is None:
-        from storage_backend import tenant_local_directory
-        directory = tenant_local_directory("outputs") / "editorial-products" / project["book_id"] / uuid.uuid4().hex
-        directory.mkdir(parents=True, exist_ok=True)
-        output_path = str(directory / f"product-{project['book_id']}.{format}")
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     if format == "pdf":
         from qualidade_impressao import preflight_livro, analisar_pdf_miolo
         from renderizador_editorial import renderizar_miolo_pdf

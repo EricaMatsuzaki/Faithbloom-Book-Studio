@@ -778,6 +778,42 @@ def tenant_local_directory(kind: str = "outputs") -> Path:
     return root
 
 
+def resolve_local_output(path: str | os.PathLike | None = None, *,
+                         default_path: str | os.PathLike) -> str:
+    """Authorize a local export destination without creating directories.
+
+    Pilot callers retain their existing paths. In tenant mode a relative
+    default is placed below the current account's outputs directory; explicit
+    destinations must already name that directory or one of its descendants.
+    Recheck on every export, even when a caller supplies a previously resolved
+    path. Cache inputs and another account's outputs are never write grants.
+    """
+    actor = require_action("storage.write")
+    value = os.fspath(default_path if path is None else path)
+    if actor is None:
+        return value
+    if not value or "\\" in value or "\x00" in value:
+        raise AccessDenied("Destino local não autorizado.")
+    candidate = Path(value)
+    if ".." in candidate.parts:
+        raise AccessDenied("Destino local não autorizado.")
+    root = _own_local_roots(actor.tenant_id)[1]
+    if path is None and not candidate.is_absolute():
+        candidate = root / candidate
+    candidate = candidate.absolute()
+    # Check lexical containment before inspecting a supplied filesystem path.
+    if candidate != root and root not in candidate.parents:
+        raise AccessDenied("Destino local fora da conta autorizada.")
+    try:
+        if any(part.is_symlink() for part in (candidate, *candidate.parents)):
+            raise AccessDenied("Destino local não autorizado.")
+        if candidate.resolve() != candidate:
+            raise AccessDenied("Destino local não autorizado.")
+    except (OSError, ValueError, RuntimeError):
+        raise AccessDenied("Destino local não autorizado.") from None
+    return str(candidate)
+
+
 def _authorize_local_asset(value: str, *, action: str = "storage.read") -> None:
     if access_mode() != "multi_tenant":
         return

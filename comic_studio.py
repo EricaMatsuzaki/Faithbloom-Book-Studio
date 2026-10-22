@@ -605,12 +605,15 @@ def _image_for_panel(project, panel_id, *, draft=False):
 
 
 def comic_readiness(project):
+    from saas_access import AccessDenied
     errors = []
     try:
         validate_script(_meta(project).get("script"))
         _require_script_review(project)
         for key, _ in _panel_items(project):
             _image_for_panel(project, key)
+    except AccessDenied:
+        raise
     except (ValueError, PermissionError, OSError) as exc:
         errors.append(str(exc))
     return {"ok": not errors, "errors": errors, "panels": len(_panel_items(project)),
@@ -669,14 +672,24 @@ def _typeset_layout(project, *, panels_per_page=2, draft=False):
 
 def export_comic(project, format, *, output_path=None, panels_per_page=2, draft=False, checkpoint=None):
     """Typeset reviewed art and editable balloons into PDF and fixed-layout EPUB."""
-    from storage_backend import persistir_arquivo, tenant_local_directory
+    from saas_access import access_mode
+    from storage_backend import CACHE_DIR, persistir_arquivo, resolve_local_output
     if format not in {"pdf", "epub"}:
         raise ValueError("Formato precisa ser pdf ou epub.")
+    default_path = Path("comics") / project["book_id"] / uuid.uuid4().hex / f"comic.{format}"
+    if access_mode() == "pilot":
+        default_path = CACHE_DIR / default_path
+    output_path = resolve_local_output(output_path, default_path=default_path)
     pages, page_w, page_h = _typeset_layout(project, panels_per_page=panels_per_page, draft=draft)
-    if output_path is None:
-        directory = tenant_local_directory("outputs") / "comics" / project["book_id"] / uuid.uuid4().hex
-        directory.mkdir(parents=True, exist_ok=True)
-        output_path = str(directory / f"comic.{format}")
+    destination = Path(output_path)
+    for page in pages:
+        for cell in page["cells"]:
+            if not cell["path"]:
+                continue
+            source = Path(cell["path"])
+            if (destination.resolve() == source.resolve()
+                    or (destination.exists() and destination.samefile(source))):
+                raise ValueError("O destino da HQ deve preservar as imagens de origem.")
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     title = ("RASCUNHO · " if draft else "") + project["titulo"]
     if format == "pdf":

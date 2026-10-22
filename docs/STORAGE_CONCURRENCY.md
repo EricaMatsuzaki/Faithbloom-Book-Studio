@@ -66,6 +66,22 @@ antigas. Rollback exige parar escritores e exportar/verificar a tabela de volta
 ao armazenamento legado, respeitando tombstones, antes de mudar a configuração.
 Tombstones não autorizam apagar arquivos oficiais ou restaurar por cima de Masters.
 
+## Consumidores integrados em 19/10/2026
+
+`author_profiles.py`, `family_profiles.py` e as transições de
+`fila_producao.py` usam `storage_updates.update_json_document`. O helper mantém
+a API atômica estrita para armazenamento local/RPC. O piloto Supabase Storage
+legado permite um ramo explícito com `flock` por registro no mesmo host; ele
+exige cache compartilhado entre os processos e não coordena discos/servidores
+diferentes. Não há fallback disparado por falha de RPC nem mudança automática
+de configuração. O próprio `BACKEND.update_json` continua estrito.
+
+Perfis e resumos de catálogo permanecem documentos separados, com consistência
+eventual; uma versão antiga do resumo não substitui uma mais nova. A fila
+reserva uma tentativa única no documento do job, grava checkpoints fora da
+chamada ao provedor e preserva pausa/cancelamento. Tentativas incertas exigem
+conferência da autora. Esses limites não habilitam o modo comercial.
+
 ## Consumidores que ainda precisam usar a API
 
 Atomicidade de um `put_json` não torna seguro um `get_json` + `put_json` separado.
@@ -77,11 +93,10 @@ original. Antes de anunciar concorrência completa, revisar ao menos:
 | `armazenamento.py` | catálogos de coleções e biblioteca; atualização do mesmo Book Master |
 | `orchestrator_visual.py` | índices de planos/World Masters, saldo/reserva de orçamento |
 | `generation_autosave.py` | snapshots de uma mesma obra em duas sessões |
-| `author_profiles.py`, `family_profiles.py` | índices e vínculos de projetos |
 | `character_universe.py`, `asset_library.py`, `style_dna.py` | índices de personagens, galeria, estilos |
 | `activity_studio.py`, `audiobook_studio.py`, `coloring_studio.py` | índices de projetos e checkpoints |
 | `publishing_distribution.py` | índice de pacotes e atualização de planos |
-| `fila_producao.py` | claim/lease de jobs; um lock de JSON não torna toda a fila distribuída |
+| `fila_producao.py` | transições já migradas; agendador/worker distribuído e operação entre hosts ainda não implementados |
 | `stable_hardening.py`, `production_deployment.py`, `real_pilot.py` | históricos compartilhados e eventos |
 | `editorial_dispatch.py`, `visual_execution.py`, `editorial_autopilot_storage.py` | execução, despesas/reservas e recuperação |
 

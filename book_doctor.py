@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import time
 import uuid
@@ -20,7 +21,8 @@ from pathlib import Path
 from PIL import Image
 from pypdf import PdfReader
 
-from storage_backend import BACKEND, backend_status
+from storage_backend import BACKEND, backend_status, materializar, tenant_local_directory
+from saas_access import AccessDenied, access_mode, require_action
 
 ROOT = Path("book_doctor_projects")
 STORAGE_PREFIX = "book_doctor_projects"
@@ -31,15 +33,44 @@ def _safe(s: str) -> str:
 
 
 def _storage_prefix(project_id: str) -> str:
+    if access_mode() == "multi_tenant" and not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", project_id):
+        raise AccessDenied("Identificador do projeto não autorizado.")
     return f"{STORAGE_PREFIX}/{project_id}"
 
 
 def _project_folder_name(project: dict) -> str:
+    if access_mode() == "multi_tenant":
+        project_id = str(project.get("id") or "")
+        _storage_prefix(project_id)
+        # Stored filesystem paths/folder names are never ownership evidence.
+        return project_id
     return str(project.get("storage_folder") or f"{_safe(project.get('titulo', 'livro'))}-{project.get('id', '')}")
 
 
+def _local_root() -> Path:
+    require_action("storage.read")
+    return _checked_local(tenant_local_directory("cache") / STORAGE_PREFIX) if access_mode() == "multi_tenant" else ROOT
+
+
+def _checked_local(path: Path) -> Path:
+    if access_mode() == "multi_tenant":
+        materializar(str(path))  # Authorization precedes any cache existence/read.
+        if path.resolve() != path.absolute():
+            raise AccessDenied("Caminho local do projeto não autorizado.")
+    return path
+
+
 def _local_project_dir(project: dict) -> Path:
-    return ROOT / _project_folder_name(project)
+    return _checked_local(_local_root() / _project_folder_name(project))
+
+
+def _project_child(project: dict, relative_path: str) -> Path:
+    if access_mode() == "pilot":
+        return Path(project.get("pasta") or _local_project_dir(project)) / relative_path
+    relative = Path(relative_path)
+    if relative.is_absolute() or ".." in relative.parts or "\\" in relative_path:
+        raise AccessDenied("Caminho local do projeto não autorizado.")
+    return _checked_local(_local_project_dir(project) / relative)
 
 
 def _project_payload(project: dict) -> dict:
@@ -55,6 +86,8 @@ def _project_payload(project: dict) -> dict:
 def _persist_json(project: dict, relative_path: str, value) -> None:
     try:
         BACKEND.put_json(f"{_storage_prefix(str(project.get('id') or ''))}/{relative_path.lstrip('/')}", value)
+    except AccessDenied:
+        raise
     except Exception:
         # Persistência cloud nunca deve corromper/interromper a cópia local já segura.
         pass
@@ -63,20 +96,31 @@ def _persist_json(project: dict, relative_path: str, value) -> None:
 def _write_project_local(project: dict) -> dict:
     local = _local_project_dir(project)
     for sub in ("originais", "extraidas", "relatorios", "remastered", "planos"):
-        (local / sub).mkdir(parents=True, exist_ok=True)
+        _project_child({**project, "pasta": str(local)}, sub).mkdir(parents=True, exist_ok=True)
     hydrated = _project_payload({**project, "pasta": str(local)})
-    (local / "projeto.json").write_text(json.dumps(hydrated, ensure_ascii=False, indent=2), encoding="utf-8")
+    _project_child({**project, "pasta": str(local)}, "projeto.json").write_text(json.dumps(hydrated, ensure_ascii=False, indent=2), encoding="utf-8")
     return hydrated
 
 
 def _restore_json(project: dict, relative_path: str, local_path: Path):
+    require_action("storage.read")
+    if access_mode() == "multi_tenant":
+        expected = _project_child(project, relative_path)
+        _checked_local(Path(local_path))
+        if Path(local_path).absolute() != expected.absolute():
+            raise AccessDenied("Cache local do projeto não autorizado.")
+        local_path = expected
     if local_path.exists():
         try:
             return json.loads(local_path.read_text(encoding="utf-8"))
+        except AccessDenied:
+            raise
         except Exception:
             pass
     try:
         value = BACKEND.get_json(f"{_storage_prefix(str(project.get('id') or ''))}/{relative_path.lstrip('/')}", None)
+    except AccessDenied:
+        raise
     except Exception:
         value = None
     if value is not None:
@@ -87,7 +131,7 @@ def _restore_json(project: dict, relative_path: str, local_path: Path):
 
 def _hydrate_originals(project: dict) -> None:
     """Baixa somente os originais do projeto selecionado quando o cache local sumiu."""
-    manifest_path = Path(project["pasta"]) / "originais" / "manifest.json"
+    manifest_path = _project_child(project, "originais/manifest.json")
     manifest = _restore_json(project, "originais/manifest.json", manifest_path)
     if not isinstance(manifest, list):
         return
@@ -97,10 +141,15 @@ def _hydrate_originals(project: dict) -> None:
             continue
         storage_path = str(entry.get("storage_path") or "")
         current = Path(str(entry.get("arquivo") or "")) if entry.get("arquivo") else None
+        filename = Path(storage_path).name if storage_path else Path(str(entry.get("arquivo") or "original.bin")).name
+        local = _project_child(project, f"originais/{filename}")
+        if access_mode() == "multi_tenant":
+            current = local
+            if entry.get("arquivo") != str(local):
+                entry["arquivo"] = str(local)
+                changed = True
         if current and current.exists():
             continue
-        filename = Path(storage_path).name if storage_path else Path(str(entry.get("arquivo") or "original.bin")).name
-        local = Path(project["pasta"]) / "originais" / filename
         if storage_path:
             try:
                 data = BACKEND.get_bytes(storage_path)
@@ -112,6 +161,8 @@ def _hydrate_originals(project: dict) -> None:
                     continue
                 entry["arquivo"] = str(local)
                 changed = True
+            except AccessDenied:
+                raise
             except Exception:
                 continue
     if changed:
@@ -119,6 +170,7 @@ def _hydrate_originals(project: dict) -> None:
 
 
 def criar_projeto(titulo: str, idioma: str="pt-BR", tipo_projeto: str="story", status_publicacao: str="em_desenvolvimento", colecao: str="", status_capa: str="nao_informado") -> dict:
+    require_action("storage.write")
     pid = uuid.uuid4().hex[:12]
     obj = {
         "id": pid,
@@ -138,19 +190,24 @@ def criar_projeto(titulo: str, idioma: str="pt-BR", tipo_projeto: str="story", s
 
 
 def preservar_original(projeto: dict, arquivo: str, papel: str) -> str:
-    src = Path(arquivo)
-    dst = Path(projeto["pasta"]) / "originais" / f"{papel}_{src.name}"
+    require_action("storage.write")
+    src = Path(materializar(arquivo))
+    dst = _project_child(projeto, f"originais/{papel}_{src.name}")
     shutil.copy2(src, dst)
     digest = sha256(str(dst))
     storage_path = f"{_storage_prefix(str(projeto.get('id') or ''))}/originais/{dst.name}"
     try:
         BACKEND.put_bytes(storage_path, dst.read_bytes(), "application/pdf" if dst.suffix.lower() == ".pdf" else None)
+    except AccessDenied:
+        raise
     except Exception:
         storage_path = ""
 
-    manifest_path = Path(projeto["pasta"]) / "originais" / "manifest.json"
+    manifest_path = _project_child(projeto, "originais/manifest.json")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else []
+    except AccessDenied:
+        raise
     except Exception:
         manifest = []
     manifest.append({
@@ -166,6 +223,7 @@ def preservar_original(projeto: dict, arquivo: str, papel: str) -> str:
 
 
 def sha256(caminho: str) -> str:
+    caminho = materializar(caminho)
     h = hashlib.sha256()
     with open(caminho, "rb") as f:
         for b in iter(lambda: f.read(1024 * 1024), b""):
@@ -182,8 +240,11 @@ def _status_ppi(ppi: float) -> tuple[str, str]:
 
 
 def auditar_pdf(caminho_pdf: str, pasta_extraidas: str | None = None) -> dict:
+    caminho_pdf = materializar(caminho_pdf)
+    if pasta_extraidas:
+        require_action("storage.write")
     reader = PdfReader(caminho_pdf)
-    out = Path(pasta_extraidas) if pasta_extraidas else None
+    out = _checked_local(Path(pasta_extraidas)) if pasta_extraidas else None
     if out:
         out.mkdir(parents=True, exist_ok=True)
     paginas = []
@@ -196,6 +257,8 @@ def auditar_pdf(caminho_pdf: str, pasta_extraidas: str | None = None) -> dict:
         try:
             fd = (page.get("/Resources") or {}).get("/Font") or {}
             fontes = [str(k) for k in fd.keys()]
+        except AccessDenied:
+            raise
         except Exception:
             pass
         pimgs = []
@@ -205,11 +268,13 @@ def auditar_pdf(caminho_pdf: str, pasta_extraidas: str | None = None) -> dict:
                 ext = Path(imgobj.name or "img.png").suffix or ".png"
                 dest = out / f"pagina_{n:03d}_img_{i:02d}{ext}" if out else None
                 if dest:
-                    dest.write_bytes(data)
+                    _checked_local(dest).write_bytes(data)
                 try:
                     from io import BytesIO
                     with Image.open(BytesIO(data)) as im:
                         px = im.size
+                except AccessDenied:
+                    raise
                 except Exception:
                     px = (0, 0)
                 ppi = min(px[0] / w_in, px[1] / h_in) if px[0] and w_in and h_in else 0
@@ -222,6 +287,8 @@ def auditar_pdf(caminho_pdf: str, pasta_extraidas: str | None = None) -> dict:
                 }
                 pimgs.append(rec)
                 imagens.append(rec)
+        except AccessDenied:
+            raise
         except Exception as exc:
             pimgs.append({"pagina": n, "status": "erro", "nota": str(exc)})
         paginas.append({
@@ -239,6 +306,7 @@ def auditar_pdf(caminho_pdf: str, pasta_extraidas: str | None = None) -> dict:
 
 
 def auditar_imagem(caminho: str, largura_final_in: float | None = None, altura_final_in: float | None = None) -> dict:
+    caminho = materializar(caminho)
     with Image.open(caminho) as im:
         w, h = im.size
         fmt = im.format
@@ -284,6 +352,7 @@ def auditar_capa_pdf(caminho_pdf: str, largura_final_in: float | None = None, al
 
 
 def gerar_relatorio(projeto: dict, miolo: dict | None = None, capa: dict | None = None) -> dict:
+    require_action("storage.write")
     alertas = []
     if miolo:
         if not miolo.get("tamanho_uniforme"):
@@ -316,7 +385,7 @@ def gerar_relatorio(projeto: dict, miolo: dict | None = None, capa: dict | None 
         "miolo": miolo, "capa": capa, "alertas": alertas, "revisoes_pendentes": pendentes,
         "politica": "O Book Doctor informa e sugere. Nenhum original é substituído e nenhuma correção é aplicada sem aprovação da autora.",
     }
-    path = Path(projeto["pasta"]) / "relatorios" / "book_doctor_report.json"
+    path = _project_child(projeto, "relatorios/book_doctor_report.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rel, ensure_ascii=False, indent=2), encoding="utf-8")
     _persist_json(projeto, "relatorios/book_doctor_report.json", rel)
@@ -326,28 +395,41 @@ def gerar_relatorio(projeto: dict, miolo: dict | None = None, capa: dict | None 
 
 def listar_projetos() -> list[dict]:
     """Lista cache local + projetos persistidos no backend e reidrata metadados."""
+    require_action("storage.list")
     itens: dict[str, dict] = {}
-    if ROOT.exists():
-        for pasta in ROOT.iterdir():
+    root = _local_root()
+    if root.exists():
+        for pasta in root.iterdir():
+            _checked_local(pasta)
             if not pasta.is_dir():
                 continue
-            pj = pasta / "projeto.json"
+            pj = _checked_local(pasta / "projeto.json")
             if not pj.exists():
                 continue
             try:
                 d = json.loads(pj.read_text(encoding="utf-8"))
                 if isinstance(d, dict) and d.get("id"):
+                    if access_mode() == "multi_tenant":
+                        if _local_project_dir(d) != pasta:
+                            raise AccessDenied("Cache local do projeto não autorizado.")
+                        d = _project_payload(d)
                     d["pasta"] = str(pasta)
                     itens[str(d["id"])] = d
+            except AccessDenied:
+                raise
             except Exception:
                 continue
     try:
         cloud_paths = [x for x in BACKEND.list(STORAGE_PREFIX) if x.endswith("/projeto.json")]
+    except AccessDenied:
+        raise
     except Exception:
         cloud_paths = []
     for storage_path in cloud_paths:
         try:
             d = BACKEND.get_json(storage_path, None)
+        except AccessDenied:
+            raise
         except Exception:
             d = None
         if not isinstance(d, dict) or not d.get("id"):
@@ -366,7 +448,7 @@ def carregar_projeto(projeto_id: str) -> dict:
 
 def carregar_relatorio(projeto: dict) -> dict:
     projeto = _write_project_local(projeto)
-    path = Path(projeto.get("pasta", "")) / "relatorios" / "book_doctor_report.json"
+    path = _project_child(projeto, "relatorios/book_doctor_report.json")
     data = _restore_json(projeto, "relatorios/book_doctor_report.json", path)
     # O download grande acontece apenas quando o projeto é efetivamente selecionado.
     _hydrate_originals(projeto)
@@ -381,7 +463,7 @@ def auditar_pdf_rapido(caminho_pdf: str, expected_reference: str = "") -> dict:
     auditoria completa apenas quando necessário.
     """
     from real_pilot import fast_pdf_audit
-    raw = fast_pdf_audit(caminho_pdf, expected_reference=expected_reference)
+    raw = fast_pdf_audit(materializar(caminho_pdf), expected_reference=expected_reference)
     status_map = {"excellent": "excelente", "attention": "atencao", "low": "reprovada", "indeterminate": "indeterminado"}
     images = []
     per_page_index = {}
