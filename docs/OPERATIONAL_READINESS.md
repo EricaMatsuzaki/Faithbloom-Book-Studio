@@ -1,6 +1,6 @@
 # O que falta para a operação completa
 
-Revisão de 19/10/2026 (Japão), após o lote de agentes da PR #28.
+Atualizado em 23/10/2026, após os lotes de agentes, fila/perfis e execução visual.
 
 A autora confirmou que IA e armazenamento já estão configurados no Streamlit.
 Este documento separa correções de código, validação com serviços reais e
@@ -19,14 +19,16 @@ real terminou corretamente. O modo comercial continua bloqueado.
 | Book Doctor e consumo | Cache de projetos, histórico de gerações, limites locais e supressão de duplicatas são separados por conta nos caminhos corrigidos. | Históricos locais não viram uma contabilidade distribuída ou persistente entre servidores. |
 | Exportações e arquivos | PDF, EPUB, pacotes de distribuição, HQ e produtos especializados validam destinos e referências. Um pacote não apaga o diretório anterior inteiro. A HQ rejeita um destino que sobrescreveria uma imagem usada na exportação. | Ainda é preciso migrar e auditar os demais caminhos legados antes de liberar várias contas. |
 | Biblioteca de imagens | Metadados, miniaturas e fallbacks não ignoram uma negativa de acesso nem copiam arquivos locais de outra conta. | Aprovação humana de Masters e fidelidade visual continuam necessárias. |
+| Execução visual | Reserva de orçamento e primeira tentativa paga são confirmadas juntas no livro-razão do projeto. Checkpoints e reconciliação verificam a tentativa atual; um retorno atrasado não substitui a conferência humana. A interface lê os totais desse registro. | A proteção exige armazenamento local compartilhado ou RPC; o piloto legado coordena somente o mesmo host/cache. Galeria, cenas, aprovações e limites por plano continuam em registros separados. |
 
 ## Próximas prioridades de código
 
-1. **Gastos e chamadas entre servidores.** Migrar as reservas e tentativas de
-   `visual_execution.py` para uma transição atômica no mesmo livro-razão; fazer o
-   mesmo com as tentativas editoriais de `editorial_dispatch.py`. Os bloqueios
-   desses executores ainda pertencem a um processo. Uma revisão JSON isolada não
-   resolve uma sequência de leitura, cobrança e gravação.
+1. **Demais gastos e chamadas entre servidores.** Migrar as tentativas de
+   `editorial_dispatch.py` e demais executores pagos para transições atômicas.
+   A execução visual já reserva saldo e registra a tentativa no mesmo livro-razão,
+   mas os limites ainda pertencem aos planos; falta definir uma autoridade única
+   para o limite do projeto e a coordenação de alterações de aprovação/origem.
+   Os controles diários de consumo também precisam de integração própria.
 2. **Demais registros compartilhados.** Migrar índices da galeria, personagens,
    estilos, planos, checkpoints e atualizações simultâneas do mesmo Book Master.
    Todos os escritores de um índice precisam usar o mesmo contrato; migrar só um
@@ -70,8 +72,9 @@ Callbacks não chamam provedores nem fazem uploads. Uma resposta de gravação
 incerta não autoriza chamar o provedor. O padrão de configuração do armazenamento
 e o namespace da autora no piloto não foram alterados.
 
-As evidências e a contagem final estão registradas no pull request e no GitHub
+As evidências e a contagem final estão registradas no commit e no GitHub
 Actions. Os testes relevantes são `test_queue_execution_claims.py`,
 `test_storage_updates.py`, `test_profile_atomic_updates.py`,
 `test_tenant_runtime_boundaries.py`, `test_saas_export_boundaries.py` e
-`test_saas_specialist_outputs.py`.
+`test_saas_specialist_outputs.py`, além de `test_visual_execution_integration.py`,
+`test_visual_execution_atomic.py` e `test_visual_execution_ui_workflow.py`.

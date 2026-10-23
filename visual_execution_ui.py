@@ -12,7 +12,7 @@ from visual_execution import (
     VisualExecutionError, estimate_visual_operation, generate_world_candidates,
     select_world_candidate, generate_scene_options, select_scene_option,
     generate_selected_scene, generate_scene_batch, list_visual_operations,
-    element_lock_capability, apply_scene_asset,
+    element_lock_capability, apply_scene_asset, visual_project_budget,
 )
 
 
@@ -124,9 +124,14 @@ def render_visual_execution(plan_id: str) -> None:
     else:
         st.caption(f"Livro vinculado: {source.get('titulo') or plan.get('title')} · {source.get('colecao') or 'Sem coleção'}. A escolha abaixo altera somente este livro salvo e preserva os Masters.")
     st.caption("O projeto salva cada resultado. O orçamento registra estimativas e reservas; isso não substitui a cobrança informada pelo provedor.")
+    try:
+        budget = visual_project_budget(plan_id)
+    except Exception:
+        st.error("Não foi possível conferir o orçamento salvo do projeto. Recarregue antes de gerar.")
+        return
     cols = st.columns(3)
-    cols[0].metric("Custo estimado concluído (US$)", f"{float(plan.get('budget_spent_usd') or 0):.2f}")
-    cols[1].metric("Reservas (US$)", f"{float(plan.get('budget_reserved_usd') or 0):.2f}")
+    cols[0].metric("Custo estimado concluído (US$)", f"{float(budget['estimated_spent_usd']):.2f}")
+    cols[1].metric("Reservas (US$)", f"{float(budget['reserved_usd']):.2f}")
     cols[2].metric("Limite (US$)", "Sem limite" if plan.get("budget_limit_usd") is None else f"{float(plan['budget_limit_usd']):.2f}")
     with st.expander("Candidatas A/B/C dos cenários"):
         approvals = (plan.get("approvals") or {}).get("locations") or {}

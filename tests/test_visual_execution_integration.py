@@ -325,14 +325,14 @@ def test_project_budget_shared_across_visual_plans(project):
 
 
 def test_reservation_write_failure_prevents_any_provider_call(project, monkeypatch):
-    original = ov._save_json
+    original = project["backend"].update_json
 
-    def broken(path, value):
+    def broken(path, mutator, default=None, **kwargs):
         if "visual_budgets" in path:
             raise storage.StorageError("ledger unavailable")
-        return original(path, value)
+        return original(path, mutator, default, **kwargs)
 
-    monkeypatch.setattr(ov, "_save_json", broken)
+    monkeypatch.setattr(project["backend"], "update_json", broken)
     with pytest.raises(storage.StorageError):
         ve.generate_world_candidates(project["plan"]["id"], project["world"]["id"], confirmed=True)
     ve.client.gerar_imagem.assert_not_called()
@@ -490,3 +490,262 @@ def test_reselecting_same_scene_option_does_not_repeat_default_generation(projec
     ve.select_scene_option(project["plan"]["id"], "1", "B", adjustment="Preserve o brilho verde dos olhos.")
     ve.generate_selected_scene(project["plan"]["id"], "1", confirmed=True)
     assert ve.client.gerar_imagem.call_count == 1
+
+
+def _single_test_operation(project, produce, persist, *, key="atomic-recovery"):
+    return ve._run(project["plan"]["id"], "world_candidates", {"recovery_test": True},
+                   1, "imagem", True, key, produce, persist)
+
+
+def test_lost_claim_ack_sends_nothing_and_retains_durable_block(project, monkeypatch):
+    backend = project["backend"]
+    original = backend.update_json
+    lost = False
+
+    def commit_then_lose_ack(path, mutator, default=None, **kwargs):
+        nonlocal lost
+        result = original(path, mutator, default, **kwargs)
+        if "visual_budgets/" in path and not lost:
+            lost = True
+            raise storage.StorageUnavailable("claim response uncertain")
+        return result
+
+    monkeypatch.setattr(backend, "update_json", commit_then_lose_ack)
+    produce, persist = Mock(), Mock()
+    with pytest.raises(storage.StorageUnavailable, match="uncertain"):
+        _single_test_operation(project, produce, persist)
+    produce.assert_not_called()
+    persist.assert_not_called()
+    operations = ve.list_visual_operations(project["plan"]["id"])
+    assert len(operations) == 1
+    assert operations[0]["items"][0]["state"] == "running"
+    assert operations[0]["items"][0]["attempt_token"]
+    assert operations[0]["budget"]["reserved_usd"] == pytest.approx(.08)
+    with pytest.raises(ve.VisualExecutionError, match="pode ter chegado"):
+        _single_test_operation(project, produce, persist, key="different-key")
+    produce.assert_not_called()
+
+
+def test_lost_raw_ack_keeps_landed_result_and_resumes_without_rebuying(project, monkeypatch):
+    backend = project["backend"]
+    original = backend.update_json
+    lost = False
+
+    def commit_then_lose_ack(path, mutator, default=None, **kwargs):
+        nonlocal lost
+        result = original(path, mutator, default, **kwargs)
+        if ("visual_budgets/" in path and not lost
+                and any(item["state"] == "raw" for op in result["operations"].values() for item in op["items"])):
+            lost = True
+            raise storage.StorageUnavailable("raw response uncertain")
+        return result
+
+    monkeypatch.setattr(backend, "update_json", commit_then_lose_ack)
+    plan_id = project["plan"]["id"]
+    with pytest.raises(ve.VisualExecutionError) as failed:
+        ve.generate_world_candidates(plan_id, project["world"]["id"], confirmed=True)
+    assert lost and ve.client.gerar_imagem.call_count == 1
+    item = failed.value.operation["items"][0]
+    assert item["state"] == "raw" and item["raw"] == project["outputs"][0]
+    assert not item["reserved"]
+    assert not any(item["reserved"] for item in failed.value.operation["items"][1:])
+    resumed = ve.generate_world_candidates(plan_id, project["world"]["id"], confirmed=True)
+    assert resumed["status"] == "complete" and len(resumed["results"]) == 3
+    assert ve.client.gerar_imagem.call_count == 3
+    assert resumed["items"][0]["attempt_token"] == item["attempt_token"]
+    assert resumed["budget"]["estimated_spent_usd"] == pytest.approx(.24)
+
+
+def test_failed_raw_commit_keeps_ambiguous_attempt_reserved(project, monkeypatch):
+    backend = project["backend"]
+    original = backend._write_bytes
+    failed = False
+
+    def unavailable(path, data):
+        nonlocal failed
+        import json
+        if "visual_budgets/" in path and not failed:
+            ledger = json.loads(data)
+            if any(item["state"] == "raw" for op in ledger["operations"].values() for item in op["items"]):
+                failed = True
+                raise storage.StorageUnavailable("raw write unavailable")
+        return original(path, data)
+
+    monkeypatch.setattr(backend, "_write_bytes", unavailable)
+    produce, persist = Mock(return_value=project["outputs"][0]), Mock()
+    with pytest.raises(ve.VisualExecutionError) as failure:
+        _single_test_operation(project, produce, persist)
+    assert failure.value.operation["items"][0]["state"] == "uncertain"
+    assert failure.value.operation["budget"]["reserved_usd"] == pytest.approx(.08)
+    with pytest.raises(ve.VisualExecutionError, match="pode ter chegado"):
+        _single_test_operation(project, produce, persist)
+    produce.assert_called_once()
+    persist.assert_not_called()
+
+
+def test_late_provider_completion_cannot_replace_human_reconciliation(project):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    entered, release = Event(), Event()
+    persist = Mock()
+
+    def produce(_index, _route):
+        entered.set()
+        assert release.wait(timeout=10)
+        return project["outputs"][0]
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_single_test_operation, project, produce, persist)
+        try:
+            assert entered.wait(timeout=10)
+            operation = ve.list_visual_operations(project["plan"]["id"])[0]
+            reconciled = ve.reconcile_visual_attempt(
+                project["plan"]["id"], operation["id"], 0, actual_cost_usd=.02,
+                recovered_asset_id=project["master_asset"]["id"], confirmed=True)
+        finally:
+            release.set()
+        with pytest.raises(ve.VisualExecutionError):
+            future.result(timeout=10)
+    persist.assert_not_called()
+    saved = ve.list_visual_operations(project["plan"]["id"])[0]
+    assert saved["items"][0] == reconciled["items"][0]
+    assert saved["items"][0]["result"]["asset_id"] == project["master_asset"]["id"]
+    assert saved["budget"]["estimated_spent_usd"] == pytest.approx(.02)
+    assert saved["budget"]["actual_total_usd"] == pytest.approx(.02)
+    assert saved["budget"]["reserved_usd"] == 0
+
+
+def test_two_reconcilers_cannot_overwrite_each_others_provider_evidence(project, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    with pytest.raises(ve.VisualExecutionError) as failed:
+        _single_test_operation(project, Mock(side_effect=RuntimeError("provider timeout")), Mock())
+    operation_id = failed.value.operation["id"]
+    original = ve._asset_path
+    barrier = Barrier(2)
+
+    def resolve(value):
+        path = original(value)
+        barrier.wait(timeout=10)  # Both reconcilers observed the same attempt.
+        return path
+
+    monkeypatch.setattr(ve, "_asset_path", resolve)
+
+    def reconcile(cost):
+        try:
+            return ve.reconcile_visual_attempt(project["plan"]["id"], operation_id, 0,
+                actual_cost_usd=cost, recovered_asset_id=project["master_asset"]["id"], confirmed=True)
+        except ve.VisualExecutionError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(reconcile, [.01, .02]))
+    successes = [result for result in outcomes if isinstance(result, dict)]
+    assert len(successes) == 1
+    assert sum(isinstance(result, ve.VisualExecutionError) for result in outcomes) == 1
+    saved = ve.list_visual_operations(project["plan"]["id"])[0]
+    assert saved["items"][0] == successes[0]["items"][0]
+    assert saved["budget"]["actual_total_usd"] == successes[0]["budget"]["actual_total_usd"]
+
+
+def test_old_attempt_token_cannot_checkpoint_a_replacement_claim(project):
+    with pytest.raises(ve.VisualExecutionError) as failed:
+        _single_test_operation(project, Mock(side_effect=RuntimeError("provider timeout")), Mock())
+    plan = project["plan"]
+    operation = failed.value.operation
+    original_token = operation["items"][0]["attempt_token"]
+
+    def replace(ledger):
+        item = ledger["operations"][operation["id"]]["items"][0]
+        item.update(attempt_token="replacement-claim", state="running")
+        return ledger
+
+    project["backend"].update_json(ve._ledger_path(plan), replace)
+    before = project["backend"].get_bytes(ve._ledger_path(plan))
+    with pytest.raises(ve.VisualExecutionError, match="outra sessão"):
+        ve._checkpoint_item(plan, plan["id"], operation["id"], 0, original_token,
+                            "running", {"state": "raw", "reserved": False, "raw": "late response"})
+    assert project["backend"].get_bytes(ve._ledger_path(plan)) == before
+
+
+def test_budget_cache_merges_latest_approvals_and_rejects_stale_totals(project, monkeypatch):
+    plan_id = project["plan"]["id"]
+    ve.generate_world_candidates(plan_id, project["world"]["id"], confirmed=True)
+    earlier = ve._ledger(project["plan"])
+    ve.generate_world_candidates(plan_id, project["world"]["id"], confirmed=True, operation_key="second-batch")
+    latest = ve._ledger(project["plan"])
+    stale_plan = deepcopy(project["plan"])
+    fresh = ov.load_visual_plan(plan_id)
+    fresh["approvals"]["scene_options"]["concurrent"] = {"approved": True, "option_id": "C"}
+    fresh["editorial_notes"] = "Preservar a decisão salva por outra tela."
+    ov.save_visual_plan(fresh)
+    monkeypatch.setattr(ve, "_plan", lambda _plan_id: deepcopy(stale_plan))
+    ve._sync_budget(plan_id, earlier)
+    saved = ov.load_visual_plan(plan_id)
+    assert saved["budget_spent_usd"] == pytest.approx(.48)
+    assert saved["budget_ledger_revision"] == latest["revision"]
+    assert saved["approvals"]["scene_options"]["concurrent"]["approved"]
+    assert saved["editorial_notes"] == fresh["editorial_notes"]
+
+
+def test_project_budget_view_ignores_stale_other_plan_cache(project):
+    from streamlit.testing.v1 import AppTest
+    second = ov.create_visual_plan("project-1", "Outra tela", generation_mode="economy", budget_limit_usd=3)
+    ve.generate_world_candidates(project["plan"]["id"], project["world"]["id"], confirmed=True)
+    assert ov.load_visual_plan(second["id"])["budget_spent_usd"] == 0
+    assert ve.visual_project_budget(second["id"])["estimated_spent_usd"] == pytest.approx(.24)
+    app = AppTest.from_string("import visual_execution_ui as ui\nui.render_visual_execution(" + repr(second["id"]) + ")").run(timeout=15)
+    assert not app.exception
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Custo estimado concluído (US$)"] == "0.24"
+    assert metrics["Reservas (US$)"] == "0.00"
+
+
+def test_lost_success_ack_reuses_committed_result_without_provider_or_persistence(project, monkeypatch):
+    original = project["backend"].update_json
+    lost = False
+
+    def commit_then_lose_ack(path, mutator, default=None, **kwargs):
+        nonlocal lost
+        result = original(path, mutator, default, **kwargs)
+        if ("visual_budgets/" in path and not lost
+                and any(item["state"] == "succeeded" for op in result["operations"].values() for item in op["items"])):
+            lost = True
+            raise storage.StorageUnavailable("result response uncertain")
+        return result
+
+    monkeypatch.setattr(project["backend"], "update_json", commit_then_lose_ack)
+    produce = Mock(return_value=project["outputs"][0])
+    persist = Mock(return_value={"asset_id": "saved-once", "id": "saved-once"})
+    with pytest.raises(ve.VisualExecutionError) as failure:
+        _single_test_operation(project, produce, persist)
+    assert lost and failure.value.operation["status"] == "complete"
+    result = _single_test_operation(project, produce, persist)
+    assert result["results"] == [{"asset_id": "saved-once", "id": "saved-once"}]
+    assert result["budget"]["estimated_spent_usd"] == pytest.approx(.08)
+    assert result["budget"]["reserved_usd"] == 0
+    produce.assert_called_once()
+    persist.assert_called_once()
+
+
+def test_new_reservation_cannot_overflow_finite_existing_project_usage(project, monkeypatch):
+    import governance_runtime
+    plan = ov.load_visual_plan(project["plan"]["id"])
+    plan["budget_limit_usd"] = None
+    ov.save_visual_plan(plan)
+    path = ve._ledger_path(plan)
+    ledger = {"project_id": plan["project_id"], "operations": {
+        "prior": {"id": "prior", "plan_id": plan["id"], "input_fingerprint": "prior", "status": "complete",
+                  "items": [{"index": 0, "state": "succeeded", "reserved": False,
+                             "estimated_usd": .08, "actual_usd": 1e308, "result": {"id": "prior"}}]},
+    }}
+    project["backend"].put_json(path, ledger)
+    before = project["backend"].get_bytes(path)
+    monkeypatch.setattr(ve, "estimar_custo", lambda *_args: 1e308)
+    monkeypatch.setattr(governance_runtime, "authorize_generation", lambda *_args, **_kwargs: {"test_evidence": True})
+    produce, persist = Mock(), Mock()
+    with pytest.raises(ve.VisualExecutionError, match="total persistido"):
+        _single_test_operation(project, produce, persist)
+    produce.assert_not_called()
+    persist.assert_not_called()
+    assert project["backend"].get_bytes(path) == before
