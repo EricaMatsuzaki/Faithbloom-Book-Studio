@@ -26,6 +26,7 @@ from agents.diagramador import diagramador_node
 from agents.capa import capa_node
 from agents.marketing import marketing_lancamento_node
 from armazenamento import salvar_livro, listar_livros, salvar_na_galeria
+from emotional_review_ui import render_emotional_readiness, render_emotional_gate, consume_emotional_consent
 
 
 def _salvar_upload(arquivo, prefixo: str) -> str:
@@ -167,6 +168,7 @@ def render_retomar_page():
     if st.session_state.etapa_r == "cenas":
         st.subheader("🎨 2. Ilustrações — controle cena por cena")
         st.caption("A imagem atual nunca é apagada quando você pede outra: ela vai para o histórico e pode ser restaurada.")
+        render_emotional_readiness(st, 'state_r', 'pages/2_📚_Retomar_Livro.py', action='resume_book')
         ok, prontas, total = _todas_cenas_prontas(s)
         st.progress(prontas / total if total else 0, text=f"{prontas}/{total} cenas aprovadas")
 
@@ -182,14 +184,20 @@ def render_retomar_page():
                     st.info("Esta cena ainda não tem imagem. Você pode gerar ou enviar uma pronta.")
 
                 instrucao=st.text_area("✍️ Pedido específico para esta cena", placeholder="Ex.: manter tudo igual, mas deixar a Mel sorrindo mais; não alterar Manu nem o cenário.", key=f"r_scene_prompt_{n}")
+                ready, consent, token = render_emotional_gate(
+                    st, 'state_r', 'pages/2_📚_Retomar_Livro.py', action=f'resume_scene_{n}',
+                    request_context={'scene': n, 'instruction': instrucao, 'current_image': item},
+                    include_review_button=False)
                 c1,c2,c3=st.columns(3)
-                if c1.button("✨ Gerar" if not item else "🔄 Gerar nova", key=f"r_gen_scene_{n}", use_container_width=True):
+                if c1.button("✨ Gerar" if not item else "🔄 Gerar nova", key=f"r_gen_scene_{n}", disabled=not ready, use_container_width=True):
+                    consume_emotional_consent(st.session_state, token)
                     with st.spinner(f"Gerando somente a cena {n}..."):
-                        gerar_cena_unica(s,n,gerar_imagem,instrucao)
+                        gerar_cena_unica(s,n,gerar_imagem,instrucao,consent_confirmed=consent)
                     st.rerun()
-                if c2.button("🔀 Criar variação", key=f"r_var_scene_{n}", disabled=not bool(item), use_container_width=True):
+                if c2.button("🔀 Criar variação", key=f"r_var_scene_{n}", disabled=not bool(item) or not ready, use_container_width=True):
+                    consume_emotional_consent(st.session_state, token)
                     with st.spinner("Criando variação sem apagar a atual..."):
-                        criar_variacao_cena(s,n,gerar_imagem,instrucao)
+                        criar_variacao_cena(s,n,gerar_imagem,instrucao,consent_confirmed=consent)
                     st.rerun()
                 if c3.button("↩️ Voltar à anterior", key=f"r_restore_scene_{n}", disabled=not bool(s.get("historico_imagens_cenas",{}).get(str(n))), use_container_width=True):
                     restaurar_ultima_imagem_cena(s,n); st.rerun()

@@ -41,7 +41,7 @@ def salvar_livro(state: dict) -> str:
     colecao_slug = _slug(state.get("colecao", "sem-colecao"))
     slug = _slug(state.get("titulo", ""))
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    path = f"livros/{colecao_slug}/{slug}-{timestamp}.json"
+    path = f"livros/{colecao_slug}/{slug}-{timestamp}-{uuid.uuid4().hex[:12]}.json"
     serializavel = persistir_assets_em_objeto(dict(state), f"assets/livros/{colecao_slug}/{slug}")
     _save_json(path, serializavel)
     if state.get("personagens"):
@@ -142,7 +142,7 @@ def salvar_livro_colorir(state: dict) -> str:
     state = ensure_project_schema(dict(state))
     slug = _slug(state.get("titulo", ""))
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    path = f"livros_colorir/{slug}-{timestamp}.json"
+    path = f"livros_colorir/{slug}-{timestamp}-{uuid.uuid4().hex[:12]}.json"
     serializavel = persistir_assets_em_objeto(dict(state), f"assets/colorir/{slug}")
     _save_json(path, serializavel)
     return storage_uri(path)
@@ -343,3 +343,4 @@ def migrar_dados_locais_legados() -> dict:
             _salvar_indice_galeria(novos)
         except Exception as e: resumo["erros"].append(f"galeria: {e}")
     return resumo
+

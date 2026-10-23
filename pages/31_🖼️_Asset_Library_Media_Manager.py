@@ -8,7 +8,9 @@ from pathlib import Path
 import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title
-from armazenamento import salvar_na_galeria, estatisticas_armazenamento
+from armazenamento import salvar_na_galeria, estatisticas_armazenamento, listar_colecoes, listar_livros
+from character_universe import listar_personagens_oficiais
+from ui_saved_choices import select_saved_or_new
 from asset_library import (
     MASTER_ROLES, MEDIA_LABELS, migrate_gallery_index, list_assets, get_asset,
     facet_values, update_asset, set_favorite, set_archived, set_approved,
@@ -98,6 +100,12 @@ def _save_uploaded(upload, *, nome: str, tipo: str, tags: list[str], metadata: d
         try: path.unlink()
         except OSError: pass
 
+
+saved_collections = listar_colecoes()
+saved_books = listar_livros()
+saved_book_titles = [str(x.get("titulo") or "").strip() for x in saved_books if str(x.get("titulo") or "").strip()]
+saved_characters = listar_personagens_oficiais()
+saved_character_names = [str(x.get("nome") or "").strip() for x in saved_characters if str(x.get("nome") or "").strip()]
 
 # ------------------------------------------------------------------ tabs
 tab_library, tab_detail, tab_collections, tab_duplicates, tab_storage = st.tabs([
@@ -230,9 +238,35 @@ with tab_library:
         utipo=u2.selectbox("Tipo", ["personagem","cena","line_art","referencia","capa","atividade","fundo","audio","documento"])
         utags=st.text_input("Tags separadas por vírgula", placeholder="Mel, Natal, inverno")
         u3,u4,u5=st.columns(3)
-        uperson=u3.text_input("Personagem")
-        ucolecao=u4.text_input("Coleção editorial")
-        ulivro=u5.text_input("Livro")
+        with u3:
+            uperson = select_saved_or_new(
+                "Personagem",
+                saved_character_names,
+                current="",
+                key="asset_upload_person",
+                new_input_label="Novo personagem",
+                allow_empty=True,
+                help="Selecione um Character Master salvo quando o asset pertencer a um personagem conhecido.",
+            )
+        with u4:
+            ucolecao = select_saved_or_new(
+                "Coleção editorial",
+                saved_collections,
+                current="",
+                key="asset_upload_collection",
+                new_input_label="Nova coleção editorial",
+                allow_empty=True,
+                help="Use a coleção canônica já salva para evitar metadados duplicados por grafia.",
+            )
+        with u5:
+            ulivro = select_saved_or_new(
+                "Livro",
+                saved_book_titles,
+                current="",
+                key="asset_upload_book",
+                new_input_label="Novo título de livro",
+                allow_empty=True,
+            )
         if st.button("💾 Salvar na Asset Library", type="primary", disabled=up is None):
             item=_save_uploaded(up,nome=unome,tipo=utipo,tags=[x.strip() for x in utags.split(",")],metadata={"personagem":uperson,"colecao":ucolecao,"livro":ulivro,"origem":"upload_autora"})
             st.success(f"{item['nome']} salvo. O arquivo pode ser reutilizado por outros Studios.")
@@ -260,10 +294,34 @@ with tab_detail:
                 nome=st.text_input("Nome", value=item.get("nome",""), key=f"detail_name_{asset_id}")
                 tags=st.text_input("Tags", value=", ".join(item.get("tags",[])), key=f"detail_tags_{asset_id}")
                 d1,d2=st.columns(2)
-                personagem=d1.text_input("Personagem", value=str(meta.get("personagem", "")), key=f"detail_person_{asset_id}")
-                colecao=d2.text_input("Coleção", value=str(meta.get("colecao", "")), key=f"detail_collection_{asset_id}")
+                with d1:
+                    personagem = select_saved_or_new(
+                        "Personagem",
+                        saved_character_names,
+                        current=str(meta.get("personagem", "")),
+                        key=f"detail_person_{asset_id}",
+                        new_input_label="Novo personagem",
+                        allow_empty=True,
+                    )
+                with d2:
+                    colecao = select_saved_or_new(
+                        "Coleção",
+                        saved_collections,
+                        current=str(meta.get("colecao", "")),
+                        key=f"detail_collection_{asset_id}",
+                        new_input_label="Nova coleção",
+                        allow_empty=True,
+                    )
                 d3,d4=st.columns(2)
-                livro=d3.text_input("Livro", value=str(meta.get("livro", "")), key=f"detail_book_{asset_id}")
+                with d3:
+                    livro = select_saved_or_new(
+                        "Livro",
+                        saved_book_titles,
+                        current=str(meta.get("livro", "")),
+                        key=f"detail_book_{asset_id}",
+                        new_input_label="Novo título de livro",
+                        allow_empty=True,
+                    )
                 cena=d4.text_input("Cena/página", value=str(meta.get("cena", meta.get("cena_numero", ""))), key=f"detail_scene_{asset_id}")
                 d5,d6,d7=st.columns(3)
                 emocao=d5.text_input("Emoção", value=str(meta.get("emocao", "")), key=f"detail_emotion_{asset_id}")
