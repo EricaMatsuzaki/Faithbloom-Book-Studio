@@ -106,6 +106,13 @@ def test_resume_provider_failure_retains_and_skips_successful_units(isolated):
     assert not product["editorial_product"]["units"]
     reopened = studio.load_product(product["storage_path"])
     assert len(reopened["editorial_product"]["draft"]["units"]) == 1
+    from editorial_generation_runtime import reconcile_attempt
+    uncertain = next(a for a in reopened["editorial_product"]["execution"]["attempts"] if a["state"] == "uncertain")
+    with pytest.raises(PermissionError, match="Confira"):
+        studio.generate_product(reopened, lambda **_: pytest.fail("Unknown paid result must not be repeated"), confirmed=True)
+    reconcile_attempt(reopened["storage_path"], attempt_token=uncertain["token"], provider_outcome="failed",
+                      confirmed=True, note="Provider console confirms this exact request failed without a result")
+    reopened = studio.load_product(product["storage_path"])
     studio.generate_product(reopened, provider_for(reopened, calls), confirmed=True)
     assert calls == [1, 2, 3]
     assert len(reopened["editorial_product"]["units"]) == 3
@@ -152,8 +159,11 @@ def test_shared_default_router_is_used_without_duplicate_provider_client(isolate
     import ai_provider_router
     product = project(count=1)
     calls = []
-    monkeypatch.setattr(ai_provider_router, "chamar_llm", provider_for(product, calls))
-    monkeypatch.setattr(ai_provider_router, "provider_status", lambda: {"gemini": True})
+    def strict_provider(sistema, instrucao, **flags):
+        assert flags == {"no_paid_fallback": True, "no_retries": True}
+        return provider_for(product, calls)(sistema=sistema, instrucao=instrucao)
+    monkeypatch.setattr(ai_provider_router, "chamar_llm", strict_provider)
+    monkeypatch.setattr(ai_provider_router, "provider_status", lambda **_: {"gemini": True})
     studio.generate_product(product, confirmed=True)
     assert calls == [1]
 
@@ -362,7 +372,7 @@ def test_human_ui_creates_generates_reviews_and_downloads_a_product(isolated, mo
     import ai_provider_router
     import painel_visual
     monkeypatch.setattr(painel_visual, "_sidebar_page_link", lambda *args, **kwargs: None)
-    monkeypatch.setattr(ai_provider_router, "provider_status", lambda: {"gemini": True, "groq": False, "openrouter": False})
+    monkeypatch.setattr(ai_provider_router, "provider_status", lambda **_: {"gemini": True, "groq": False, "openrouter": False})
     page = Path(studio.__file__).parent / "pages/55_📚_Produtos_Editoriais.py"
     def control(items, label):
         return next(item for item in items if item.label == label)
@@ -384,7 +394,7 @@ def test_human_ui_creates_generates_reviews_and_downloads_a_product(isolated, mo
     control(app.checkbox, "Autorizo a geração das unidades pendentes e o custo do provedor").check().run()
     control(app.button, "Gerar / retomar unidades").click().run()
     assert not app.exception
-    assert app.session_state["editorial_product_state"]["editorial_product"]["units"]
+    assert app.session_state["editorial_product_state"]["editorial_product"]["units"], [error.value for error in app.error]
     control(app.text_input, "Responsável pela revisão").set_value("Revisora da equipe")
     control(app.checkbox, "Revisei conteúdo, linguagem e adequação ao público").check()
     control(app.checkbox, "Conferi precisão, fontes, referências bíblicas e gabaritos aplicáveis").check().run()

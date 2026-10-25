@@ -82,6 +82,41 @@ reserva uma tentativa única no documento do job, grava checkpoints fora da
 chamada ao provedor e preserva pausa/cancelamento. Tentativas incertas exigem
 conferência da autora. Esses limites não habilitam o modo comercial.
 
+## Execução visual integrada em 23/10/2026
+
+`visual_execution.py` usa o mesmo helper para reservar saldo e registrar a primeira
+tentativa paga em uma única atualização do livro-razão do projeto. As demais
+tentativas também exigem uma confirmação antes de chamar o provedor. Checkpoints
+e reconciliação verificam o token e o estado atual; uma confirmação perdida não
+autoriza repetição paga. Resultados já recebidos não são rebaixados para uma nova
+tentativa. Os callbacks permanecem livres de chamadas externas.
+
+O cache de orçamento altera somente seus campos e sua revisão, preservando
+aprovações. A interface deriva os totais do livro-razão compartilhado. Os limites
+ainda pertencem aos planos, e alterações de origem/aprovação, galeria, cenas e
+aplicação no livro continuam em documentos separados. Isso não fornece transação
+entre registros nem elimina a limitação do piloto legado a um único host/cache.
+
+## Execução especializada compartilhada entre Studio e Orquestrador
+
+`editorial_generation_runtime.py` mantém a tentativa de execução, as tentativas
+pagas e as respostas recebidas dentro do próprio produto canônico. Tanto
+`editorial_dispatch.py` quanto o Studio nativo passam pela mesma fronteira de
+`generate_product`. Um claim precisa estar confirmado antes de chamar o provedor;
+checkpoints e reconciliação exigem token, revisão e estado atuais. Resposta já
+recebida é recuperada sem nova compra; falha de confirmação não libera reenvio.
+
+`save_product` rejeita snapshots antigos e o merge de conteúdo gerado conserva
+edições atuais de campos diferentes. Um conflito no mesmo campo preserva a edição
+e a resposta recebida para conferência. A projeção do run tem revisão própria e
+pode ser reparada a partir da fonte, sem chamar provedor. Recuperar um responsável
+local vivo é recusado; um host remoto ainda exige atestado humano de encerramento.
+
+Isso não migra todos os escritores de `armazenamento.atualizar_livro_salvo` nem
+cria transação entre produto, run e catálogo. Um escritor legado que substitua o
+Book Master inteiro ainda pode apagar os metadados de execução; sua migração
+continua necessária. O piloto legado conserva a limitação ao mesmo host/cache.
+
 ## Consumidores que ainda precisam usar a API
 
 Atomicidade de um `put_json` não torna seguro um `get_json` + `put_json` separado.
@@ -91,14 +126,14 @@ original. Antes de anunciar concorrência completa, revisar ao menos:
 | Consumidor | Registros compartilhados |
 |---|---|
 | `armazenamento.py` | catálogos de coleções e biblioteca; atualização do mesmo Book Master |
-| `orchestrator_visual.py` | índices de planos/World Masters, saldo/reserva de orçamento |
+| `orchestrator_visual.py` | índices e demais escritores de planos/World Masters; autoridade única do limite de orçamento do projeto |
 | `generation_autosave.py` | snapshots de uma mesma obra em duas sessões |
 | `character_universe.py`, `asset_library.py`, `style_dna.py` | índices de personagens, galeria, estilos |
 | `activity_studio.py`, `audiobook_studio.py`, `coloring_studio.py` | índices de projetos e checkpoints |
 | `publishing_distribution.py` | índice de pacotes e atualização de planos |
 | `fila_producao.py` | transições já migradas; agendador/worker distribuído e operação entre hosts ainda não implementados |
 | `stable_hardening.py`, `production_deployment.py`, `real_pilot.py` | históricos compartilhados e eventos |
-| `editorial_dispatch.py`, `visual_execution.py`, `editorial_autopilot_storage.py` | execução, despesas/reservas e recuperação |
+| `editorial_autopilot_storage.py` e demais executores pagos legados | execução, despesas/reservas e recuperação ainda fora do runtime especializado |
 
 Esta infraestrutura não faz transação entre documentos diferentes. Um orçamento
 compartilhado deve reservar saldo e registrar a operação no **mesmo documento**

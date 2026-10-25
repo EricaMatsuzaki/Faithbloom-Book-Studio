@@ -110,7 +110,7 @@ def test_provider_configuration_missing_blocks_before_default_router(backend, mo
     import ai_provider_router
     provider = Mock(return_value=_valid_unit())
     monkeypatch.setattr(ai_provider_router, "chamar_llm", provider)
-    monkeypatch.setattr(ai_provider_router, "provider_status", lambda: {"gemini": False, "groq": False, "openrouter": False})
+    monkeypatch.setattr(ai_provider_router, "provider_status", lambda **_: {"gemini": False, "groq": False, "openrouter": False})
     with pytest.raises(runtime.GovernanceBlocked):
         products.generate_product(_product(), confirmed=True)
     provider.assert_not_called()

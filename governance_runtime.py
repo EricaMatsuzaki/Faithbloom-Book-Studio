@@ -45,10 +45,10 @@ def _source_artifacts(source_module: str) -> list[dict]:
     return artifacts
 
 
-def text_provider_configuration() -> dict:
+def text_provider_configuration(*, strict: bool = False) -> dict:
     """Inspect presence only; never discover models or call a provider."""
     import ai_provider_router as router
-    status = router.provider_status()
+    status = router.provider_status(strict=True) if strict else router.provider_status()
     configured = [name for name in ("gemini", "groq", "openrouter") if status.get(name) is True]
     return {"configured": bool(configured), "providers": configured,
             "live_access_verified": False}

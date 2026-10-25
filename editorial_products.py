@@ -279,15 +279,18 @@ def build_generation_prompt(project: dict, plan: dict) -> tuple[str, str]:
 def save_product(project: dict) -> str:
     """Persist in the shared library at its own canonical path."""
     _metadata(project)
-    from armazenamento import atualizar_livro_salvo, salvar_livro
+    from armazenamento import salvar_livro, _slug
+    from stable_hardening import ensure_project_schema
+    from storage_backend import persistir_assets_em_objeto
+    from editorial_generation_runtime import save_existing_project
     path = project.get("storage_path")
-    if path:
-        path = atualizar_livro_salvo(path, project)
-    else:
+    if not path:
         path = salvar_livro(project)
         project["storage_path"] = path
-        # The first stored object must also own its path when reopened.
-        atualizar_livro_salvo(path, project)
+    # Asset uploads and schema preparation occur before the pure JSON update.
+    prepared = persistir_assets_em_objeto(ensure_project_schema(deepcopy(project)),
+        f"assets/livros/{_slug(project.get('colecao', 'sem-colecao'))}/{_slug(project.get('titulo', ''))}")
+    path = save_existing_project(project, prepared)
     project["storage_path"] = path
     return path
 
@@ -322,6 +325,23 @@ def load_product_if_specialized(storage_path: str) -> dict | None:
 
 def generate_product(project: dict, chamar_llm=None, *, checkpoint=None, new_version: bool = False,
                      confirmed: bool = False, consent_confirmed: bool = False) -> dict:
+    """The central orchestrator and native Studio share the same paid claims."""
+    from editorial_generation_runtime import execute
+    injected = chamar_llm is not None
+    if chamar_llm is None:
+        from ai_provider_router import chamar_llm as routed_llm
+        def chamar_llm(sistema, instrucao):
+            return routed_llm(sistema=sistema, instrucao=instrucao, no_paid_fallback=True, no_retries=True)
+    return execute(project, chamar_llm, checkpoint or save_product,
+        lambda provider, durable_checkpoint: _generate_product_body(
+            project, provider, checkpoint=durable_checkpoint, new_version=new_version,
+            confirmed=confirmed, consent_confirmed=consent_confirmed,
+            _provider_is_injected=injected), new_version=new_version)
+
+
+def _generate_product_body(project: dict, chamar_llm=None, *, checkpoint=None, new_version: bool = False,
+                     confirmed: bool = False, consent_confirmed: bool = False,
+                     _provider_is_injected: bool | None = None) -> dict:
     """Generate/resume one validated unit at a time, saving each paid result.
 
     Mutates the provided state so a caller can retain the last successful result
@@ -330,7 +350,7 @@ def generate_product(project: dict, chamar_llm=None, *, checkpoint=None, new_ver
     again unless ``new_version`` is explicitly requested.
     """
     meta = _metadata(project)
-    injected_provider = chamar_llm is not None
+    injected_provider = chamar_llm is not None if _provider_is_injected is None else _provider_is_injected
     checkpoint = checkpoint or save_product
     if chamar_llm is None:
         from ai_provider_router import chamar_llm
@@ -353,7 +373,9 @@ def generate_product(project: dict, chamar_llm=None, *, checkpoint=None, new_ver
     for unit, plan in zip(draft["units"], meta["unit_plan"]):
         validate_unit(unit, plan, meta["spec"])
     from controle_geracao import estimar_custo, validar_orcamento
-    pending = len(meta["unit_plan"]) - len(draft["units"])
+    received_indexes = getattr(chamar_llm, "received_unit_indexes", frozenset())
+    paid_indexes = [i for i in range(len(draft["units"]), len(meta["unit_plan"])) if i not in received_indexes]
+    pending = len(paid_indexes)
     estimated = estimar_custo("texto", pending) if pending else 0.0
     if pending:
         validar_orcamento(estimated)
@@ -362,8 +384,8 @@ def generate_product(project: dict, chamar_llm=None, *, checkpoint=None, new_ver
         from governance_runtime import authorize_generation, text_provider_configuration
         receipt = authorize_generation(
             "editorial_product.generate", confirmed=confirmed, projected_cost=estimated,
-            provider_configured=callable(chamar_llm) if injected_provider else text_provider_configuration()["configured"],
-            operation_id=f"{draft['id']}:{len(draft['units'])}", source_module="editorial_products.py",
+            provider_configured=callable(chamar_llm) if injected_provider else text_provider_configuration(strict=True)["configured"],
+            operation_id=f"{draft['id']}:{paid_indexes[0]}", source_module="editorial_products.py",
             state=project, uses_personal_data=meta["spec"].get("origin") == "real_experience",
             consent_confirmed=consent_confirmed,
         )

@@ -17,6 +17,7 @@ from functools import wraps
 from orchestrator_editorial import PROJECT_TYPES, build_editorial_route
 import storage_backend as storage
 from storage_backend import storage_uri
+from storage_updates import update_json_document
 
 SCHEMA = "faithbloom.editorial-execution.v1"
 PREFIX = "orchestrator_runs"
@@ -73,8 +74,35 @@ def save_run(run: dict) -> dict:
         raise ValueError("Projeto editorial inválido.")
     saved["updated_at"] = _now()
     saved["storage_ref"] = storage_uri(_path(saved["id"]))
-    storage.BACKEND.put_json(_path(saved["id"]), saved)
-    return saved
+    expected = saved.get("revision", 0)
+    def replace(current):
+        if current is not None:
+            if not isinstance(current, dict) or current.get("id") != saved["id"] or current.get("schema") != SCHEMA:
+                raise ValueError("Registro de projeto inválido; nenhuma alteração foi feita.")
+            if current.get("revision", 0) != expected:
+                raise storage.StorageConflict(expected, current.get("revision", 0))
+            if (current.get("generation") or {}).get("status") == "running":
+                raise PermissionError("A execução editorial está em andamento. Aguarde ou confira a tentativa antes de alterar seu registro.")
+        elif expected:
+            raise storage.StorageConflict(expected, None)
+        result = deepcopy(saved)
+        result["revision"] = expected + 1
+        return result
+    return update_json_document(storage.BACKEND, _path(saved["id"]), replace,
+                                allow_legacy_pilot=True)
+
+
+def _update_run(run_id, mutator):
+    now = _now()
+    def update(current):
+        if not isinstance(current, dict) or current.get("id") != run_id or current.get("schema") != SCHEMA:
+            raise ValueError("Registro de projeto inválido; nenhuma alteração foi feita.")
+        updated = mutator(deepcopy(current))
+        updated["revision"] = current.get("revision", 0) + 1
+        updated["updated_at"] = now
+        return updated
+    return update_json_document(storage.BACKEND, _path(run_id), update,
+                                allow_legacy_pilot=True)
 
 
 def load_run(run_id: str) -> dict:
@@ -160,7 +188,7 @@ def initialize_specialist(run_id: str) -> dict:
 
 
 def _strict_llm(sistema: str, instrucao: str):
-    from openrouter_client import chamar_llm
+    from ai_provider_router import chamar_llm
     return chamar_llm(sistema, instrucao, no_paid_fallback=True, no_retries=True)
 
 
@@ -172,35 +200,64 @@ def execute_editorial_generation(run_id: str, *, confirmed: bool = False, chamar
     if run["project_type"] not in SPECIALIZED_TYPES:
         raise ValueError("Use o Studio do projeto para gerar, revisar e aprovar seu conteúdo.")
     status = run["generation"].get("status")
-    if status == "completed":
-        return run
-    if status in {"running", "interrupted", "save_failed"} and not resume_confirmed:
+    if status in {"running", "interrupted", "save_failed", "needs_reconciliation"} and not resume_confirmed:
         raise PermissionError("A geração anterior foi interrompida. Revise as unidades salvas e confirme a retomada; uma chamada sem resposta pode ter consumido créditos.")
-    from editorial_products import generate_product, save_product
-    source = run["source"]
-    run["generation"] = {"status": "running", "started_at": _now()}
-    save_run(run)
+    from editorial_products import generate_product, load_product
+    from editorial_generation_runtime import generation_status
+    execution = generation_status(run["source_ref"])
+    if (execution.get("claim") or {}).get("owner_active") or any(
+            a["state"] in {"running", "uncertain"} for a in execution["attempts"]):
+        raise PermissionError("A execução anterior ainda está ativa ou precisa de conferência no provedor. A confirmação de retomada não libera outra chamada.")
+    source = load_product(run["source_ref"])
+    dispatch_token, started = uuid.uuid4().hex, _now()
+    observed_revision = run.get("revision", 0)
+    def start(current):
+        if current.get("revision", 0) != observed_revision:
+            raise storage.StorageConflict(observed_revision, current.get("revision", 0))
+        current["generation"] = {"status": "running", "started_at": started, "dispatch_token": dispatch_token}
+        return current
+    _update_run(run_id, start)
 
     def checkpoint(updated: dict):
-        save_product(updated)
-        run["source"] = deepcopy(updated)
-        save_run(run)
+        # The canonical product checkpoint has already committed. This is a
+        # secondary projection, never the authority for paid retry decisions.
+        payload = deepcopy(updated)
+        def merge(current):
+            if (current.get("generation") or {}).get("dispatch_token") != dispatch_token:
+                raise storage.StorageConflict(dispatch_token, (current.get("generation") or {}).get("dispatch_token"))
+            current["source"] = deepcopy(payload)
+            current["source_ref"] = payload.get("storage_path", current["source_ref"])
+            return current
+        _update_run(run_id, merge)
 
     try:
-        source = generate_product(source, chamar_llm or _strict_llm, checkpoint=checkpoint, confirmed=confirmed, consent_confirmed=consent_confirmed)
-        save_product(source)
-        run["source"] = source
-        run["source_ref"] = source.get("storage_path", run["source_ref"])
-        run["generation"]["status"] = "completed"
-        run["status"] = "awaiting_review"
-        return save_run(run)
+        source = generate_product(source, chamar_llm, checkpoint=checkpoint, confirmed=confirmed, consent_confirmed=consent_confirmed)
+        payload = deepcopy(source)
+        def complete(current):
+            if (current.get("generation") or {}).get("dispatch_token") != dispatch_token:
+                raise storage.StorageConflict(dispatch_token, (current.get("generation") or {}).get("dispatch_token"))
+            current["source"] = deepcopy(payload)
+            current["source_ref"] = payload.get("storage_path", current["source_ref"])
+            current["generation"]["status"] = "completed"
+            current["status"] = "awaiting_review"
+            return current
+        return _update_run(run_id, complete)
     except Exception:
         # Keep every completed unit, never report a partially completed project
         # as approved, and never automatically repeat an uncertain paid call.
-        run["source"] = deepcopy(source)
-        run["generation"]["status"] = "interrupted"
-        run["status"] = "needs_attention"
-        save_run(run)
+        payload = deepcopy(source)
+        def interrupt(current):
+            if (current.get("generation") or {}).get("dispatch_token") == dispatch_token:
+                current["source"] = deepcopy(payload)
+                current["generation"]["status"] = "interrupted"
+                current["status"] = "needs_attention"
+            return current
+        try:
+            _update_run(run_id, interrupt)
+        except Exception:
+            # The canonical product retains its claim/received response. Never
+            # replace it or buy a second response after a projection failure.
+            pass
         raise
 
 
@@ -231,6 +288,10 @@ def sync_source(run_id: str) -> dict:
         source = storage.BACKEND.get_json(run["source_ref"].removeprefix("fb://"), None)
     if not isinstance(source, dict) or not source:
         raise ValueError("A fonte do projeto não está disponível; sua referência foi preservada.")
+    if run["project_type"] in SPECIALIZED_TYPES:
+        from editorial_generation_runtime import _execution
+        if (_execution(source).get("claim") or {}).get("owner_active"):
+            raise PermissionError("A geração ainda está ativa. Aguarde o responsável antes de atualizar a projeção do Orquestrador.")
     run["source"] = source
     current_fingerprint = content_fingerprint(source)
     plan_stale = False
@@ -250,6 +311,24 @@ def sync_source(run_id: str) -> dict:
             run["history"].append({"visual_plan_id": run["visual_plan_id"], "reason": "source_changed", "at": _now()})
             run["visual_plan_id"] = ""
         run["status"] = "awaiting_review"
+    if run["project_type"] in SPECIALIZED_TYPES and run["generation"].get("status") == "running":
+        # A product recovery may finish before the secondary run projection was
+        # acknowledged. Repair only that projection; never release a paid claim.
+        expected_revision = run.get("revision", 0)
+        execution = _execution(source)
+        meta = source["editorial_product"]
+        projected_status = ("needs_reconciliation" if execution.get("legacy_review_required") or any(
+            a["state"] in {"running", "uncertain"} for a in execution["attempts"]) else
+            "completed" if meta.get("units") and not meta.get("draft") else "interrupted")
+        payload = deepcopy(run)
+        def repair(current):
+            if current.get("revision", 0) != expected_revision:
+                raise storage.StorageConflict(expected_revision, current.get("revision", 0))
+            for field in ("source", "source_ref", "human_content_approval", "visual_plan_id", "history", "status"):
+                current[field] = deepcopy(payload[field])
+            current["generation"]["status"] = projected_status
+            return current
+        return _update_run(run_id, repair)
     return save_run(run)
 
 
@@ -302,7 +381,7 @@ def approve_run_content(run_id: str) -> dict:
         raise ValueError("Crie o pré-voo vinculado ao projeto primeiro.")
     source = validate_visual_source(plan)
     run["human_content_approval"] = {"fingerprint": content_fingerprint(source), "approved_at": _now(), "scope": "visual_preflight"}
-    save_run(run)
+    run = save_run(run)
     approve_story(plan)
     return run
 

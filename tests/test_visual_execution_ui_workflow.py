@@ -199,7 +199,9 @@ def test_changed_or_unavailable_canonical_source_blocks_visual_ui_and_provider(v
         armazenamento.atualizar_livro_salvo(p["reference"], source)
     elif changed == "identity":
         source["book_id"] = "book-replaced"
-        armazenamento.atualizar_livro_salvo(p["reference"], source)
+        # Simulate an external restore/replacement; the public writer now
+        # rejects this identity change before it can reach persistence.
+        p["backend"].put_json(p["reference"].removeprefix("fb://"), source)
     else:
         p["backend"].delete(p["reference"].removeprefix("fb://"))
     pending_generate.click().run(timeout=15)

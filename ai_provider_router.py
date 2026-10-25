@@ -194,13 +194,15 @@ def _gemini_candidate_models() -> list[str]:
     return configured
 
 
-def _gemini_model(model: str, sistema: str, instrucao: str) -> dict | list:
+def _gemini_model(model: str, sistema: str, instrucao: str, *, no_retries: bool = False,
+                  api_key: str | None = None) -> dict | list:
     global _GEMINI_LAST_SELECTED_MODEL
-    if not GEMINI_API_KEY:
+    key = GEMINI_API_KEY if api_key is None else api_key
+    if not key:
         raise AIProviderPermanentError("GEMINI_API_KEY não configurada.")
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={GEMINI_API_KEY}"
+        f"{model}:generateContent?key={key}"
     )
     payload = {
         "systemInstruction": {
@@ -212,7 +214,7 @@ def _gemini_model(model: str, sistema: str, instrucao: str) -> dict | list:
     response = _post_with_retry(
         lambda: requests.post(url, json=payload, timeout=120),
         provider=f"Gemini/{model}",
-        max_attempts=GEMINI_MAX_ATTEMPTS,
+        max_attempts=1 if no_retries else GEMINI_MAX_ATTEMPTS,
     )
     if response.status_code in {401, 403}:
         raise AIProviderPermanentError("Gemini recusou a autenticação/permissão da API key.")
@@ -274,7 +276,7 @@ def _gemini(sistema: str, instrucao: str) -> dict | list:
     )
 
 
-def _groq(sistema: str, instrucao: str) -> dict | list:
+def _groq(sistema: str, instrucao: str, *, no_retries: bool = False) -> dict | list:
     if not GROQ_API_KEY:
         raise AIProviderPermanentError("GROQ_API_KEY não configurada.")
 
@@ -293,7 +295,7 @@ def _groq(sistema: str, instrucao: str) -> dict | list:
             timeout=120,
         )
 
-    response = _post_with_retry(_request, provider="Groq", max_attempts=GROQ_MAX_ATTEMPTS)
+    response = _post_with_retry(_request, provider="Groq", max_attempts=1 if no_retries else GROQ_MAX_ATTEMPTS)
     if response.status_code in {401, 403}:
         raise AIProviderPermanentError("Groq recusou a autenticação/permissão da API key.")
     try:
@@ -308,7 +310,32 @@ def _groq(sistema: str, instrucao: str) -> dict | list:
     return _parse_json(text, "Groq")
 
 
-def provider_status() -> dict:
+def _strict_text_selection() -> tuple[str, dict[str, bool], str]:
+    """Choose once without discovery, transmission or mutation of shared keys."""
+    preference = os.environ.get("FAITHBLOOM_PROVEDOR_TEXTO", "auto").strip().lower() or "auto"
+    if preference not in {"auto", "gemini", "groq", "openrouter"}:
+        raise AIProviderPermanentError("FAITHBLOOM_PROVEDOR_TEXTO não identifica um provedor de texto suportado.")
+    key = (GEMINI_API_KEY or os.environ.get("GOOGLE_API_KEY") or "").strip()
+    available = {"gemini": bool(key), "groq": bool(GROQ_API_KEY),
+                 "openrouter": bool(os.environ.get("OPENROUTER_API_KEY", "").strip()) and not bool(_OPENROUTER_DISABLED_REASON)}
+    selected = (next((name for name in ("gemini", "groq", "openrouter") if available[name]), "")
+                if preference == "auto" else preference)
+    return selected, available, key
+
+
+def provider_status(*, strict: bool = False) -> dict:
+    if strict:
+        # Editorial UI and governance must evaluate the same choice that will
+        # transmit data. A configured alternative cannot satisfy a forced choice.
+        try:
+            selected, available, _ = _strict_text_selection()
+        except AIProviderPermanentError:
+            selected, available = "", {}
+        return {**{name: bool(name == selected and available.get(name))
+                   for name in ("gemini", "groq", "openrouter")},
+                "gemini_selected_model": _GEMINI_LAST_SELECTED_MODEL,
+                "openrouter_disabled_reason": _OPENROUTER_DISABLED_REASON,
+                "primary": selected or "indisponível"}
     return {
         "gemini": bool(GEMINI_API_KEY),
         "gemini_selected_model": _GEMINI_LAST_SELECTED_MODEL,
@@ -319,12 +346,16 @@ def provider_status() -> dict:
     }
 
 
-def _openrouter(sistema: str, instrucao: str) -> dict | list:
+def _openrouter(sistema: str, instrucao: str, *, no_retries: bool = False,
+                no_paid_fallback: bool = False) -> dict | list:
     global _OPENROUTER_DISABLED_REASON
     if _OPENROUTER_DISABLED_REASON:
         raise AIProviderPermanentError(_OPENROUTER_DISABLED_REASON)
     from openrouter_client import chamar_llm as chamar_openrouter
     try:
+        if no_retries or no_paid_fallback:
+            return chamar_openrouter(sistema, instrucao, no_retries=no_retries,
+                                     no_paid_fallback=no_paid_fallback, strict_provider="openrouter")
         return chamar_openrouter(sistema, instrucao)
     except Exception as exc:
         text = str(exc)
@@ -335,8 +366,25 @@ def _openrouter(sistema: str, instrucao: str) -> dict | list:
         raise
 
 
-def chamar_llm(sistema: str, instrucao: str) -> dict | list:
+def chamar_llm(sistema: str, instrucao: str, *, no_retries: bool = False,
+                no_paid_fallback: bool = False) -> dict | list:
     """Call providers in order, with resilient failover and clear transient status."""
+    if no_retries or no_paid_fallback:
+        # Paid executors own retry/reconciliation. Respect the old dispatcher's
+        # explicit provider, Google key alias and preferred model, without
+        # discovery substituting another model before the paid attempt.
+        selected, available, key = _strict_text_selection()
+        if not selected or not available[selected]:
+            raise AIProviderPermanentError("O provedor de texto selecionado não está configurado ou disponível para esta tentativa.")
+        if selected == "gemini":
+            model = _normalize_model_name(os.environ.get("GEMINI_MODELO_TEXTO", "").strip()
+                                          or os.environ.get("GEMINI_TEXT_MODEL", "").strip()
+                                          or "gemini-flash-latest")
+            return _gemini_model(model, sistema, instrucao, no_retries=no_retries, api_key=key)
+        if selected == "groq":
+            return _groq(sistema, instrucao, no_retries=no_retries)
+        if selected == "openrouter":
+            return _openrouter(sistema, instrucao, no_retries=no_retries, no_paid_fallback=True)
     errors: list[str] = []
     temporary = False
 

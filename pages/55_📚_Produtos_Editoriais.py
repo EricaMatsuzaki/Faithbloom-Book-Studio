@@ -14,6 +14,7 @@ from editorial_products import (
 from estilo import aplicar_estilo, hero, section_title
 from orchestrator_editorial import AUDIENCES, EDITORIAL_LINES, ORIGINS, PROJECT_TYPES
 from storage_backend import materializar
+from orchestrator_execution_ui import render_editorial_recovery, preserve_editorial_response
 
 st.set_page_config(page_title="Produtos Editoriais · FaithBloom", page_icon="📚", layout="wide")
 aplicar_estilo()
@@ -101,6 +102,15 @@ else:
 project = st.session_state.get("editorial_product_state")
 if not project:
     st.stop()
+def refresh_recovered_product(updated):
+    st.session_state.editorial_product_state = updated
+
+# A retained browser session is not authorization to display a prior tenant's
+# title, brief or draft. Check the exact saved reference before reading them.
+recovery = render_editorial_recovery(project["storage_path"], key_prefix=f"editorial_recovery_{project['book_id']}",
+                                    on_change=refresh_recovered_product)
+if recovery is None:
+    st.stop()
 meta = project["editorial_product"]
 section_title(project["titulo"], f"{AUDIENCES[meta['spec']['audience']]} · {project['idioma_original']} · {meta['status']}", "Seu produto")
 with st.expander("Brief, objetivos e fontes do projeto"):
@@ -112,28 +122,45 @@ with st.expander("Brief, objetivos e fontes do projeto"):
         st.caption(source["content"])
 
 section_title("Geração e retomada", "Cada unidade válida é salva antes da próxima. Ao retomar, unidades já concluídas são reutilizadas.", "Versões")
+current_revision = (meta.get("execution") or {}).get("revision", 0)
+stale_copy = bool(recovery and current_revision != recovery["execution"]["revision"])
+can_edit = bool(recovery and recovery["can_edit"] and not stale_copy)
+if stale_copy:
+    st.warning("O conteúdo salvo foi atualizado em outra sessão. Reabra a versão atual antes de editar ou aprovar.")
+    if st.button("Reabrir conteúdo salvo deste produto", key=f"editorial_reload_{project['book_id']}"):
+        try:
+            st.session_state.editorial_product_state = load_product(project["storage_path"])
+            st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
 pending = len(meta["unit_plan"]) - len((meta.get("draft") or {}).get("units", []))
-new_version = st.checkbox("Gerar uma nova versão preservando a atual", key=f"editorial_new_{project['book_id']}") if meta["units"] and not meta.get("draft") else False
-st.caption(f"Plano: {len(meta['unit_plan'])} unidades · próximas chamadas: {pending if not meta['units'] or meta.get('draft') or new_version else 0} · estimativa do lote: US$ {estimar_custo('texto', pending):.2f}. A cobrança real depende do provedor.")
-status = provider_status()
+new_version = st.checkbox("Gerar uma nova versão preservando a atual", disabled=not can_edit, key=f"editorial_new_{project['book_id']}") if meta["units"] and not meta.get("draft") else False
+paid_pending = len(meta["unit_plan"]) if new_version else recovery["paid_pending"] if recovery else pending
+st.caption(f"Plano: {len(meta['unit_plan'])} unidades · próximas chamadas: {paid_pending} · estimativa do lote: US$ {estimar_custo('texto', paid_pending):.2f}. A cobrança real depende do provedor.")
+status = provider_status(strict=True)
 ready = any(status[key] for key in ("gemini", "groq", "openrouter"))
-authorized = st.checkbox("Autorizo a geração das unidades pendentes e o custo do provedor", key=f"editorial_generation_confirm_{project['book_id']}")
+needs_provider = new_version or not recovery or recovery["paid_pending"] > 0
+confirmation = "Autorizo a geração das unidades pendentes e o custo do provedor" if needs_provider else "Confirmo recuperar as respostas recebidas sem nova chamada à IA"
+authorized = st.checkbox(confirmation, key=f"editorial_generation_confirm_{project['book_id']}_{'new' if needs_provider else 'received'}")
 personal_consent = False
 personal_data_required = meta["spec"].get("origin") == "real_experience"
-if personal_data_required:
+if personal_data_required and needs_provider:
     personal_consent = st.checkbox("Confirmo que tenho autorização para usar os dados pessoais destas fontes com o provedor de IA", key=f"editorial_data_consent_{project['book_id']}")
-if not ready:
+if not ready and needs_provider:
     st.info("Configure um provedor de texto para gerar com IA. Projetos existentes continuam disponíveis para revisão e exportação.")
-if st.button("Gerar / retomar unidades", type="primary", disabled=not ready or not authorized or (personal_data_required and not personal_consent) or (bool(meta["units"]) and not meta.get("draft") and not new_version)):
+if st.button("Gerar / retomar unidades", type="primary", disabled=(needs_provider and not ready) or not authorized or not recovery or not recovery["can_generate"] or (recovery["execution"].get("status") == "completed" and not new_version) or (new_version and stale_copy) or (needs_provider and personal_data_required and not personal_consent) or (bool(meta["units"]) and not meta.get("draft") and not new_version)):
     try:
         with st.spinner("Gerando e salvando cada unidade…"):
             generate_product(project, new_version=new_version, confirmed=authorized, consent_confirmed=personal_consent)
         st.success("Conteúdo gerado. Revise as unidades antes da aprovação.")
         st.rerun()
     except Exception as exc:
+        preserve_editorial_response(exc, project["storage_path"])
+        can_edit = False
         st.error(f"A geração parou: {exc}")
-        st.info("As unidades já recebidas permanecem neste projeto. Retome para salvar e continuar sem refazer os resultados preservados.")
-if st.button("Salvar estado atual"):
+        st.info("As unidades recebidas são preservadas. Atualize a tela e confira qualquer chamada pendente antes de retomar.")
+meta = project["editorial_product"]
+if st.button("Salvar estado atual", disabled=not can_edit):
     try:
         save_product(project)
         st.success("Estado salvo no mesmo projeto.")
@@ -187,7 +214,7 @@ if meta["units"]:
                     revised["cards"][i]["source_refs"] = st.multiselect("Fontes do cartão", source_ids, default=card["source_refs"], key=f"{prefix}_card{i}_sources")
                 for i, block in enumerate(unit.get("blocks", [])):
                     revised["blocks"][i]["text"] = st.text_area(block["label"], value=block["text"], key=f"{prefix}_block{i}")
-                if st.form_submit_button("Salvar revisão desta unidade", disabled=bool(meta.get("draft"))):
+                if st.form_submit_button("Salvar revisão desta unidade", disabled=not can_edit or bool(meta.get("draft"))):
                     try:
                         revise_unit(project, n, revised)
                         st.success("Revisão salva e versão anterior preservada. A aprovação precisa ser renovada.")
@@ -198,7 +225,7 @@ if meta["units"]:
         with st.expander("Versões anteriores"):
             version_ids = list(dict.fromkeys(version["id"] for version in meta["versions"]))
             selected_version = st.selectbox("Versão para restaurar", version_ids)
-            if st.button("Restaurar como proposta para revisão", disabled=bool(meta.get("draft"))):
+            if st.button("Restaurar como proposta para revisão", disabled=not can_edit or bool(meta.get("draft"))):
                 try:
                     restore_version(project, selected_version)
                     st.rerun()
@@ -212,7 +239,7 @@ if meta["units"]:
     reviewer = st.text_input("Responsável pela revisão", key=f"editorial_reviewer_{project['book_id']}")
     reviewed = st.checkbox("Revisei conteúdo, linguagem e adequação ao público", key=f"editorial_content_review_{meta['active_version']}")
     accuracy = st.checkbox("Conferi precisão, fontes, referências bíblicas e gabaritos aplicáveis", key=f"editorial_accuracy_review_{meta['active_version']}")
-    if st.button("Aprovar esta versão", disabled=not report["ok"] or not reviewer.strip() or not reviewed or not accuracy or bool(meta.get("draft"))):
+    if st.button("Aprovar esta versão", disabled=not can_edit or not report["ok"] or not reviewer.strip() or not reviewed or not accuracy or bool(meta.get("draft"))):
         try:
             approve_product(project, reviewer, content_reviewed=reviewed, accuracy_reviewed=accuracy)
             st.success("Sua aprovação foi registrada nesta versão.")
@@ -222,7 +249,7 @@ if meta["units"]:
     st.write("Versão aprovada para exportação." if report["ready_for_final_export"] else "Versão ainda precisa da revisão humana para exportação final.")
     draft_export = st.checkbox("Exportar prévia de rascunho para revisão", value=not report["ready_for_final_export"], key=f"editorial_preview_{meta['active_version']}")
     export_format = st.selectbox("Formato", ["pdf", "epub"], format_func=str.upper)
-    if st.button("Preparar arquivo", disabled=not report["ok"] or (not draft_export and not report["ready_for_final_export"])):
+    if st.button("Preparar arquivo", disabled=not can_edit or not report["ok"] or (not draft_export and not report["ready_for_final_export"])):
         try:
             result = export_product(project, export_format, draft=draft_export)
             st.success("Arquivo preparado e salvo no projeto.")

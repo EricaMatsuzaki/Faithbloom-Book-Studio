@@ -5,9 +5,10 @@ Candidates never replace Character Masters. A World Master changes only through
 one HTTP attempt and no paid fallback. Monetary totals are conservative estimates
 unless a cost is explicitly reconciled; they are not a billing ledger.
 
-The storage backend has no compare-and-swap primitive. The lock protects sessions
-in one application worker; checkpoints protect restarts. Distributed workers need
-a transactional lease/ledger before this executor can claim cross-worker dedupe.
+Budget reservation and paid-attempt claims share one atomic project-ledger
+update. Local/RPC backends coordinate workers; the explicitly supported legacy
+pilot path coordinates only processes sharing one host/cache directory. Gallery,
+world and scene persistence are separate records, not a multi-record transaction.
 """
 from __future__ import annotations
 
@@ -19,11 +20,13 @@ import os
 from pathlib import Path
 import threading
 import time
+import uuid
 
 import character_guide as guide
 import orchestrator_visual as ov
 import openrouter_client as client
 import storage_backend as storage
+from storage_updates import update_json_document
 from emotional_visual_binding import require_emotional_binding, scene_direction, direction_prompt, source_scene_text, IDENTITY_RULE
 from armazenamento import salvar_na_galeria
 from asset_library import create_version, get_asset, get_asset_by_uri, update_asset
@@ -57,6 +60,43 @@ def _ledger_path(plan: dict) -> str:
     return f"orchestrator/visual_budgets/{_fingerprint(str(plan['project_id']))}.json"
 
 
+def _validated_ledger(plan: dict, ledger) -> dict:
+    if (not isinstance(ledger, dict) or not isinstance(ledger.get("operations"), dict)
+            or ledger.get("project_id") != plan["project_id"]):
+        raise VisualExecutionError("O orçamento persistido não corresponde a este projeto.")
+    revision = ledger.get("revision", 0)
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+        raise VisualExecutionError("A revisão do orçamento persistido é inválida.")
+    states = {"pending", "running", "uncertain", "raw", "succeeded", "reconciled_failed"}
+    for operation_id, operation in ledger["operations"].items():
+        if (not isinstance(operation, dict) or operation.get("id") != operation_id
+                or not isinstance(operation.get("items"), list) or not operation["items"]):
+            raise VisualExecutionError("Uma operação do orçamento persistido precisa de recuperação.")
+        indexes = set()
+        for item in operation["items"]:
+            if not isinstance(item, dict):
+                raise VisualExecutionError("Uma tentativa do orçamento persistido é inválida.")
+            index = item.get("index")
+            if (not isinstance(index, int) or isinstance(index, bool) or index < 0
+                    or index in indexes or item.get("state") not in states):
+                raise VisualExecutionError("Uma tentativa do orçamento persistido é inválida.")
+            indexes.add(index)
+            for field in ("estimated_usd", "actual_usd"):
+                value = item.get(field)
+                if value is None and field == "actual_usd":
+                    continue
+                if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                        or not math.isfinite(value) or value < 0):
+                    raise VisualExecutionError("O custo persistido precisa de recuperação antes de gerar.")
+            if not isinstance(item.get("reserved", False), bool):
+                raise VisualExecutionError("A reserva persistida é inválida.")
+            if (item["state"] in {"running", "uncertain"} and item.get("reserved") is not True
+                    or item["state"] in {"raw", "succeeded", "reconciled_failed"} and item.get("reserved", False)):
+                raise VisualExecutionError("O estado e a reserva persistidos precisam de recuperação antes de gerar.")
+    _totals(ledger)  # Finite individual costs can still overflow a project total.
+    return ledger
+
+
 def _ledger(plan: dict) -> dict:
     """A failed read must never be mistaken for an empty project budget."""
     try:
@@ -71,16 +111,15 @@ def _ledger(plan: dict) -> dict:
         ledger = json.loads(raw)
     except (ValueError, TypeError) as exc:
         raise VisualExecutionError("O orçamento persistido precisa de recuperação antes de gerar.") from exc
-    if not isinstance(ledger, dict) or not isinstance(ledger.get("operations"), dict) or ledger.get("project_id") != plan["project_id"]:
-        raise VisualExecutionError("O orçamento persistido não corresponde a este projeto.")
-    return ledger
+    return _validated_ledger(plan, ledger)
 
 
 def _totals(ledger: dict) -> dict:
-    spent = reserved = actual_known = 0.0
+    spent = reserved = actual_known = estimated_all = 0.0
     all_actual = True
     for operation in ledger.get("operations", {}).values():
         for item in operation.get("items", []):
+            estimated_all += item["estimated_usd"]
             if item.get("state") in {"raw", "succeeded", "reconciled_failed"}:
                 actual = item.get("actual_usd")
                 spent += item["estimated_usd"] if actual is None else actual
@@ -90,21 +129,53 @@ def _totals(ledger: dict) -> dict:
                     actual_known += actual
             elif item.get("reserved"):
                 reserved += item["estimated_usd"]
+    if not all(math.isfinite(value) for value in (spent, reserved, spent + reserved, actual_known, estimated_all)):
+        raise VisualExecutionError("O total persistido precisa de recuperação antes de gerar.")
     return {"estimated_spent_usd": round(spent, 6), "reserved_usd": round(reserved, 6),
             "actual_known_usd": round(actual_known, 6), "actual_total_usd": round(actual_known, 6) if all_actual else None}
 
 
-def _save_ledger(plan: dict, ledger: dict) -> None:
-    ledger["updated_at"] = int(time.time())
-    ov._save_json(_ledger_path(plan), ledger)
+def _update_ledger(plan: dict, mutator) -> dict:
+    now = int(time.time())
+
+    def update(ledger):
+        ledger = _validated_ledger(plan, ledger)
+        mutator(ledger)
+        _validated_ledger(plan, ledger)
+        ledger["revision"] = ledger.get("revision", 0) + 1
+        ledger["updated_at"] = now
+        return ledger
+
+    # Deliberate pilot compatibility: this is only a same-host file lock for
+    # legacy Supabase. Native atomic failures never fall back to an upload.
+    return update_json_document(storage.BACKEND, _ledger_path(plan), update,
+                                {"project_id": plan["project_id"], "operations": {}},
+                                allow_legacy_pilot=True)
 
 
 def _sync_budget(plan_id: str, ledger: dict) -> dict:
-    plan = _plan(plan_id)
     totals = _totals(ledger)
-    plan.update(budget_spent_usd=totals["estimated_spent_usd"], budget_reserved_usd=totals["reserved_usd"],
-                budget_actual_usd=totals["actual_total_usd"], budget_cost_basis="estimated_until_reconciled")
-    return ov.save_visual_plan(plan)
+    revision, now = ledger.get("revision", 0), int(time.time())
+
+    def merge(plan):
+        if (not isinstance(plan, dict) or plan.get("id") != plan_id
+                or plan.get("project_id") != ledger["project_id"]):
+            raise VisualExecutionError("O pré-voo visual mudou durante a atualização do orçamento.")
+        if plan.get("budget_ledger_revision", -1) <= revision:
+            plan.update(budget_spent_usd=totals["estimated_spent_usd"], budget_reserved_usd=totals["reserved_usd"],
+                        budget_actual_usd=totals["actual_total_usd"], budget_cost_basis="estimated_until_reconciled",
+                        budget_ledger_revision=revision, updated_at=now)
+        return plan
+
+    # A compatibility cache only. Never rewrite approvals or the plan index
+    # from a stale plan; the UI and spending checks read the project ledger.
+    return update_json_document(storage.BACKEND, f"orchestrator/visual_plans/{plan_id}.json", merge,
+                                allow_legacy_pilot=True)
+
+
+def visual_project_budget(plan_id: str) -> dict:
+    """Current project totals, including operations from other visual plans."""
+    return _totals(_ledger(_plan(plan_id)))
 
 
 def _route(plan: dict, modality: str) -> dict:
@@ -281,114 +352,212 @@ def list_visual_operations(plan_id: str) -> list[dict]:
     return [_snapshot(x, ledger) for x in ledger["operations"].values() if x.get("plan_id") == plan_id]
 
 
+def _operation(ledger: dict, plan_id: str, operation_id: str) -> dict:
+    operation = ledger["operations"].get(operation_id)
+    if not operation or operation.get("plan_id") != plan_id:
+        raise VisualExecutionError("Operação não encontrada neste pré-voo visual.")
+    return operation
+
+
+def _item(operation: dict, index: int) -> dict:
+    item = next((x for x in operation["items"] if x["index"] == index), None)
+    if item is None:
+        raise VisualExecutionError("Tentativa não encontrada nesta operação.")
+    return item
+
+
+def _operation_status(operation: dict) -> str:
+    states = {x["state"] for x in operation["items"]}
+    if "uncertain" in states:
+        return "needs_reconciliation"
+    if "running" in states:
+        return "running"
+    if "raw" in states:
+        return "persistence_pending"
+    if "pending" in states:
+        return "reserved"
+    return "complete" if states == {"succeeded"} else "reconciled_partial"
+
+
+def _check_ambiguous(ledger: dict, input_fingerprint: str, operation_id: str) -> None:
+    for operation in ledger["operations"].values():
+        if (operation.get("input_fingerprint") == input_fingerprint
+                and any(x["state"] in {"running", "uncertain"} for x in operation["items"])):
+            message = ("A tentativa anterior pode ter chegado ao provedor. Confira o resultado/custo antes de enviar outra geração."
+                       if operation["id"] == operation_id else
+                       "A tentativa anterior pode ter chegado ao provedor. Alterar a chave da operação não permite reenviar antes da reconciliação.")
+            raise VisualExecutionError(message, _snapshot(operation, ledger))
+
+
+def _reserve_pending(plan: dict, ledger: dict, operation: dict, execution_token: str) -> None:
+    pending = [x for x in operation["items"] if x["state"] == "pending"]
+    if not pending:
+        return  # Received media can be persisted even after the budget is spent.
+    needed = sum(x["estimated_usd"] for x in pending if not x.get("reserved"))
+    totals, limit = _totals(ledger), plan.get("budget_limit_usd")
+    if limit is not None and totals["estimated_spent_usd"] + totals["reserved_usd"] + needed > float(limit) + 1e-9:
+        raise PermissionError("A operação ultrapassa o orçamento do projeto. O saldo não permite iniciar ou retomar este lote.")
+    for item in pending:
+        item.update(reserved=True, reservation_token=execution_token)
+
+
+def _checkpoint_item(plan: dict, plan_id: str, operation_id: str, index: int,
+                     attempt_token, expected_state: str, changes: dict) -> dict:
+    def checkpoint(ledger):
+        operation = _operation(ledger, plan_id, operation_id)
+        item = _item(operation, index)
+        if item.get("attempt_token") != attempt_token or item["state"] != expected_state:
+            raise VisualExecutionError("A tentativa foi atualizada em outra sessão. Recarregue antes de continuar.",
+                                       _snapshot(operation, ledger))
+        item.update(deepcopy(changes))
+        if not item.get("reserved"):
+            item.pop("reservation_token", None)
+        operation["status"] = _operation_status(operation)
+    return _update_ledger(plan, checkpoint)
+
+
+def _record_failure(plan: dict, plan_id: str, operation_id: str, index: int,
+                    attempt_token, execution_token: str, error: str) -> dict:
+    def interrupt(ledger):
+        operation = _operation(ledger, plan_id, operation_id)
+        item = _item(operation, index)
+        # A lost raw-ack or a late provider response must not regress a landed
+        # result or a human reconciliation. Never touch a replacement attempt.
+        if item.get("attempt_token") != attempt_token:
+            return
+        if item["state"] == "running":
+            item["state"] = "uncertain"
+        if item["state"] in {"uncertain", "raw"}:
+            operation["error"] = error
+        for untouched in operation["items"]:
+            if (untouched["state"] == "pending"
+                    and untouched.get("reservation_token") == execution_token):
+                untouched["reserved"] = False
+                untouched.pop("reservation_token", None)
+        operation["status"] = _operation_status(operation)
+    return _update_ledger(plan, interrupt)
+
+
 def _run(plan_id: str, kind: str, payload: dict, count: int, modality: str, confirmed: bool,
          operation_key: str | None, produce, persist, *, consent_confirmed: bool = False) -> dict:
-    with _LOCK:
-        plan = _plan(plan_id)
-        ledger = _ledger(plan)
-        input_fingerprint = _fingerprint({"kind": kind, "payload": payload, "quantity": count})
-        operation_id = _fingerprint({"plan_id": plan_id, "input": input_fingerprint, "key": operation_key or "default"})[:32]
-        operation = ledger["operations"].get(operation_id)
-        if operation is None:
-            ambiguous = next((x for x in ledger["operations"].values() if x.get("input_fingerprint") == input_fingerprint and any(item.get("state") in {"running", "uncertain"} for item in x.get("items", []))), None)
-            if ambiguous:
-                raise VisualExecutionError("A tentativa anterior pode ter chegado ao provedor. Alterar a chave da operação não permite reenviar antes da reconciliação.", _snapshot(ambiguous, ledger))
-        if operation and operation.get("status") == "complete":
-            _sync_budget(plan_id, ledger)
-            return _snapshot(operation, ledger)
-        if operation and any(x.get("state") in {"running", "uncertain"} for x in operation["items"]):
-            raise VisualExecutionError("A tentativa anterior pode ter chegado ao provedor. Confira o resultado/custo antes de enviar outra geração.", _snapshot(operation, ledger))
-        estimate = estimate_visual_operation(plan_id, modality, count)
-        if not confirmed:
-            raise PermissionError(f"Confirme a operação e a estimativa de US$ {estimate['estimated_usd']:.2f} antes de gerar.")
-        if operation is None and estimate["over_budget"]:
-            raise PermissionError("A operação ultrapassa o orçamento do projeto. Ajuste o limite explicitamente antes de gerar.")
-        # Recovered raw images can be saved without buying or authorizing them
-        # again. Only calls that have never started require fresh action evidence.
-        pending_items = [x for x in operation["items"] if x["state"] == "pending"] if operation else []
-        pending_cost = sum(x["estimated_usd"] for x in pending_items) if operation else estimate["estimated_usd"]
-        governance_receipt = None
-        if operation is None or pending_items:
-            from governance_runtime import authorize_generation
-            totals = _totals(ledger)
-            limit = plan.get("budget_limit_usd")
-            # Reservations already owned by these pending calls are available
-            # to them, not to a second operation. The ledger remains the meter.
-            available = None if limit is None else (
-                float(limit) - totals["estimated_spent_usd"] - totals["reserved_usd"]
-                + sum(x["estimated_usd"] for x in pending_items if x.get("reserved"))
-            )
-            from emotional_visual_binding import source_for_plan
-            canonical_source = source_for_plan(plan)
-            source_markers = (canonical_source.get("comic_product") or {}).get("source_data") or {}
-            uses_personal = bool(canonical_source.get("real_experience") or canonical_source.get("real_life_brief") or canonical_source.get("uses_personal_data") or source_markers.get("uses_personal_data"))
-            governance_receipt = authorize_generation(
-                "visual." + kind, confirmed=confirmed, projected_cost=pending_cost,
-                provider_configured=bool(estimate.get("provider")), operation_id=operation_id,
-                source_module="visual_execution.py", state=plan, budget_remaining=available,
-                uses_personal_data=uses_personal, consent_confirmed=consent_confirmed,
-            )
-        if operation is None:
-            if estimate["over_budget"]:
-                raise PermissionError("A operação ultrapassa o orçamento do projeto. Ajuste o limite explicitamente antes de gerar.")
-            validar_orcamento(estimate["estimated_usd"])
-            unit = estimate["estimated_usd"] / count
-            operation = {"id": operation_id, "input_fingerprint": input_fingerprint, "plan_id": plan_id, "kind": kind, "status": "reserved", "route": {k: estimate[k] for k in ("provider", "model", "resolution")},
-                         "created_at": int(time.time()), "cost_basis": "estimated_until_reconciled",
-                         "items": [{"index": i, "state": "pending", "reserved": True, "estimated_usd": unit, "actual_usd": None} for i in range(count)]}
-            ledger["operations"][operation_id] = operation
-            _save_ledger(plan, ledger)  # A failed reservation prevents every provider call.
-            _sync_budget(plan_id, ledger)
-        remaining = [x for x in operation["items"] if x["state"] == "pending" and not x.get("reserved")]
-        if remaining:
-            totals = _totals(ledger)
-            limit = plan.get("budget_limit_usd")
-            needed = sum(x["estimated_usd"] for x in remaining)
-            if limit is not None and totals["estimated_spent_usd"] + totals["reserved_usd"] + needed > float(limit) + 1e-9:
-                raise PermissionError("O saldo do projeto não permite retomar este lote.")
-            validar_orcamento(needed)
-            for item in remaining:
-                item["reserved"] = True
-            _save_ledger(plan, ledger)
-        if governance_receipt is not None:
-            operation["governance_receipt"] = governance_receipt
-            _save_ledger(plan, ledger)
-        for item in operation["items"]:
-            if item["state"] in {"succeeded", "reconciled_failed"}:
-                continue
-            try:
-                if item["state"] == "pending":
-                    item["state"] = "running"
-                    _save_ledger(plan, ledger)
-                    raw = produce(item["index"], operation["route"])
-                    item.update(raw=raw, state="raw", reserved=False)
-                    _save_ledger(plan, ledger)  # Store response before media/catalog work.
-                    _sync_budget(plan_id, ledger)
-                item["result"] = persist(item["raw"], item["index"], operation_id)
-                item["state"] = "succeeded"
-                _save_ledger(plan, ledger)
-            except BaseException as exc:
-                if item["state"] == "running":
-                    item["state"] = "uncertain"
-                operation["status"] = "needs_reconciliation" if item["state"] == "uncertain" else "persistence_pending"
-                operation["error"] = sanitizar_texto(str(exc))[:400]
-                # Release only calls that were never started. A timed-out call
-                # retains its reservation until an explicit reconciliation.
-                for untouched in operation["items"]:
-                    if untouched["state"] == "pending":
-                        untouched["reserved"] = False
-                try:
-                    _save_ledger(plan, ledger)
-                    _sync_budget(plan_id, ledger)
-                except Exception:
-                    pass  # The durable pre-call checkpoint still blocks a duplicate.
-                if not isinstance(exc, Exception):
-                    raise
-                raise VisualExecutionError("O lote foi interrompido. Resultados já recebidos foram preservados; nenhuma tentativa automática foi enviada. " + sanitizar_texto(str(exc))[:300], _snapshot(operation, ledger)) from exc
-        operation["status"] = "complete" if all(x["state"] == "succeeded" for x in operation["items"]) else "reconciled_partial"
-        _save_ledger(plan, ledger)
+    plan = _plan(plan_id)
+    ledger = _ledger(plan)
+    input_fingerprint = _fingerprint({"kind": kind, "payload": payload, "quantity": count})
+    operation_id = _fingerprint({"plan_id": plan_id, "input": input_fingerprint, "key": operation_key or "default"})[:32]
+    operation = ledger["operations"].get(operation_id)
+    if operation and operation.get("status") == "complete":
         _sync_budget(plan_id, ledger)
         return _snapshot(operation, ledger)
+    _check_ambiguous(ledger, input_fingerprint, operation_id)
+    estimate = estimate_visual_operation(plan_id, modality, count)
+    if not confirmed:
+        raise PermissionError(f"Confirme a operação e a estimativa de US$ {estimate['estimated_usd']:.2f} antes de gerar.")
+    if operation is None and estimate["over_budget"]:
+        raise PermissionError("A operação ultrapassa o orçamento do projeto. Ajuste o limite explicitamente antes de gerar.")
+    pending = [x for x in operation["items"] if x["state"] == "pending"] if operation else []
+    pending_cost = sum(x["estimated_usd"] for x in pending) if operation else estimate["estimated_usd"]
+    governance_receipt = None
+    if operation is None or pending:
+        from governance_runtime import authorize_generation
+        from emotional_visual_binding import source_for_plan
+        totals, limit = _totals(ledger), plan.get("budget_limit_usd")
+        available = None if limit is None else (
+            float(limit) - totals["estimated_spent_usd"] - totals["reserved_usd"]
+            + sum(x["estimated_usd"] for x in pending if x.get("reserved")))
+        canonical_source = source_for_plan(plan)
+        source_markers = (canonical_source.get("comic_product") or {}).get("source_data") or {}
+        uses_personal = bool(canonical_source.get("real_experience") or canonical_source.get("real_life_brief") or canonical_source.get("uses_personal_data") or source_markers.get("uses_personal_data"))
+        governance_receipt = authorize_generation(
+            "visual." + kind, confirmed=confirmed, projected_cost=pending_cost,
+            provider_configured=bool(estimate.get("provider")), operation_id=operation_id,
+            source_module="visual_execution.py", state=plan, budget_remaining=available,
+            uses_personal_data=uses_personal, consent_confirmed=consent_confirmed,
+        )
+        validar_orcamento(pending_cost)
+
+    # These identities are fixed before any CAS callback can be replayed.
+    execution_token, created_at = uuid.uuid4().hex, int(time.time())
+    attempt_tokens = {i: _fingerprint({"execution": execution_token, "index": i}) for i in range(count)}
+    new_operation = {"id": operation_id, "input_fingerprint": input_fingerprint, "plan_id": plan_id,
+                     "kind": kind, "status": "reserved", "route": {k: estimate[k] for k in ("provider", "model", "resolution")},
+                     "created_at": created_at, "cost_basis": "estimated_until_reconciled",
+                     "items": [{"index": i, "state": "pending", "reserved": False,
+                                "estimated_usd": estimate["estimated_usd"] / count, "actual_usd": None} for i in range(count)]}
+
+    def reserve_and_claim(current):
+        _check_ambiguous(current, input_fingerprint, operation_id)
+        existing = current["operations"].get(operation_id)
+        if existing is None:
+            existing = deepcopy(new_operation)
+            current["operations"][operation_id] = existing
+        elif (existing.get("plan_id") != plan_id or existing.get("input_fingerprint") != input_fingerprint
+              or [x["index"] for x in existing["items"]] != list(range(count))):
+            raise VisualExecutionError("A identidade da operação persistida é inválida.")
+        if existing.get("status") == "complete":
+            return
+        _reserve_pending(plan, current, existing, execution_token)
+        if governance_receipt is not None:
+            existing["governance_receipt"] = deepcopy(governance_receipt)
+        first = next((x for x in existing["items"] if x["state"] not in {"succeeded", "reconciled_failed"}), None)
+        if first and first["state"] == "pending":
+            first.update(state="running", attempt_token=attempt_tokens[first["index"]])
+        existing["status"] = _operation_status(existing)
+
+    # No provider is called if this commit fails, including an uncertain ack.
+    # If it landed, its running claim durably blocks a second sender.
+    ledger = _update_ledger(plan, reserve_and_claim)
+    operation = _operation(ledger, plan_id, operation_id)
+    if operation.get("status") == "complete":
+        _sync_budget(plan_id, ledger)
+        return _snapshot(operation, ledger)
+
+    for index in range(count):
+        item = _item(_operation(ledger, plan_id, operation_id), index)
+        if item["state"] in {"succeeded", "reconciled_failed"}:
+            continue
+        if item["state"] == "pending":
+            def claim(current):
+                fresh = _operation(current, plan_id, operation_id)
+                target = _item(fresh, index)
+                if target["state"] in {"succeeded", "reconciled_failed", "raw"}:
+                    return
+                _check_ambiguous(current, input_fingerprint, operation_id)
+                _reserve_pending(plan, current, fresh, execution_token)
+                target.update(state="running", attempt_token=attempt_tokens[index])
+                fresh["status"] = _operation_status(fresh)
+            ledger = _update_ledger(plan, claim)
+            item = _item(_operation(ledger, plan_id, operation_id), index)
+            if item["state"] in {"succeeded", "reconciled_failed"}:
+                continue
+        token = item.get("attempt_token")
+        try:
+            if item["state"] == "running":
+                if token != attempt_tokens[index]:
+                    raise VisualExecutionError("Outra sessão possui esta tentativa; nenhuma geração foi reenviada.")
+                raw = produce(index, _operation(ledger, plan_id, operation_id)["route"])
+                ledger = _checkpoint_item(plan, plan_id, operation_id, index, token, "running",
+                                          {"raw": raw, "state": "raw", "reserved": False})
+                _sync_budget(plan_id, ledger)
+                item = _item(_operation(ledger, plan_id, operation_id), index)
+            if item["state"] != "raw":
+                raise VisualExecutionError("A tentativa precisa ser conferida antes de continuar.")
+            result = persist(item["raw"], index, operation_id)
+            ledger = _checkpoint_item(plan, plan_id, operation_id, index, token, "raw",
+                                      {"result": result, "state": "succeeded"})
+        except BaseException as exc:
+            try:
+                ledger = _record_failure(plan, plan_id, operation_id, index, token, execution_token,
+                                         sanitizar_texto(str(exc))[:400])
+                _sync_budget(plan_id, ledger)
+            except Exception:
+                pass  # The last acknowledged claim/checkpoint remains conservative.
+            if not isinstance(exc, Exception):
+                raise
+            operation = _operation(ledger, plan_id, operation_id)
+            raise VisualExecutionError("O lote foi interrompido. Resultados já recebidos foram preservados; nenhuma tentativa automática foi enviada. " + sanitizar_texto(str(exc))[:300],
+                                       _snapshot(operation, ledger)) from exc
+    _sync_budget(plan_id, ledger)
+    return _snapshot(_operation(ledger, plan_id, operation_id), ledger)
 
 
 def _generate_image(prompt: str, refs: list[str], route: dict) -> str:
@@ -687,31 +856,28 @@ def reconcile_visual_attempt(plan_id: str, operation_id: str, item_index: int, *
     cost = float(actual_cost_usd)
     if not math.isfinite(cost) or cost < 0:
         raise ValueError("Informe um custo confirmado, finito e não negativo.")
-    with _LOCK:
-        plan = _plan(plan_id)
-        ledger = _ledger(plan)
-        operation = ledger["operations"].get(operation_id)
-        if not operation:
-            raise ValueError("Operação não encontrada.")
-        item = next((x for x in operation["items"] if x["index"] == int(item_index)), None)
-        if item is None or item["state"] not in {"uncertain", "running"}:
-            raise ValueError("A tentativa não precisa de reconciliação.")
-        result = None
-        if recovered_asset_id:
-            asset = get_asset(recovered_asset_id, materialize_file=False)
-            if not asset or asset.get("status") == "archived":
-                raise ValueError("Asset recuperado não encontrado.")
-            uri = asset.get("storage_uri") or asset.get("caminho_arquivo")
-            _asset_path(uri)
-            result = {"asset_id": recovered_asset_id, "id": recovered_asset_id, "storage_uri": uri, "recovered": True}
-        item.update(state="succeeded" if result else "reconciled_failed", actual_usd=cost, reserved=False,
-                    reconciled_at=int(time.time()), reconciliation="human_provider_evidence")
-        if result:
-            item["result"] = result
-        operation["status"] = "reconciled_partial"
-        _save_ledger(plan, ledger)
-        _sync_budget(plan_id, ledger)
-        return _snapshot(operation, ledger)
+    plan = _plan(plan_id)
+    ledger = _ledger(plan)
+    operation = _operation(ledger, plan_id, operation_id)
+    item = _item(operation, int(item_index))
+    if item["state"] not in {"uncertain", "running"}:
+        raise ValueError("A tentativa não precisa de reconciliação.")
+    observed_token, observed_state = item.get("attempt_token"), item["state"]
+    result = None
+    if recovered_asset_id:
+        asset = get_asset(recovered_asset_id, materialize_file=False)
+        if not asset or asset.get("status") == "archived":
+            raise ValueError("Asset recuperado não encontrado.")
+        uri = asset.get("storage_uri") or asset.get("caminho_arquivo")
+        _asset_path(uri)
+        result = {"asset_id": recovered_asset_id, "id": recovered_asset_id, "storage_uri": uri, "recovered": True}
+    changes = {"state": "succeeded" if result else "reconciled_failed", "actual_usd": cost, "reserved": False,
+               "reconciled_at": int(time.time()), "reconciliation": "human_provider_evidence"}
+    if result:
+        changes["result"] = result
+    ledger = _checkpoint_item(plan, plan_id, operation_id, int(item_index), observed_token, observed_state, changes)
+    _sync_budget(plan_id, ledger)
+    return _snapshot(_operation(ledger, plan_id, operation_id), ledger)
 
 
 def element_lock_capability() -> dict:

@@ -7,6 +7,7 @@ Por baixo, os dados usam storage_backend.py:
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import re
@@ -20,6 +21,77 @@ from storage_backend import (
     storage_uri,
 )
 from stable_hardening import ensure_project_schema
+import storage_backend as storage
+from storage_updates import update_json_document
+
+
+class ProtectedBookUpdate(PermissionError):
+    """A legacy snapshot cannot replace a product's paid-execution record."""
+
+
+def _book_update_path(reference: str, prefix: str) -> str:
+    if not reference:
+        raise ValueError("O caminho do projeto salvo não foi informado.")
+    path = (storage.uri_to_path(reference) if is_storage_uri(reference)
+            else storage._normalize_storage_path(reference, allow_empty=False))
+    # Authorize WRITE before inspecting the document or preparing any assets.
+    # uri_to_path authorizes reading a canonical URI, which is not enough for
+    # a read-only actor trying to save a book.
+    path = storage._tenant_path(path, action="storage.write")
+    if path.startswith("tenants/"):
+        if storage.access_mode() != "multi_tenant":
+            raise storage.AccessDenied("Uma referência de conta exige o contexto autorizado dessa conta.")
+        logical = path.split("/", 2)[-1]
+    else:
+        logical = path
+    if not logical.startswith(prefix + "/") or not logical.endswith(".json"):
+        raise ValueError("O caminho não corresponde ao tipo de projeto salvo.")
+    return path
+
+
+def _assert_legacy_book_update(current, incoming: dict) -> None:
+    if current is None:
+        raise storage.StorageNotFound("O projeto salvo não foi encontrado. Nenhum novo livro foi criado.")
+    if not isinstance(current, dict):
+        raise storage.StorageCorrupt("O projeto salvo precisa de recuperação antes de ser atualizado.")
+    for value in (current, incoming):
+        product = value.get("editorial_product")
+        if isinstance(product, dict) and "execution" in product:
+            # Even an empty/invalid/terminal execution record belongs to the
+            # specialized runtime. Retaining only its ledger while replacing
+            # units/approvals with a stale snapshot would also be unsafe.
+            raise ProtectedBookUpdate(
+                "Este produto usa salvamento protegido. Abra-o no Studio de Produtos Editoriais; "
+                "esta cópia não foi gravada. Preserve qualquer resultado já recebido."
+            )
+    existing_id = current.get("book_id")
+    if existing_id and incoming.get("book_id") != existing_id:
+        raise ValueError("A identidade da cópia não corresponde ao livro salvo. Recarregue o projeto antes de salvar.")
+
+
+def _update_existing_book(reference: str, state: dict, *, prefix: str, assets_prefix: str) -> str:
+    """Guard the latest record; ordinary narrative snapshots still need CAS baselines.
+
+    Preparation/uploads stay outside the replayable callback. A protected
+    product that appears during preparation is vetoed again before the write;
+    an already uploaded asset can remain orphaned after that conflict.
+    """
+    if not isinstance(state, dict):
+        raise TypeError("O projeto precisa ser um objeto de dados.")
+    incoming = deepcopy(state)
+    path = _book_update_path(reference, prefix)
+    declared = incoming.get("storage_path")
+    if declared and _book_update_path(declared, prefix) != path:
+        raise ValueError("A cópia pertence a outro caminho de projeto. Nenhum livro foi alterado.")
+    _assert_legacy_book_update(BACKEND.get_json(path, None), incoming)
+    prepared = persistir_assets_em_objeto(ensure_project_schema(incoming), assets_prefix)
+
+    def replace_current(current):
+        _assert_legacy_book_update(current, prepared)
+        return deepcopy(prepared)
+
+    update_json_document(BACKEND, path, replace_current, allow_legacy_pilot=True)
+    return storage_uri(path)
 
 
 def _slug(titulo: str) -> str:
@@ -55,15 +127,10 @@ def atualizar_livro_salvo(storage_path: str, state: dict) -> str:
     Usado por telas editoriais que precisam persistir metadados estruturados
     (ex.: autoria). Não cria uma nova versão e nunca é chamado silenciosamente.
     """
-    if not storage_path:
-        raise ValueError("storage_path do projeto não foi informado.")
-    path = storage_path.replace("fb://", "", 1).strip("/")
-    if not path.startswith("livros/") or not path.endswith(".json"):
-        raise ValueError("Somente projetos Story Book existentes podem ser atualizados por esta função.")
-    state = ensure_project_schema(dict(state))
-    serializavel = persistir_assets_em_objeto(dict(state), f"assets/livros/{_slug(state.get('colecao','sem-colecao'))}/{_slug(state.get('titulo',''))}")
-    _save_json(path, serializavel)
-    return storage_uri(path)
+    if not isinstance(state, dict):
+        raise TypeError("O projeto precisa ser um objeto de dados.")
+    return _update_existing_book(storage_path, state, prefix="livros",
+        assets_prefix=f"assets/livros/{_slug(state.get('colecao','sem-colecao'))}/{_slug(state.get('titulo',''))}")
 
 
 def listar_livros(colecao: str | None = None) -> list[dict]:
@@ -150,15 +217,10 @@ def salvar_livro_colorir(state: dict) -> str:
 
 def atualizar_livro_colorir_salvo(storage_path: str, state: dict) -> str:
     """Atualiza explicitamente um Coloring Book já salvo, preservando o caminho."""
-    if not storage_path:
-        raise ValueError("storage_path do Coloring Book não foi informado.")
-    path = storage_path.replace("fb://", "", 1).strip("/")
-    if not path.startswith("livros_colorir/") or not path.endswith(".json"):
-        raise ValueError("Caminho não corresponde a um Coloring Book salvo.")
-    state = ensure_project_schema(dict(state))
-    serializavel = persistir_assets_em_objeto(dict(state), f"assets/colorir/{_slug(state.get('titulo',''))}")
-    _save_json(path, serializavel)
-    return storage_uri(path)
+    if not isinstance(state, dict):
+        raise TypeError("O projeto precisa ser um objeto de dados.")
+    return _update_existing_book(storage_path, state, prefix="livros_colorir",
+        assets_prefix=f"assets/colorir/{_slug(state.get('titulo',''))}")
 
 
 def listar_livros_colorir() -> list[dict]:
