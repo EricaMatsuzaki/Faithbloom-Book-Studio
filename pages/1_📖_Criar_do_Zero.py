@@ -29,7 +29,7 @@ from state import LivroState, PersonagemDNA
 from author_profiles import list_author_profiles, profile_display_name, set_project_authors, author_display_from_state
 from openrouter_client import chamar_llm, gerar_imagem, gerar_audio
 from armazenamento import (
-    salvar_livro, listar_livros, listar_colecoes, carregar_biblioteca_personagens,
+    listar_livros, listar_colecoes, carregar_biblioteca_personagens,
     salvar_asset_marca, salvar_na_galeria,
 )
 from estilo import badge_status
@@ -40,6 +40,8 @@ from agents.roteirista import roteirista_node
 from agents.revisor import revisor_node
 from agents.complementos_editoriais import gerar_complementos_editoriais, aplicar_complementos
 from generation_autosave import persist_generation_snapshot
+from generation_save_ui import render_generation_save_recovery
+from generation_pipeline_ui import start_generation_pipeline, run_generation_step, save_generation_pipeline
 from agents.ilustrador import ilustrador_node
 from agents.foto_para_personagem import gerar_personagem_a_partir_de_foto
 from agents.atividades_colorir import atividades_colorir_node
@@ -80,6 +82,8 @@ if "etapa" not in st.session_state:
     st.session_state.etapa = "colecao"
 
 s = st.session_state.state
+if render_generation_save_recovery(s, key_prefix="new_book_save"):
+    st.stop()
 
 def _autoria_rapida(state: dict, key: str):
     profiles = list_author_profiles()
@@ -519,6 +523,8 @@ elif st.session_state.etapa == "revisar_texto":
                     persist_generation_snapshot(s, reason="editorial_extras")
                 except Exception as exc:
                     st.warning(f"Os complementos estão disponíveis nesta sessão, mas não foi possível salvá-los: {exc}")
+                if render_generation_save_recovery(s, key_prefix="new_book_save"):
+                    st.stop()
                 st.success("Complementos gerados. Revise-os antes de continuar.")
         if s.get("boas_vindas"):
             st.markdown("**Boas-vindas**")
@@ -693,46 +699,51 @@ elif st.session_state.etapa == "aprovar_personagens":
     ):
         stage_emotional_action(st.session_state, s, action='create_book_scenes', consent_confirmed=scene_consent)
         consume_emotional_consent(st.session_state, scene_token)
+        start_generation_pipeline(s, flow="new_book")
         st.session_state.etapa = "finalizando"
         st.rerun()
 
 # ------------------------------------------------------------ FINALIZANDO
 elif st.session_state.etapa == "finalizando":
-    try:
-        scene_consent = take_emotional_action(st.session_state, s, action='create_book_scenes')
-    except (PermissionError, ValueError) as exc:
-        st.session_state.etapa = 'aprovar_personagens'
-        st.warning(str(exc))
-        if st.button('Voltar à aprovação antes de continuar'):
-            st.rerun()
-        st.stop()
+    checkpoint = s.get("generation_pipeline_checkpoint") or {}
+    illustrations_done = checkpoint.get("flow") == "new_book" and "illustrations" in checkpoint.get("completed", [])
+    scene_consent = False
+    if not illustrations_done:
+        try:
+            scene_consent = take_emotional_action(st.session_state, s, action='create_book_scenes')
+        except (PermissionError, ValueError) as exc:
+            st.session_state.etapa = 'aprovar_personagens'
+            st.warning(str(exc))
+            if st.button('Voltar à aprovação antes de continuar'):
+                st.rerun()
+            st.stop()
     progresso = st.progress(0, text="Ilustrando cada cena...")
-    s.update(ilustrador_node(s, gerar_imagem, consent_confirmed=scene_consent))
+    run_generation_step(s, "illustrations", ilustrador_node, gerar_imagem, flow="new_book", consent_confirmed=scene_consent)
     progresso.progress(35, text="Gerando 3 páginas de colorir (line-art)...")
-    s.update(atividades_colorir_node(dict(s), gerar_imagem))
+    run_generation_step(s, "coloring", atividades_colorir_node, gerar_imagem, flow="new_book")
     progresso.progress(42, text="Gerando roteiro de audiobook...")
-    s.update(audiobook_node(dict(s), chamar_llm))
+    run_generation_step(s, "audiobook_script", audiobook_node, chamar_llm, flow="new_book")
     progresso.progress(46, text="Narrando o audiobook (TTS)...")
-    s.update(narracao_node(dict(s), gerar_audio))
+    run_generation_step(s, "narration", narracao_node, gerar_audio, flow="new_book")
     progresso.progress(50, text="Escrevendo a dedicatória...")
-    s.update(dedicatoria_node(dict(s), chamar_llm))
+    run_generation_step(s, "dedication", dedicatoria_node, chamar_llm, flow="new_book")
     progresso.progress(55, text="Traduzindo para os idiomas escolhidos...")
-    s.update(tradutor_node(dict(s), chamar_llm))
+    run_generation_step(s, "translation", tradutor_node, chamar_llm, flow="new_book")
     progresso.progress(75, text="Gerando sinopse de vendas...")
-    s.update(sinopse_node(dict(s), chamar_llm))
+    run_generation_step(s, "synopsis", sinopse_node, chamar_llm, flow="new_book")
     progresso.progress(80, text="Pesquisando palavras-chave para a KDP...")
-    s.update(pesquisa_palavras_chave_node(dict(s), chamar_llm))
+    run_generation_step(s, "keywords", pesquisa_palavras_chave_node, chamar_llm, flow="new_book")
     progresso.progress(83, text="Sugerindo categorias de venda...")
-    s.update(pesquisa_categorias_node(dict(s), chamar_llm))
+    run_generation_step(s, "categories", pesquisa_categorias_node, chamar_llm, flow="new_book")
     progresso.progress(90, text="Diagramando e validando com a KDP...")
-    s.update(diagramador_node(dict(s)))
+    run_generation_step(s, "layout", diagramador_node, flow="new_book")
     progresso.progress(96, text="Gerando capa (eBook) e capa física (wraparound)...")
-    s.update(capa_node(dict(s), gerar_imagem))
+    run_generation_step(s, "cover", capa_node, gerar_imagem, flow="new_book")
     progresso.progress(98, text="Gerando material de lançamento...")
-    s.update(marketing_lancamento_node(dict(s), chamar_llm))
+    run_generation_step(s, "marketing", marketing_lancamento_node, chamar_llm, flow="new_book")
     progresso.progress(100, text="Pronto!")
 
-    caminho_salvo = salvar_livro(dict(s))
+    caminho_salvo = save_generation_pipeline(s, reason="pipeline_completed", key_prefix="new_book_save")
     assign_saved_project_to_profile(st.session_state.get("faithbloom_workspace_profile_id", ""), "story", caminho_salvo, dict(s))
     st.session_state.etapa = "resultado_zero"
     st.session_state.caminho_salvo = caminho_salvo

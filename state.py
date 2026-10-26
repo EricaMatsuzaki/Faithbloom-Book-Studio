@@ -63,6 +63,12 @@ class LivroState(TypedDict, total=False):
     faixa_etaria: str                  # 3-5 | 6-8 | 9-12 | 3-8 (compatibilidade)
     age_profile_id: str                # id normalizado pelo Age Profile Engine
     storage_path: str                  # caminho fb:// do rascunho/projeto salvo, quando já persistido
+    _book_save_context: dict            # token opaco do baseline em memória; nunca persistir no Book Master
+    autosave_pending: dict              # resultado recebido aguardando persistência/conferência; não reenviar IA
+    autosave_status: str
+    autosave_error: str
+    autosave_last_reason: str
+    autosave_last_path: str
 
     # --- Curador de Tema (opcional) ---
     _entrada_tema_livre: str           # tema/resumo livre, se a autora não quiser preencher tudo manualmente

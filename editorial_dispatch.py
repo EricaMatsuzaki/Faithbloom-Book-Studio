@@ -268,8 +268,8 @@ def sync_source(run_id: str) -> dict:
         return run
     old_fingerprint = content_fingerprint(run["source"])
     if run["project_type"] in SPECIALIZED_TYPES:
-        from editorial_products import load_product
-        source = load_product(run["source_ref"])
+        from editorial_project_updates import load_metadata_snapshot
+        source = load_metadata_snapshot(run["source_ref"])["baseline"]
     elif run["project_type"] == "activity_book":
         from activity_studio import load_activity_project
         source = load_activity_project(run["source"]["id"])
@@ -333,11 +333,50 @@ def sync_source(run_id: str) -> dict:
 
 
 @_serialized
-def bind_visual_plan_to_run(run_id: str, *, characters: list[dict], locations: list[dict], generation_mode: str = "economy", budget_limit_usd: float | None = 5.0) -> dict:
+def attach_saved_product_run(reference: str) -> dict:
+    """Open the exact saved product in the central workflow without regenerating it."""
+    from editorial_project_updates import load_metadata_snapshot, metadata_edit_status
+    snapshot = load_metadata_snapshot(reference)
+    source = snapshot["baseline"]
+    meta = source.get("editorial_product") or {}
+    spec = meta.get("spec") or {}
+    kind = spec.get("project_type")
+    if kind not in SPECIALIZED_TYPES or not source.get("book_id"):
+        raise ValueError("Selecione um produto editorial especializado salvo.")
+    status = metadata_edit_status(snapshot)
+    if not status["allowed"]:
+        raise PermissionError(status["message"])
+    for existing in list_runs():
+        if (existing.get("project_type") == kind
+                and existing.get("source_ref") == snapshot["reference"]
+                and (existing.get("source") or {}).get("book_id") == source["book_id"]):
+            return sync_source(existing["id"])
+    run = create_editorial_run(kind, source["titulo"], spec["brief"],
+        origin=spec["origin"], audience=spec["audience"], editorial_line=spec["editorial_line"],
+        collection=source.get("colecao", ""), unit_count=len(meta.get("unit_plan") or []),
+        sources=spec.get("sources"), bible_reference=spec.get("bible_reference", ""),
+        custom_blocks=spec.get("custom_blocks"))
+    run.update(source=deepcopy(source), source_ref=snapshot["reference"], status="awaiting_review")
+    run["generation"] = {"status": "completed" if meta.get("units") and not meta.get("draft") else "not_started"}
+    return save_run(run)
+
+
+@_serialized
+def bind_visual_plan_to_run(run_id: str, *, characters: list[dict], locations: list[dict], generation_mode: str = "economy", budget_limit_usd: float | None = 5.0, optional_visual: bool = False) -> dict:
     from orchestrator_visual import create_visual_plan, save_visual_plan
     run = sync_source(run_id)
-    if run["project_type"] not in {"children_story", "real_life_story", "comic", "activity_book", "coloring_book"}:
-        raise ValueError("Este projeto não precisa de pré-voo visual obrigatório.")
+    specialized = run["project_type"] in SPECIALIZED_TYPES
+    if specialized:
+        if not optional_visual:
+            raise PermissionError("Confirme que deseja planejar ilustrações opcionais para este produto.")
+        from editorial_project_updates import load_metadata_snapshot, metadata_edit_status
+        snapshot = load_metadata_snapshot(run["source_ref"])
+        status = metadata_edit_status(snapshot)
+        if not status["allowed"]:
+            raise PermissionError(status["message"])
+        run["source"] = snapshot["baseline"]
+    elif run["project_type"] not in {"children_story", "real_life_story", "comic", "activity_book", "coloring_book"}:
+        raise ValueError("Este projeto não possui um fluxo visual disponível.")
     if run.get("visual_plan_id"):
         raise ValueError("Este projeto já possui pré-voo. Continue o plano salvo; mudanças de conteúdo preservam o histórico e exigem novo pré-voo.")
     source = run["source"]
@@ -352,6 +391,9 @@ def bind_visual_plan_to_run(run_id: str, *, characters: list[dict], locations: l
         raise ValueError("Salve o conteúdo do projeto no Studio antes de criar o plano visual.")
     plan = create_visual_plan(project_id=run["id"], title=run["title"], story_text="\n\n".join(texts), characters=characters, locations=locations, generation_mode=generation_mode, budget_limit_usd=budget_limit_usd)
     plan.update(editorial_run_id=run["id"], source_ref=run["source_ref"], source_fingerprint=content_fingerprint(source), collection=run["collection"])
+    plan.update(source_book_id=source.get("book_id"), faixa_etaria=source.get("faixa_etaria") or run["route_plan"]["audience"].replace("_", "-"),
+                editorial_audience=(source.get("editorial_product") or {}).get("spec", {}).get("audience") or source.get("editorial_audience") or run["route_plan"]["audience"],
+                optional_visual=bool(specialized and optional_visual))
     from emotional_visual_binding import prepare_emotional_binding
     plan = save_visual_plan(prepare_emotional_binding(plan, source))
     run["visual_plan_id"] = plan["id"]
@@ -367,6 +409,13 @@ def validate_visual_source(plan: dict) -> dict:
     if run.get("visual_plan_id") != plan.get("id") or run.get("source_ref") != plan.get("source_ref"):
         raise PermissionError("Este pré-voo não pertence ao projeto ativo salvo.")
     source = storage.BACKEND.get_json(str(plan["source_ref"]).removeprefix("fb://"), None)
+    if isinstance(source, dict) and "editorial_product" in source:
+        from editorial_project_updates import load_metadata_snapshot, metadata_edit_status
+        snapshot = load_metadata_snapshot(plan["source_ref"])
+        status = metadata_edit_status(snapshot)
+        if not status["allowed"]:
+            raise PermissionError(status["message"])
+        source = snapshot["baseline"]
     if not isinstance(source, dict) or content_fingerprint(source) != plan.get("source_fingerprint"):
         raise PermissionError("O conteúdo salvo mudou. Atualize o projeto no Orquestrador e aprove o novo pré-voo antes de gerar.")
     return source

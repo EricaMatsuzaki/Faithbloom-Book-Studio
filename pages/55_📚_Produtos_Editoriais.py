@@ -167,6 +167,21 @@ if st.button("Salvar estado atual", disabled=not can_edit):
     except Exception as exc:
         st.error(f"Não foi possível salvar: {exc}")
 
+if meta.get("units"):
+    st.caption("Ilustrações são opcionais. O Orquestrador usa este mesmo produto salvo, com seu público, personagens oficiais e aprovações visuais.")
+    if st.button("Planejar ilustrações no Orquestrador", disabled=not can_edit or bool(meta.get("draft")), key=f"editorial_visual_{project['book_id']}"):
+        try:
+            from editorial_dispatch import attach_saved_product_run
+            run = attach_saved_product_run(project["storage_path"])
+            st.session_state["editorial_run_id"] = run["id"]
+            st.session_state["orchestrator_project_type"] = run["project_type"]
+            for field in ("origin", "audience", "editorial_line"):
+                st.session_state[f"orchestrator_{field}"] = run["route_plan"][field]
+            st.session_state[f"optional_visual_{run['id']}"] = True
+            st.switch_page("pages/0_🤖_Orquestrador_FaithBloom.py")
+        except Exception as exc:
+            st.error(f"Não foi possível abrir o planejamento visual: {exc}")
+
 if meta.get("draft"):
     st.write(f"Versão em andamento: {len(meta['draft']['units'])}/{len(meta['unit_plan'])} unidades concluídas.")
     for unit in meta["draft"]["units"]:

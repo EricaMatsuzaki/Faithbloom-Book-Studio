@@ -34,7 +34,7 @@ from orchestrator_visual import (
     save_visual_plan,
 )
 from visual_execution_ui import render_visual_execution
-from editorial_dispatch import load_run, bind_visual_plan_to_run, approve_run_content, validate_visual_source
+from editorial_dispatch import load_run, bind_visual_plan_to_run, approve_run_content, validate_visual_source, SPECIALIZED_TYPES
 
 st.set_page_config(page_title="Orquestrador FaithBloom", page_icon="🤖", layout="wide")
 aplicar_estilo()
@@ -135,6 +135,12 @@ active_run = load_run(active_run_id) if active_run_id else None
 if active_run:
     visual_project = bool(PROJECT_TYPES[active_run["project_type"]].get("visual"))
     st.session_state["orchestrator_visual_plan_id"] = active_run.get("visual_plan_id") or None
+optional_visual = False
+if active_run and active_run["project_type"] in SPECIALIZED_TYPES:
+    optional_visual = st.checkbox("Planejar ilustrações para este produto (opcional)",
+        value=bool(active_run.get("visual_plan_id")), key=f"optional_visual_{active_run['id']}")
+    visual_project = optional_visual
+    st.caption("O conteúdo e o público do produto salvo serão preservados. Cada imagem continua exigindo aprovação e confirmação de custo.")
 if not visual_project:
     st.info(
         "🧭 Este tipo de projeto não exige pré-voo visual obrigatório. A rota editorial acima já está definida e reutiliza os módulos existentes. O pré-voo visual abaixo fica reservado aos projetos que precisam de personagens, cenários ou imagens."
@@ -167,22 +173,33 @@ with st.expander("💰 Como quero gerar imagens", expanded=True):
 section_title("1 · Conteúdo-base primeiro", "Escreva/cole o conteúdo aprovado ou use o Roteirista quando o projeto for narrativo. Só depois o Orquestrador abre o pré-voo visual.", "Autoria")
 left, right = st.columns([2, 1])
 with left:
-    title = st.text_input("Título do projeto", value=st.session_state.get("orchestrator_title", ""), placeholder="Ex.: A nova aventura da Mel")
-    collection = select_saved_or_new(
-        "Coleção",
-        listar_colecoes(),
-        current=st.session_state.get("orchestrator_collection", "Pequenas Histórias, Grandes Lições"),
-        key="orchestrator_collection_select",
-        new_input_label="Nome da nova coleção",
-        placeholder="Ex.: Pequenas Histórias, Grandes Lições",
-        help="Prefira uma coleção já salva para preservar Character Masters, Style DNA e histórico do mesmo universo.",
-    )
+    title = st.text_input("Título do projeto", value=active_run["title"] if active_run else st.session_state.get("orchestrator_title", ""), disabled=bool(active_run), placeholder="Ex.: A nova aventura da Mel")
+    if active_run:
+        collection = active_run["collection"]
+        st.text_input("Coleção", value=collection, disabled=True, key=f"visual_collection_{active_run['id']}")
+    else:
+        collection = select_saved_or_new(
+            "Coleção",
+            listar_colecoes(),
+            current=st.session_state.get("orchestrator_collection", "Pequenas Histórias, Grandes Lições"),
+            key="orchestrator_collection_select",
+            new_input_label="Nome da nova coleção",
+            placeholder="Ex.: Pequenas Histórias, Grandes Lições",
+            help="Prefira uma coleção já salva para preservar Character Masters, Style DNA e histórico do mesmo universo.",
+        )
     st.session_state["orchestrator_collection"] = collection
-    story = st.text_area("História / conteúdo-base", height=220, placeholder="Cole aqui a versão que será usada para definir personagens e cenários.")
+    source_text = "\n\n".join(str(row.get("texto") or "") for row in (active_run.get("source") or {}).get("cenas_texto", []) if isinstance(row, dict)) if active_run else ""
+    story = st.text_area("História / conteúdo-base", value=source_text, disabled=bool(active_run), height=220, placeholder="Cole aqui a versão que será usada para definir personagens e cenários.")
+    if active_run:
+        st.caption("O plano usa o conteúdo salvo deste projeto. Faça revisões no Studio e atualize o conteúdo antes de aprovar as ilustrações.")
 with right:
-    st.markdown("#### Projeto narrativo?")
-    st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="✍️ Abrir Roteirista", use_container_width=True)
-    st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="🪄 Abrir Prompt-Mestre", use_container_width=True)
+    if active_run and active_run["project_type"] in SPECIALIZED_TYPES:
+        st.markdown("#### Produto especializado")
+        st.caption("Use o botão Abrir Studio acima para revisar este mesmo produto.")
+    else:
+        st.markdown("#### Projeto narrativo?")
+        st.page_link("pages/39_✍️_Historia_4_Estilos.py", label="✍️ Abrir Roteirista", use_container_width=True)
+        st.page_link("pages/38_🪄_Prompt_Mestre_Studio.py", label="🪄 Abrir Prompt-Mestre", use_container_width=True)
 
 personagens_salvos = listar_personagens_oficiais(collection or None) if collection else []
 personagens_nomes = [str(x.get("nome") or "").strip() for x in personagens_salvos if str(x.get("nome") or "").strip()]
@@ -201,7 +218,7 @@ if st.button("🌱 Criar pré-voo visual", type="primary", use_container_width=T
     try:
         kwargs = dict(characters=[{"id": x, "name": x, "principal": True} for x in chars], locations=[{"id": x, "name": x, "required": True} for x in locs], generation_mode=selected_mode, budget_limit_usd=budget_limit if budget_enabled else None)
         if active_run:
-            plan = bind_visual_plan_to_run(active_run_id, **kwargs)
+            plan = bind_visual_plan_to_run(active_run_id, optional_visual=optional_visual, **kwargs)
             collection = active_run["collection"]
         else:
             plan = create_visual_plan(project_id=uuid.uuid4().hex, title=title or "Novo projeto FaithBloom", story_text=story, **kwargs)

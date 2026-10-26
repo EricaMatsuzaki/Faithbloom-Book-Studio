@@ -2,6 +2,7 @@
 from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
+import json
 
 import pytest
 from PIL import Image, ImageDraw
@@ -100,7 +101,7 @@ def open_result(backend, state):
     path = "livros_colorir/audit.json"
     backend.put_json(path, state)
     app = AppTest.from_string("from coloring_studio import render_coloring_studio\nrender_coloring_studio()")
-    app.session_state["state_c"] = deepcopy(state)
+    app.session_state["state_c"] = armazenamento.carregar_livro_colorir(path)
     app.session_state["etapa_c"] = "resultado"
     app.session_state["caminho_salvo_c"] = path
     app.run(timeout=15)
@@ -251,12 +252,20 @@ def test_profile_link_failure_retries_existing_file_without_duplicate(isolated_s
     assert any("vínculo com o perfil" in error.value for error in app.error)
 
     app.session_state["faithbloom_workspace_profile_id"] = "other_owner"
-    button(app, "📐 Diagramar projeto aprovado").click().run(timeout=15)
+    app.run(timeout=15)
+    assert not any(item.label == "📐 Diagramar projeto aprovado" for item in app.button)
+    saved_bytes = isolated_studio.get_bytes(saved_path.removeprefix("fb://"))
+    def forbidden_rewrite(*_args):
+        pytest.fail("Retrying the profile link must not rewrite or duplicate the saved book")
+    monkeypatch.setattr(studio, "atualizar_livro_colorir_salvo", forbidden_rewrite)
+    monkeypatch.setattr(studio, "salvar_livro_colorir", forbidden_rewrite)
+    button(app, "💾 Tentar salvar novamente").click().run(timeout=15)
     assert not app.exception
     assert app.session_state["etapa_c"] == "resultado"
     assert app.session_state["caminho_salvo_c"] == saved_path
     assert profile_calls == [("original_owner", "coloring", saved_path)] * 2
     assert isolated_studio.list("livros_colorir") == [saved_path.removeprefix("fb://")]
+    assert isolated_studio.get_bytes(saved_path.removeprefix("fb://")) == saved_bytes
     assert "coloring_profile_link_pending" not in app.session_state
 
 
@@ -436,6 +445,43 @@ def test_failed_draft_save_can_retry_without_another_generation(isolated_studio,
     reloaded = load_project({"kind": "coloring", "storage_path": app.session_state["caminho_salvo_c"]})
     assert Path(reloaded["paginas"][0]["caminho_arquivo"]).read_bytes() == image.read_bytes()
     assert "coloring_save_error" not in app.session_state
+
+
+def test_coloring_conflict_preserves_received_art_and_downloadable_draft_without_rebuy(
+        isolated_studio, coloring_project, monkeypatch):
+    state, image = coloring_project
+    state = deepcopy(state)
+    state["paginas"][0]["origem"] = "gerar_ia"
+    calls, downloads = [], []
+    monkeypatch.setattr(studio, "gerar_imagem", lambda **kwargs: calls.append(kwargs) or str(image))
+    download = studio.st.download_button
+    def capture_download(label, data, *args, **kwargs):
+        if label == "Baixar cópia do projeto de colorir não salvo":
+            downloads.append(json.loads(data))
+        return download(label, data, *args, **kwargs)
+    monkeypatch.setattr(studio.st, "download_button", capture_download)
+    app, path = open_result(isolated_studio, state)
+    app.session_state["etapa_c"] = "paginas"
+    app.run(timeout=15)
+    def other_editor(current):
+        current["paginas"][-1]["nome"] = "Alteração já salva por outra editora"
+        return current
+    isolated_studio.update_json(path, other_editor)
+    saved_before = isolated_studio.get_bytes(path)
+    app.button(key="gen_c_0").click().run(timeout=15)
+    assert not app.exception and len(calls) == 1
+    assert isolated_studio.get_bytes(path) == saved_before
+    assert app.session_state["state_c"]["paginas"][0]["caminho_arquivo"] == str(image)
+    assert app.session_state["coloring_save_error"]
+    assert not any(str(item.key).startswith("gen_c_") for item in app.button)
+    assert "Baixar cópia do projeto de colorir não salvo" in [item.label for item in app.get("download_button")]
+    assert downloads[-1]["paginas"][0]["caminho_arquivo"] == str(image)
+    assert "_book_save_context" not in downloads[-1]
+    assert any("reabra a versão atual pela Biblioteca" in item.value for item in app.info)
+    button(app, "💾 Tentar salvar novamente").click().run(timeout=15)
+    assert not app.exception and len(calls) == 1
+    assert isolated_studio.get_bytes(path) == saved_before
+    assert app.session_state["coloring_save_error"]
 
 
 def test_generated_variation_and_original_history_are_durable_before_layout(isolated_studio, coloring_project, tmp_path, monkeypatch):

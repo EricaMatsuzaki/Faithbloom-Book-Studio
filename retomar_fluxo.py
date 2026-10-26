@@ -25,8 +25,10 @@ from agents.pesquisa_mercado import pesquisa_palavras_chave_node, pesquisa_categ
 from agents.diagramador import diagramador_node
 from agents.capa import capa_node
 from agents.marketing import marketing_lancamento_node
-from armazenamento import salvar_livro, listar_livros, salvar_na_galeria
+from armazenamento import listar_livros, salvar_na_galeria
 from emotional_review_ui import render_emotional_readiness, render_emotional_gate, consume_emotional_consent
+from generation_save_ui import render_generation_save_recovery
+from generation_pipeline_ui import start_generation_pipeline, run_generation_step, save_generation_pipeline
 
 
 def _salvar_upload(arquivo, prefixo: str) -> str:
@@ -69,6 +71,8 @@ def render_retomar_page():
             st.markdown(f"{badge_status(livro['pacote_pronto'])} &nbsp; {livro['titulo']}", unsafe_allow_html=True)
 
     s = st.session_state.state_r
+    if render_generation_save_recovery(s, key_prefix="resume_book_save"):
+        st.stop()
 
     if st.session_state.etapa_r == "carregar":
         st.info("🎄 O livro de Natal já está pronto para este fluxo: use `historia_natal` e `ESTADO_INICIAL_NATAL`.")
@@ -225,6 +229,7 @@ def render_retomar_page():
         if ok:
             st.success("Todas as cenas estão aprovadas. Agora podemos finalizar sem regerar as imagens.")
             if st.button("🚀 Finalizar livro (line arts + áudio + tradução + sinopse + KDP)", type="primary", use_container_width=True):
+                start_generation_pipeline(s, flow="resume_book")
                 st.session_state.etapa_r="finalizar"; st.rerun()
         else:
             st.warning(f"Ainda faltam {total-prontas} cena(s) aprovadas.")
@@ -232,20 +237,20 @@ def render_retomar_page():
 
     if st.session_state.etapa_r == "finalizar":
         progresso=st.progress(0,text="Gerando atividades de colorir...")
-        s.update(atividades_colorir_node(dict(s),gerar_imagem)); progresso.progress(18,text="Preparando audiobook...")
-        s.update(audiobook_node(dict(s),chamar_llm)); progresso.progress(28,text="Narrando...")
-        s.update(narracao_node(dict(s),gerar_audio)); progresso.progress(40,text="Dedicatória...")
+        run_generation_step(s,"coloring",atividades_colorir_node,gerar_imagem,flow="resume_book"); progresso.progress(18,text="Preparando audiobook...")
+        run_generation_step(s,"audiobook_script",audiobook_node,chamar_llm,flow="resume_book"); progresso.progress(28,text="Narrando...")
+        run_generation_step(s,"narration",narracao_node,gerar_audio,flow="resume_book"); progresso.progress(40,text="Dedicatória...")
         if s.get("lista_dedicatoria"):
-            s.update(dedicatoria_node(dict(s),chamar_llm))
+            run_generation_step(s,"dedication",dedicatoria_node,chamar_llm,flow="resume_book")
         else:
             s.setdefault("dedicatoria_texto","")
-        progresso.progress(53,text="Traduzindo..."); s.update(tradutor_node(dict(s),chamar_llm))
-        progresso.progress(64,text="Criando sinopse..."); s.update(sinopse_node(dict(s),chamar_llm))
-        progresso.progress(72,text="SEO KDP..."); s.update(pesquisa_palavras_chave_node(dict(s),chamar_llm)); s.update(pesquisa_categorias_node(dict(s),chamar_llm))
-        progresso.progress(82,text="Diagramando..."); s.update(diagramador_node(dict(s)))
-        progresso.progress(90,text="Capas..."); s.update(capa_node(dict(s),gerar_imagem))
-        progresso.progress(96,text="Material de lançamento..."); s.update(marketing_lancamento_node(dict(s),chamar_llm))
-        caminho=salvar_livro(dict(s)); assign_saved_project_to_profile(st.session_state.get("faithbloom_workspace_profile_id", ""), "story", caminho, dict(s)); st.session_state.caminho_salvo_r=caminho
+        progresso.progress(53,text="Traduzindo..."); run_generation_step(s,"translation",tradutor_node,chamar_llm,flow="resume_book")
+        progresso.progress(64,text="Criando sinopse..."); run_generation_step(s,"synopsis",sinopse_node,chamar_llm,flow="resume_book")
+        progresso.progress(72,text="SEO KDP..."); run_generation_step(s,"keywords",pesquisa_palavras_chave_node,chamar_llm,flow="resume_book"); run_generation_step(s,"categories",pesquisa_categorias_node,chamar_llm,flow="resume_book")
+        progresso.progress(82,text="Diagramando..."); run_generation_step(s,"layout",diagramador_node,flow="resume_book")
+        progresso.progress(90,text="Capas..."); run_generation_step(s,"cover",capa_node,gerar_imagem,flow="resume_book")
+        progresso.progress(96,text="Material de lançamento..."); run_generation_step(s,"marketing",marketing_lancamento_node,chamar_llm,flow="resume_book")
+        caminho=save_generation_pipeline(s,reason="pipeline_completed",key_prefix="resume_book_save"); assign_saved_project_to_profile(st.session_state.get("faithbloom_workspace_profile_id", ""), "story", caminho, dict(s)); st.session_state.caminho_salvo_r=caminho
         progresso.progress(100,text="Pronto!")
         st.session_state.etapa_r="resultado"; st.rerun()
 

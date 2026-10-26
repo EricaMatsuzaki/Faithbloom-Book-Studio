@@ -323,7 +323,8 @@ def _scene_context(plan: dict) -> tuple[list[dict], list[dict], dict, str]:
         raise PermissionError("O estilo aprovado precisa conter uma descrição ou Style DNA oficial.")
     context = {"titulo": plan.get("title"), "colecao": plan.get("collection", ""),
                "style_dna": style, "world_masters": [{k: w.get(k) for k in ("id", "name", "description", "reference_assets", "selected_asset_id")} for w in worlds],
-               "faixa_etaria": plan.get("faixa_etaria", "4-8"), "cenas_texto": plan.get("story_text", ""),
+               "faixa_etaria": plan.get("faixa_etaria", "4-8"),
+               "editorial_audience": plan.get("editorial_audience", ""), "cenas_texto": plan.get("story_text", ""),
                "mapa_emocional": require_emotional_binding(plan)["scenes"]}
     style_id = style.get("style_dna_id")
     if style_id:
@@ -333,7 +334,8 @@ def _scene_context(plan: dict) -> tuple[list[dict], list[dict], dict, str]:
             raise PermissionError("O Style DNA aprovado não está disponível como estilo oficial.")
         context["style_dna_id"] = style_id
         context["style_dna"] = canonical
-    signature = _fingerprint({"story": plan.get("story_text"), "emotional_map": context["mapa_emocional"], "style": context["style_dna"],
+    signature = _fingerprint({"story": plan.get("story_text"), "audience": (context["faixa_etaria"], context["editorial_audience"]),
+                              "emotional_map": context["mapa_emocional"], "style": context["style_dna"],
                               "characters": [{"id": c.get("id"), "dna": c.get("dna"), "reference_digest": _asset_digest(c["color_master"])} for c in characters],
                               "worlds": [{"id": w["id"], "description": w.get("description"), "refs": [_asset_digest(p) for p in w["resolved_references"]]} for w in worlds]})
     return characters, worlds, context, signature
@@ -466,7 +468,8 @@ def _run(plan_id: str, kind: str, payload: dict, count: int, modality: str, conf
             + sum(x["estimated_usd"] for x in pending if x.get("reserved")))
         canonical_source = source_for_plan(plan)
         source_markers = (canonical_source.get("comic_product") or {}).get("source_data") or {}
-        uses_personal = bool(canonical_source.get("real_experience") or canonical_source.get("real_life_brief") or canonical_source.get("uses_personal_data") or source_markers.get("uses_personal_data"))
+        product_origin = ((canonical_source.get("editorial_product") or {}).get("spec") or {}).get("origin")
+        uses_personal = bool(canonical_source.get("real_experience") or canonical_source.get("real_life_brief") or canonical_source.get("uses_personal_data") or source_markers.get("uses_personal_data") or product_origin == "real_experience")
         governance_receipt = authorize_generation(
             "visual." + kind, confirmed=confirmed, projected_cost=pending_cost,
             provider_configured=bool(estimate.get("provider")), operation_id=operation_id,
@@ -783,9 +786,9 @@ def apply_scene_asset(plan_id: str, scene_key: str, asset_id: str, *, scene_numb
         logical_path = path.split("/", 2)[2] if path.startswith("tenants/") else path
         if not logical_path.startswith("livros/") or not logical_path.endswith(".json"):
             raise PermissionError("Esta aplicação de ilustração exige uma fonte Story Book salva.")
-        source = json.loads(storage.BACKEND.get_bytes(path).decode("utf-8"))
-        if not isinstance(source, dict):
-            raise ValueError("O livro de origem não está disponível.")
+        from editorial_project_updates import load_metadata_snapshot, update_metadata_fields
+        observed = load_metadata_snapshot(canonical_ref)
+        source = observed["baseline"]
         from editorial_dispatch import content_fingerprint
         if content_fingerprint(source) != plan["source_fingerprint"]:
             raise PermissionError("O conteúdo/DNA do livro mudou. Aprove novamente a fonte e as propostas antes de aplicar.")
@@ -815,7 +818,6 @@ def apply_scene_asset(plan_id: str, scene_key: str, asset_id: str, *, scene_numb
         uri = asset.get("storage_uri") or asset.get("caminho_arquivo")
         _asset_path(uri)
         from agents.ilustrador import definir_imagem_cena, obter_imagem_cena
-        from armazenamento import atualizar_livro_salvo
         fresh = deepcopy(source)
         current = obter_imagem_cena(fresh, number)
         if not current or current.get("visual_asset_id") != asset_id or not current.get("aprovado"):
@@ -826,16 +828,17 @@ def apply_scene_asset(plan_id: str, scene_key: str, asset_id: str, *, scene_numb
             selected["visual_plan_id"] = plan_id
             selected["visual_scene_key"] = str(scene_key)
             fresh["storage_path"] = canonical_ref
-            # Check again immediately before writing; storage has no CAS, so
-            # distributed concurrent updates still require a transaction.
-            newest = json.loads(storage.BACKEND.get_bytes(path).decode("utf-8"))
-            if _fingerprint(newest) != _fingerprint(source):
-                raise PermissionError("O livro foi atualizado durante a seleção. Recarregue antes de aplicar.")
-            saved_ref = atualizar_livro_salvo(canonical_ref, fresh)
+            applied = update_metadata_fields(observed,
+                {key: fresh[key] for key in ("cenas_imagem", "cenas_imagem_aprovadas", "historico_imagens_cenas") if key in fresh},
+                watched_fields=("book_id", "cenas_texto", "personagens", "style_dna_id", "style_dna", "style_master",
+                                "versao_narrativa_ativa", "mapa_emocional", "emotional_book_binding", "editorial_product"))
+            saved_ref = applied["reference"]
+            fresh = applied["state"]
             if storage.uri_to_path(saved_ref) != path:
                 raise VisualExecutionError("A persistência retornou uma identidade diferente para o livro.")
         else:
             saved_ref = canonical_ref
+            fresh = observed["state"]
         # Project use is an approved variation, never Character Universe
         # promotion. Save succeeded before marking this downstream checkpoint.
         if asset.get("visual_status") not in {"COLOR_MASTER", "LINEART_MASTER", "WORLD_MASTER"}:

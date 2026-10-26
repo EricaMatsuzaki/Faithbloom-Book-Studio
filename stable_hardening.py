@@ -26,7 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from storage_backend import BACKEND, backend_status
+from storage_backend import BACKEND, backend_status, storage_uri, uri_to_path
+from saas_access import require_action
 
 SCHEMA_NAME = "faithbloom.project-state"
 CURRENT_DATA_SCHEMA = 4
@@ -316,20 +317,58 @@ def prepare_restore_working_copy(current_state: dict, recovery_point: dict) -> d
     }
 
 
+def text_provider_diagnostic(environ: dict | None = None) -> dict:
+    """Configuration presence only, using the strict paid route's selection.
+
+    An explicit environment is an isolated configuration snapshot; it must not
+    borrow credentials or mutate process globals. With no argument, ask the
+    runtime router so its loaded configuration and disabled routes are honored.
+    Neither path discovers models, transmits content or verifies credentials.
+    """
+    names = ("gemini", "groq", "openrouter")
+    if environ is None:
+        import ai_provider_router as router
+        status = router.provider_status(strict=True)
+        selected = status.get("primary", "indisponível")
+        configured = selected in names and status.get(selected) is True
+        preference = str(os.environ.get("FAITHBLOOM_PROVEDOR_TEXTO") or "auto").strip().lower() or "auto"
+        valid = preference in ("auto", *names) and selected in (*names, "indisponível")
+        source = "runtime_configuration"
+    else:
+        env = dict(environ)
+        preference = str(env.get("FAITHBLOOM_PROVEDOR_TEXTO") or "auto").strip().lower() or "auto"
+        valid = preference in ("auto", *names)
+        available = {
+            "gemini": bool(str(env.get("GEMINI_API_KEY") or "").strip()
+                           or str(env.get("GOOGLE_API_KEY") or "").strip()),
+            "groq": bool(str(env.get("GROQ_API_KEY") or "").strip()),
+            "openrouter": bool(str(env.get("OPENROUTER_API_KEY") or "").strip()),
+        }
+        selected = (next((name for name in names if available[name]), "indisponível")
+                    if preference == "auto" else preference) if valid else "indisponível"
+        configured = bool(valid and available.get(selected))
+        source = "provided_environment_snapshot"
+    configured = bool(configured and valid)
+    return {"configured": configured, "primary": selected if valid else "indisponível",
+            "providers": [selected] if configured else [], "configuration_valid": bool(valid),
+            "source": source, "live_access_verified": False}
+
+
 def environment_diagnostics(environ: dict | None = None) -> dict:
     env = dict(os.environ if environ is None else environ)
     storage = backend_status()
     deployment = (env.get("FAITHBLOOM_DEPLOYMENT_MODE") or "development").strip().lower()
     auth_mode = (env.get("FAITHBLOOM_AUTH_MODE") or "none").strip().lower()
-    openrouter = bool((env.get("OPENROUTER_API_KEY") or "").strip())
+    text_provider = text_provider_diagnostic(environ)
     persistent = bool(storage.get("persistente_cloud"))
     ffmpeg = bool(shutil.which("ffmpeg"))
     checks = [
         {"id": "python", "ok": sys.version_info >= (3, 10), "level": "blocker", "detail": f"Python {sys.version.split()[0]}"},
         {"id": "storage", "ok": persistent, "level": "blocker" if deployment == "production" else "warning",
          "detail": f"Storage={storage.get('modo')}; produção deve usar persistência externa."},
-        {"id": "openrouter", "ok": openrouter, "level": "blocker" if deployment == "production" else "warning",
-         "detail": "OPENROUTER_API_KEY configurada" if openrouter else "OPENROUTER_API_KEY ausente; recursos de IA ficarão indisponíveis."},
+        {"id": "text_provider", "ok": text_provider["configured"], "level": "blocker" if deployment == "production" else "warning",
+         "detail": (f"Provedor de texto selecionado: {text_provider['primary']}; presença de configuração confirmada, acesso externo não verificado."
+                    if text_provider["configured"] else "O provedor de texto selecionado não possui configuração disponível. Nenhuma chamada externa foi feita.")},
         {"id": "auth", "ok": auth_mode in {"oidc", "external"}, "level": "blocker" if deployment == "production" else "warning",
          "detail": f"Auth mode={auth_mode}. Perfis de papel internos não substituem login/autenticação."},
         {"id": "ffmpeg", "ok": ffmpeg, "level": "warning", "detail": "FFmpeg disponível" if ffmpeg else "FFmpeg ausente; mix/QA avançado de áudio fica limitado."},
@@ -338,26 +377,66 @@ def environment_diagnostics(environ: dict | None = None) -> dict:
     warnings = [x for x in checks if not x["ok"] and x["level"] == "warning"]
     return {
         "deployment_mode": deployment, "storage": storage, "auth_mode": auth_mode,
+        "text_provider": text_provider,
         "checks": checks, "blockers": blockers, "warnings": warnings, "ok_for_production": not blockers,
     }
 
 
 def storage_roundtrip_probe() -> dict:
-    """Teste pequeno de write/read/delete; não toca em projetos."""
+    """Probe only a unique, authorized object; cleanup must be confirmed."""
     pid = uuid.uuid4().hex
     path = f"system/probes/{pid}.json"
     payload = {"probe": pid, "at": _now()}
+    missing = {"missing_probe": pid}
+    checks = {"authorization": False, "write": False, "read": False, "delete": False}
+    phase, error_type, cleanup_error_type = "authorization", "", ""
+    attempted_write = False
+    target = None
     try:
-        BACKEND.put_json(path, payload)
-        got = BACKEND.get_json(path, {})
-        ok = got == payload
-        try:
-            BACKEND.delete(path)
-        except Exception:
-            pass
-        return {"ok": ok, "detail": "write/read/delete OK" if ok else "conteúdo lido divergiu", "path": path}
+        # Check every capability before creating anything, then bind the path to
+        # the current account. A later actor change cannot retarget cleanup.
+        for action in ("storage.write", "storage.read", "storage.delete"):
+            require_action(action)
+        target = uri_to_path(storage_uri(path))
+        checks["authorization"] = True
+        phase = "write"
+        attempted_write = True
+        BACKEND.put_json(target, payload)
+        checks["write"] = True
+        phase = "read"
+        checks["read"] = BACKEND.get_json(target, missing) == payload
     except Exception as exc:
-        return {"ok": False, "detail": f"{type(exc).__name__}: {exc}", "path": path}
+        error_type = type(exc).__name__
+    finally:
+        # A lost write acknowledgement can still have created this one object.
+        # Cleanup is safe to attempt only after upfront authorization and with
+        # the already-bound path; never log a provider/backend error payload.
+        if attempted_write and target is not None:
+            phase_before_cleanup = phase
+            phase = "delete"
+            try:
+                BACKEND.delete(target)
+                checks["delete"] = BACKEND.get_json(target, missing) == missing
+            except Exception as exc:
+                cleanup_error_type = type(exc).__name__
+            if error_type:
+                phase = phase_before_cleanup
+    ok = all(checks.values())
+    if ok:
+        detail = "write/read/delete verificados no objeto de teste."
+    elif not checks["authorization"]:
+        detail = "O acesso necessário ao storage não foi autorizado; nenhum objeto foi criado."
+    elif not checks["delete"]:
+        detail = "A limpeza do objeto de teste não pôde ser confirmada. Confira o storage antes de repetir o probe."
+    else:
+        detail = "A gravação ou a leitura do objeto de teste não foi confirmada; a limpeza foi verificada."
+    result = {"ok": ok, "detail": detail, "path": path, "checks": checks,
+              "cleanup_verified": checks["delete"], "scope": "current_account"}
+    if error_type:
+        result.update(error_stage=phase, error_type=error_type)
+    if cleanup_error_type:
+        result["cleanup_error_type"] = cleanup_error_type
+    return result
 
 
 def onboarding_status(settings: dict | None = None, environ: dict | None = None) -> dict:

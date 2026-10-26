@@ -2,6 +2,9 @@ from copy import deepcopy
 import streamlit as st
 from emotional_visual_binding import (book_emotional_review_key, prepare_book_emotional_map, approve_book_emotional_map, persist_book_emotional_map, require_book_emotional_map)
 from emotional_review_ui import review_book, commit_reviewed_book
+from editorial_project_updates import load_metadata_snapshot
+from project_metadata_ui import open_project_metadata
+import storage_backend as storage
 
 from estilo import aplicar_estilo, hero, section_title
 from emotion_colors import EMOCOES, EMOCOES_COMPLEMENTARES
@@ -37,6 +40,47 @@ try:
 except (PermissionError, ValueError) as exc:
     st.error(str(exc))
     st.stop()
+
+
+def _reload_review_source(snapshot):
+    fresh = deepcopy(snapshot['state'])
+    if (state_livro.get('book_id') and fresh.get('book_id')
+            and state_livro['book_id'] != fresh['book_id']):
+        raise PermissionError('A identidade do livro salvo foi alterada.')
+    context = st.session_state.get('_emotional_review_context')
+    if context:
+        # review_book already validated this return target before the reload.
+        st.session_state[context['state_key']] = deepcopy(fresh)
+        st.session_state['emotional_review_book'] = deepcopy(fresh)
+        context['book_id'] = fresh.get('book_id')
+        context['source_fingerprint'] = book_emotional_review_key(fresh)
+        st.session_state['_emotional_review_context'] = context
+    else:
+        st.session_state['state'] = deepcopy(fresh)
+
+
+map_editor = None
+source_mismatch = False
+if isinstance(state_livro, dict) and state_livro.get('storage_path'):
+    map_editor = open_project_metadata(state_livro['storage_path'],namespace='emotional_map',on_reload=_reload_review_source)
+    try:
+        observed = deepcopy(map_editor.state)
+        opened = deepcopy(state_livro)
+        observed['storage_path'] = opened['storage_path'] = map_editor.reference
+        source_mismatch = book_emotional_review_key(observed) != book_emotional_review_key(opened)
+    except (PermissionError,ValueError,storage.StorageError):
+        st.error('Não foi possível conferir a história e os Masters desta revisão. Volte ao livro de origem para reabri-lo.')
+        st.stop()
+    if source_mismatch:
+        st.warning('A história aberta difere da versão salva. Reabra a versão salva antes de aprovar o mapa emocional.')
+        if st.button('Reabrir versão salva para a revisão emocional',key=map_editor.key('reopen_review')):
+            try:
+                _reload_review_source(map_editor.snapshot)
+                map_editor.adopt_committed_snapshot(map_editor.snapshot)
+                st.rerun()
+            except Exception:
+                st.error('Não foi possível reabrir a versão salva. Volte ao livro de origem e abra a revisão novamente.')
+        map_editor.stale = True
 cenas_ativas = (state_livro or {}).get('cenas_texto', []) if isinstance(state_livro, dict) else []
 
 review_stamp = book_emotional_review_key(state_livro)[:20] if cenas_ativas else 'exploration'
@@ -165,7 +209,8 @@ if cenas_ativas:
     reviewer = st.text_input('Responsável pela revisão emocional', key='ed_reviewer_' + review_stamp)
     reviewed = st.checkbox('Revisei todas as cenas, a direção emocional e a preservação dos Masters', key='ed_reviewed_' + review_stamp)
     st.caption('A aprovação salva no Book Master exato quando ele já está aberto. Um livro novo recebe identidade própria; nenhum projeto é escolhido pelo título.')
-    if st.button('💾 Aplicar e salvar este mapa no livro ativo', type='primary', use_container_width=True, disabled=not reviewed or not reviewer.strip()):
+    if st.button('💾 Aplicar e salvar este mapa no livro ativo', type='primary', use_container_width=True,
+        disabled=not reviewed or not reviewer.strip() or bool(map_editor and not map_editor.can_save)):
         try:
             working = deepcopy(state_livro)
             by_number = {row['numero']: row for row in edicoes}
@@ -174,18 +219,39 @@ if cenas_ativas:
             working['paleta_emocional_preset'] = preset
             working['mapa_emocional'] = construir_mapa_emocional(working['cenas_texto'], preset)
             working = approve_book_emotional_map(working, reviewed=reviewed, reviewer=reviewer)
+            if map_editor and not map_editor.can_save:
+                map_editor.preserve_pending(working,fields=['cenas_texto','mapa_emocional','paleta_emocional_preset','emotional_book_binding'])
+                st.warning('Recarregue o projeto e confira a geração antes de salvar este mapa. Suas escolhas foram preservadas.')
+                st.stop()
             # Recheck the exact return target before writing durable data.
             review_book(st.session_state)
-            working = persist_book_emotional_map(working)
-            commit_reviewed_book(st.session_state, working)
+            working = persist_book_emotional_map(working,snapshot=map_editor.observed_snapshot if map_editor else None)
+            working = commit_reviewed_book(st.session_state, working)
+            state_livro = working
+            if map_editor:
+                try:
+                    map_editor.adopt_committed_snapshot(load_metadata_snapshot(map_editor.reference))
+                except Exception:
+                    map_editor.entry['needs_reload'] = True
+                    st.info('O mapa foi salvo. Recarregue os dados do projeto para conferir a versão atual antes de novas alterações.')
             st.success('Mapa emocional revisado, aprovado e salvo nesta obra. O Ilustrador receberá a direção canônica cena por cena.')
         except Exception as exc:
-            st.error(str(exc))
+            if map_editor and 'working' in locals():
+                map_editor.preserve_pending(working,fields=['cenas_texto','mapa_emocional','paleta_emocional_preset','emotional_book_binding'])
+            if isinstance(exc,storage.StorageConflict):
+                st.warning('O projeto mudou durante esta revisão. Recarregue a versão salva; suas escolhas foram preservadas para conferência.')
+            elif isinstance(exc,storage.AccessDenied):
+                st.error('Sua sessão não permite salvar o mapa deste projeto.')
+            else:
+                st.error(str(exc))
     try:
         require_book_emotional_map(state_livro)
         st.success('A versão atual do mapa emocional está aprovada para novas ilustrações.')
     except Exception as exc:
         st.info(str(exc))
+    if map_editor and map_editor.stale:
+        map_editor.preserve_form_inputs({'paleta_emocional_preset':preset,'cenas_emocionais':edicoes,
+            'reviewer':reviewer,'reviewed':reviewed})
 else:
     st.warning('Abra/crie uma história para salvar o mapa diretamente no livro. Aqui você ainda pode explorar o arco sem gerar imagens.')
 

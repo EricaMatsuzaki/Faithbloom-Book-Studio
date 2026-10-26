@@ -27,7 +27,8 @@ def local(durable, monkeypatch):
 def book(backend, path="livros/audit/book.json", **changes):
     state = {"book_id": "audit-book", "titulo": "Livro próprio", "colecao": "Auditoria", **changes}
     backend.put_json(path, state)
-    return state
+    # Bind the document read by this test setup before mutating its draft.
+    return books.bind_book_read_context(deepcopy(state), path, state)
 
 
 def forbid_assets(monkeypatch):
@@ -176,10 +177,13 @@ def test_legacy_books_without_identity_still_update_and_can_adopt_first_explicit
     path = prefix + "/audit/book.json"
     state = {"titulo": "Legado", "colecao": "Auditoria", "text": "old"}
     local.put_json(path, state)
-    reference = update(path, {**state, "text": "new"})
+    state = books.bind_book_read_context(deepcopy(state), path, state)
+    state["text"] = "new"
+    reference = update(path, state)
     assert reference == "fb://" + path
     assert local.get_json(path)["text"] == "new"
-    update(reference, {**state, "text": "identified", "book_id": "first-explicit-id"})
+    state.update(text="identified", book_id="first-explicit-id")
+    update(reference, state)
     assert local.get_json(path)["book_id"] == "first-explicit-id"
 
 
@@ -198,6 +202,7 @@ def test_execution_added_during_asset_preparation_is_rechecked_at_commit(local, 
     source = studio.create_product("other", "Livro", "Observar uma flor", unit_count=1, custom_blocks=["Abertura"])
     source["storage_path"] = books.salvar_livro(source)
     stale = deepcopy(source)
+    books.bind_book_read_context(stale, source["storage_path"], local.get_json(runtime._path(source["storage_path"])))
     prepared = []
 
     def prepare(value, _prefix):
@@ -255,9 +260,11 @@ def test_own_account_can_update_canonical_uri_and_logical_alias(accounts, prefix
     with access.access_context(a):
         state = book(backend, path)
         reference = storage.storage_uri(path)
-        assert update(reference, {**state, "storage_path": path, "text": "own updated"}) == reference
+        state.update(storage_path=path, text="own updated")
+        assert update(reference, state) == reference
         assert backend.get_json(path)["text"] == "own updated"
-        assert update(path, {**state, "storage_path": reference, "text": "logical updated"}) == reference
+        state.update(storage_path=reference, text="logical updated")
+        assert update(path, state) == reference
         assert backend.get_json(path)["book_id"] == state["book_id"]
 
 

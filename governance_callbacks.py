@@ -17,9 +17,19 @@ import controle_geracao as costs
 from governance_runtime import GovernanceBlocked, authorize_generation
 
 
+def _action_source(value):
+    """Exclude the volatile server-side editing handle from action identity."""
+    if isinstance(value, Mapping):
+        return {key: _action_source(item) for key, item in value.items()
+                if key != "_book_save_context"}
+    if isinstance(value, (list, tuple)):
+        return [_action_source(item) for item in value]
+    return value
+
+
 def _fingerprint(value) -> str:
     try:
-        serialized = json.dumps(value, ensure_ascii=False, sort_keys=True,
+        serialized = json.dumps(_action_source(value), ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError):
         raise GovernanceBlocked("Não foi possível identificar os dados desta ação.") from None
@@ -100,7 +110,7 @@ class GovernedTextCallback:
         if isinstance(max_calls, bool) or not isinstance(max_calls, int) or not 1 <= max_calls <= 10:
             raise ValueError("O limite de chamadas desta ação deve estar entre 1 e 10.")
         self.action = action
-        self.source = deepcopy(dict(source))
+        self.source = deepcopy(_action_source(dict(source)))
         self.confirmed = confirmed
         self.consent_confirmed = consent_confirmed
         self.max_calls = max_calls

@@ -80,7 +80,8 @@ def _visual_data_consent(plan: dict, action_key: str) -> bool:
     from emotional_visual_binding import source_for_plan
     source = source_for_plan(plan)
     marker = (source.get("comic_product") or {}).get("source_data") or {}
-    private = bool(source.get("real_experience") or source.get("real_life_brief") or source.get("uses_personal_data") or marker.get("uses_personal_data"))
+    private = bool(source.get("real_experience") or source.get("real_life_brief") or source.get("uses_personal_data") or marker.get("uses_personal_data")
+                   or ((source.get("editorial_product") or {}).get("spec") or {}).get("origin") == "real_experience")
     if not private:
         return False
     epoch = st.session_state.get("visual_data_consent_epoch", 0)

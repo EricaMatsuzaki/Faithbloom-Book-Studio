@@ -39,6 +39,7 @@ from stable_hardening import (
     sanitize_for_log,
     stable_release_gate,
     storage_roundtrip_probe,
+    text_provider_diagnostic,
 )
 
 DEPLOY_SCHEMA = "faithbloom.production-deployment.v1"
@@ -59,6 +60,12 @@ def deployment_config_snapshot(environ: dict | None = None) -> dict:
     env = dict(os.environ if environ is None else environ)
     keys = [
         "OPENROUTER_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GROQ_API_KEY",
+        "FAITHBLOOM_PROVEDOR_TEXTO",
+        "GEMINI_MODELO_TEXTO",
+        "GEMINI_TEXT_MODEL",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_ROLE_KEY",
         "FAITHBLOOM_SUPABASE_BUCKET",
@@ -75,6 +82,7 @@ def deployment_config_snapshot(environ: dict | None = None) -> dict:
         "storage": backend_status(),
         "settings": {k: v for k, v in load_settings().items() if "key" not in k.casefold() and "secret" not in k.casefold()},
         "env_present": present,
+        "text_provider": text_provider_diagnostic(environ),
     }
 
 
@@ -227,7 +235,9 @@ def real_e2e_checklist() -> list[dict]:
         {"id": "auth", "label": "Login real/OIDC validado com usuário autorizado", "required": True},
         {"id": "storage", "label": "Write/read/delete real no storage persistente", "required": True},
         {"id": "migration", "label": "Projetos existentes inventariados e migrados com hashes verificados", "required": True},
-        {"id": "openrouter_text", "label": "Uma chamada mínima de texto à OpenRouter foi validada manualmente", "required": True},
+        # Keep the historical evidence ID while accepting the selected router
+        # provider; a Gemini/Groq deployment does not require an OpenRouter key.
+        {"id": "openrouter_text", "label": "Uma chamada mínima de texto pelo provedor selecionado foi validada manualmente", "required": True},
         {"id": "image_preview", "label": "Uma geração/preview de imagem foi validada manualmente", "required": False},
         {"id": "audio_preview", "label": "Um preview de voz foi validado manualmente", "required": False},
         {"id": "project_roundtrip", "label": "Criar → salvar → recarregar um projeto real sem perda", "required": True},
@@ -248,8 +258,10 @@ def evaluate_real_e2e(evidence: dict[str, bool]) -> dict:
         "required_total": sum(1 for x in items if x["required"]),
         "required_done": sum(1 for x in items if x["required"] and x["done"]),
         "cloud_e2e_passed": not missing_required,
+        "evidence_mode": "manual_attestation",
+        "live_access_verified_automatically": False,
         "missing_required": missing_required,
-        "notice": "Itens devem ser marcados somente após evidência real no ambiente de produção.",
+        "notice": "Checklist manual: marcar itens não executa testes nem verifica serviços automaticamente. Registre somente após evidência real no ambiente de destino.",
     }
 
 

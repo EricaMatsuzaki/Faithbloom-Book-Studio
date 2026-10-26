@@ -208,23 +208,30 @@ def save_comic(project):
     else:
         # The generic new-story writer also updates the legacy character library.
         # A derivative HQ must not rewrite that library or promote any Master.
-        project["storage_path"] = salvar_livro({**project, "personagens": {}})
+        first = {**project, "personagens": {}}
+        project["storage_path"] = salvar_livro(first)
+        # The exact successful creation supplies the baseline for restoring the
+        # derivative's own character references, never a later read of a draft.
+        from armazenamento import BOOK_SAVE_CONTEXT_KEY
+        if BOOK_SAVE_CONTEXT_KEY in first:
+            project[BOOK_SAVE_CONTEXT_KEY] = deepcopy(first[BOOK_SAVE_CONTEXT_KEY])
         atualizar_livro_salvo(project["storage_path"], project)
     return project["storage_path"]
 
 
 def load_comic(storage_ref):
-    from armazenamento import _json
+    from armazenamento import _json, bind_book_read_context
     # Candidate/approval/export references are durable identities. The generic
     # story loader materializes all media recursively and would replace those
     # identities with cache filenames, preventing a valid approval from reopening.
     project = _json(str(storage_ref).removeprefix("fb://"), None)
     if not isinstance(project, dict):
         raise ValueError("A HQ solicitada não foi encontrada na biblioteca.")
+    raw = deepcopy(project)
     _meta(project)
     project["storage_path"] = "fb://" + storage_ref.replace("fb://", "", 1)
     _require_source_intact(project)
-    return project
+    return bind_book_read_context(project, project["storage_path"], raw)
 
 
 def list_comics():

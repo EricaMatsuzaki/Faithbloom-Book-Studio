@@ -392,6 +392,7 @@ def bind_book(project, *, same_title=True):
     book["storage_path"] = reference
     armazenamento.atualizar_livro_salvo(reference, book)
     raw = project["backend"].get_json(reference.removeprefix("fb://"))
+    armazenamento.bind_book_read_context(raw, reference, raw)
     plan = ov.load_visual_plan(project["plan"]["id"])
     plan.update(source_ref=reference, source_fingerprint=content_fingerprint(raw), source_book_id="source-book-1", story_text="Mel observa a fonte.")
     ov.save_visual_plan(plan)

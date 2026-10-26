@@ -273,7 +273,9 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
     if count != 3:
         raise ValueError("O Diretor de Cena trabalha com exatamente três propostas A/B/C.")
     context = dict(project_context or {})
-    faixa = normalizar_faixa_etaria(context.get("faixa_etaria"))
+    audience = context.get("editorial_audience") or context.get("faixa_etaria")
+    broad_audience = audience if audience in {"teen", "adult", "custom"} else None
+    faixa = broad_audience or normalizar_faixa_etaria(context.get("faixa_etaria"))
     if context.get("style_dna_id"):
         from style_dna import carregar_style
         style = carregar_style(context["style_dna_id"])
@@ -290,19 +292,24 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
         summary = character_identity_summary(p)
         char_context.append({"nome": p.get("nome"), "dna": summary["descricao"], "locked": summary["locked"], "variaveis_permitidas": summary["controlled"]})
     system = (
-        "Você é o Scene Director do FaithBloom Book Studio, especialista em direção de arte para livros infantis. "
-        "Receba um trecho de história e personagens oficiais. Proponha exatamente 3 direções visuais DISTINTAS. Não gere imagens. "
+        "Você é o Scene Director do FaithBloom Book Studio, especialista em direção de arte editorial. "
+        "Receba um trecho do projeto e personagens oficiais. Proponha exatamente 3 direções visuais DISTINTAS. Não gere imagens. "
         "Não altere o Character DNA. A psicologia das cores deve reforçar emoção, mas nunca recolorir identidade canônica. "
-        "As ideias devem ser práticas para ilustração editorial, com composição clara, movimento, leitura visual infantil e reaproveitamento futuro. "
+        "As ideias devem ser práticas para ilustração editorial, com composição clara, movimento, leitura visual adequada ao público e reaproveitamento futuro. "
         f"Responda apenas JSON válido. Toda direção deve respeitar {TEXT_POLICY}: nenhuma tipografia na arte."
     )
     if context.get("direcao_emocional_aprovada"):
         from emotional_visual_binding import direction_prompt
         system += "\nA emoção, intensidade, transição e paleta aprovadas são obrigatórias em A/B/C. Varie composição, nunca substitua essa direção:\n" + direction_prompt(context["direcao_emocional_aprovada"])
-    system += skill_contract("scene_director") + "\n" + instrucao_faixa_etaria(faixa)
+    audience_direction = {
+        "teen": "Público adolescente: respeite autonomia, privacidade e complexidade emocional. Evite infantilização visual; mantenha os personagens canônicos escolhidos.",
+        "adult": "Público adulto: composição e linguagem visual maduras, fiéis ao conteúdo e aos personagens escolhidos. Não converta o projeto em livro infantil.",
+        "custom": "Público personalizado: siga o brief e o contexto editorial fornecidos. Não presuma uma faixa infantil e não altere os personagens escolhidos.",
+    }
+    system += skill_contract("scene_director") + "\n" + (audience_direction[broad_audience] if broad_audience else instrucao_faixa_etaria(faixa))
     instruction = {
         "contexto_editorial": {key: context.get(key) for key in (
-            "titulo", "colecao", "licao_final", "cenas_texto", "mapa_emocional", "direcao_emocional_aprovada", "style_dna", "world_masters"
+            "titulo", "colecao", "licao_final", "cenas_texto", "mapa_emocional", "direcao_emocional_aprovada", "style_dna", "world_masters", "editorial_audience"
         )},
         "faixa_etaria": faixa,
         "trecho": excerpt,
@@ -320,7 +327,7 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
     ideas = _normalize_scene_ideas(raw, count=count)
     validate_scene_concepts(ideas)
     for idea in ideas:
-        idea["editorial_context"] = {"faixa_etaria": faixa, "style_dna": deepcopy(context.get("style_dna")), "world_masters": deepcopy(context.get("world_masters"))}
+        idea["editorial_context"] = {"faixa_etaria": faixa, "editorial_audience": audience, "style_dna": deepcopy(context.get("style_dna")), "world_masters": deepcopy(context.get("world_masters"))}
     return ideas
 
 

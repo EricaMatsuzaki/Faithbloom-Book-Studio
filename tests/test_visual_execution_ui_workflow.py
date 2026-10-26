@@ -149,7 +149,7 @@ def test_selection_refreshes_only_matching_open_book_from_fresh_disk_state(visua
     app = _app(p, p["source"])
     asset_id = _generate(app, p)
     _select_scene(app, 7)
-    newer = deepcopy(p["source"])
+    newer = armazenamento.carregar_livro("", p["reference"])
     newer["editorial_notes"] = "Metadado salvo em outra tela."
     armazenamento.atualizar_livro_salvo(p["reference"], newer)
     _element(app.button, "Usar esta ilustração no livro").click().run(timeout=15)
@@ -195,6 +195,7 @@ def test_changed_or_unavailable_canonical_source_blocks_visual_ui_and_provider(v
     pending_generate = _element(app.button, "Gerar ilustração")
     source = deepcopy(p["source"])
     if changed == "text":
+        source = armazenamento.carregar_livro("", p["reference"])
         source["cenas_texto"][0]["texto"] = "Texto revisado pela autora."
         armazenamento.atualizar_livro_salvo(p["reference"], source)
     elif changed == "identity":

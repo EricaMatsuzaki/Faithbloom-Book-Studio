@@ -10,6 +10,7 @@ from copy import deepcopy
 import streamlit as st
 
 from state import LivroState
+from generation_save_ui import render_generation_save_recovery
 from estilo import aplicar_estilo, hero
 from openrouter_client import chamar_llm
 from armazenamento import salvar_livro, atualizar_livro_salvo
@@ -37,6 +38,8 @@ if "state" not in st.session_state:
     st.session_state.state = LivroState(paginas_minimas=24, idiomas_alvo=[], personagens={})
 
 s = st.session_state.state
+if render_generation_save_recovery(s, key_prefix="additional_styles_save"):
+    st.stop()
 s.setdefault("paginas_minimas", 24)
 s.setdefault("personagens", {})
 s.setdefault("versoes_narrativas_salvas", {})
@@ -70,9 +73,9 @@ DERIVADOS_NARRATIVOS = (
 def _persistir() -> str:
     caminho = str(s.get("storage_path") or "")
     if caminho:
-        caminho = atualizar_livro_salvo(caminho, dict(s))
+        caminho = atualizar_livro_salvo(caminho, s)
     else:
-        caminho = salvar_livro(dict(s))
+        caminho = salvar_livro(s)
     s["storage_path"] = caminho
     return caminho
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from author_profiles import author_display_from_state, list_author_profiles, profile_display_name, set_project_authors
 
 import os
+import json
 import shutil
 import uuid
 
@@ -71,10 +72,12 @@ def _salvar_projeto_atual(state: dict) -> bool:
         return False
     salvo = False
     try:
+        # Successful writes refresh the observed snapshot in the working state.
+        # Keep it for the next checkpoint instead of discarding a temporary copy.
         if caminho:
-            caminho = atualizar_livro_colorir_salvo(caminho, dict(state))
+            caminho = atualizar_livro_colorir_salvo(caminho, state)
         else:
-            caminho = salvar_livro_colorir(dict(state))
+            caminho = salvar_livro_colorir(state)
             st.session_state.coloring_profile_link_pending = {
                 "path": caminho, "profile_id": st.session_state.get("faithbloom_workspace_profile_id", ""),
             }
@@ -89,6 +92,8 @@ def _salvar_projeto_atual(state: dict) -> bool:
             )
             st.session_state.pop("coloring_profile_link_pending", None)
         st.session_state.pop("coloring_save_error", None)
+        if st.session_state.pop("coloring_after_save_stage", None) == "resultado":
+            st.session_state.etapa_c = "resultado"
         return True
     except Exception:
         st.session_state.coloring_save_error = (
@@ -97,6 +102,40 @@ def _salvar_projeto_atual(state: dict) -> bool:
         )
         st.error(st.session_state.coloring_save_error)
         return False
+
+
+def _retry_coloring_save(state: dict) -> bool:
+    pending = st.session_state.get("coloring_profile_link_pending")
+    if not pending:
+        return _salvar_projeto_atual(state)
+    try:
+        if pending.get("path") != state.get("storage_path"):
+            raise ValueError("O vínculo pendente pertence a outro projeto.")
+        # Only the profile link failed; do not rewrite the already-saved book.
+        from editorial_project_updates import load_metadata_snapshot
+        saved = load_metadata_snapshot(pending["path"], kind="coloring")["state"]
+        assign_saved_project_to_profile(pending.get("profile_id", ""), "coloring", pending["path"], saved)
+    except Exception:
+        st.error("O projeto continua salvo. Não foi possível confirmar o vínculo com o perfil; tente novamente.")
+        return False
+    st.session_state.pop("coloring_profile_link_pending", None)
+    st.session_state.pop("coloring_save_error", None)
+    if st.session_state.pop("coloring_after_save_stage", None) == "resultado":
+        st.session_state.etapa_c = "resultado"
+    return True
+
+
+def _render_coloring_save_recovery(state: dict) -> None:
+    st.warning(st.session_state.coloring_save_error)
+    st.info("A tentativa abaixo apenas salva os arquivos já recebidos. Se outra edição alterou este projeto ou a sessão perdeu a versão de leitura, baixe esta cópia e reabra a versão atual pela Biblioteca antes de conferir suas alterações.")
+    draft = {key: value for key, value in state.items() if not key.startswith("_")}
+    st.download_button("Baixar cópia do projeto de colorir não salvo",
+        json.dumps(draft, ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+        file_name="faithbloom-colorir-rascunho-nao-salvo.json", mime="application/json",
+        key="coloring_unsaved_draft")
+    if st.button("💾 Tentar salvar novamente") and _retry_coloring_save(state):
+        st.rerun()
+    st.stop()
 
 
 def _salvar_upload(upload, prefixo: str) -> str:
@@ -485,9 +524,7 @@ def render_coloring_studio():
         st.subheader(f"🖍️ {s.get('titulo','')}")
         st.caption(f"{s.get('publico','')} · {s.get('faixa_etaria','')} · {s.get('tema_geral','')}")
         if st.session_state.get("coloring_save_error"):
-            st.warning(st.session_state.coloring_save_error)
-            if st.button("💾 Tentar salvar novamente") and _salvar_projeto_atual(s):
-                st.rerun()
+            _render_coloring_save_recovery(s)
         if not str(s.get("titulo") or "").strip():
             st.warning("Defina o título em Configurações antes de gerar as páginas.")
         cback, cstyle = st.columns([1,3])
@@ -509,14 +546,13 @@ def render_coloring_studio():
         st.progress(aprovadas/max(1,len(s.get("paginas",[]))), text=f"{aprovadas}/{len(s.get('paginas',[]))} páginas aprovadas")
         if st.button("📐 Diagramar projeto aprovado", type="primary", disabled=not s.get("paginas") or aprovadas != len(s.get("paginas",[]))):
             s.update(diagramador_colorir_node(dict(s)))
+            st.session_state.coloring_after_save_stage = "resultado"
             if _salvar_projeto_atual(s):
                 st.session_state.etapa_c="resultado"; st.rerun()
 
     elif st.session_state.etapa_c == "resultado":
         if st.session_state.get("coloring_save_error"):
-            st.warning(st.session_state.coloring_save_error)
-            if st.button("💾 Tentar salvar novamente") and _salvar_projeto_atual(s):
-                st.rerun()
+            _render_coloring_save_recovery(s)
         else:
             st.success("Projeto de colorir diagramado e salvo.")
         st.caption(st.session_state.get("caminho_salvo_c", ""))
@@ -606,7 +642,7 @@ def render_coloring_studio():
                     st.download_button("⬇️ Baixar capa física Print Ready (PDF)", f, file_name="capa_colorir_print_ready.pdf")
 
         if st.button("Novo Coloring Book"):
-            for key in ("capa_colorir_phase8", "caminho_salvo_c", "coloring_save_error", "coloring_profile_link_pending", "coloring_pdf_bleed", "ideias_colorir"):
+            for key in ("capa_colorir_phase8", "caminho_salvo_c", "coloring_save_error", "coloring_profile_link_pending", "coloring_after_save_stage", "coloring_pdf_bleed", "ideias_colorir"):
                 st.session_state.pop(key, None)
             st.session_state.state_c=LivroColorirState(paginas=[]); st.session_state.etapa_c="entrada"; st.rerun()
 

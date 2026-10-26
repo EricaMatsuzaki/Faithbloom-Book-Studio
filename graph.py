@@ -62,10 +62,17 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio, *, max_editorial_revi
         else:
             result["pipeline_status"] = "editorial_revision_requested"
         from generation_autosave import persist_generation_snapshot
-        persist_generation_snapshot(result, reason="editorial_review_checkpoint")
+        try:
+            persist_generation_snapshot(result, reason="editorial_review_checkpoint")
+        except Exception:
+            if not result.get("autosave_pending"):
+                raise
+            result["pipeline_status"] = "awaiting_generation_save"
         return result
 
     def after_review(state):
+        if state.get("autosave_pending"):
+            return "human_review"
         if state.get("pipeline_status") == "awaiting_emotional_review":
             return "human_review"
         if state.get("revisao_aprovada"):
@@ -89,50 +96,78 @@ def construir_grafo(chamar_llm, gerar_imagem, gerar_audio, *, max_editorial_revi
         state["pipeline_status"] = "emotional_review_approved"
         return state
 
+    def guarded(operation):
+        def step(state):
+            if state.get("autosave_pending"):
+                state["pipeline_status"] = "awaiting_generation_save"
+                return state
+            # LangGraph keeps only declared channels. Saved annotations outside
+            # that schema are not deletions made by this pipeline: restore them
+            # from the exact read handle before an agent checkpoints its output.
+            # An expired handle fails before making any provider request.
+            if state.get("storage_path"):
+                from armazenamento import get_book_read_context
+                from copy import deepcopy
+                observed = get_book_read_context(state, state["storage_path"])["view"]
+                declared = LivroStatePromptMestre.__annotations__
+                for key, value in observed.items():
+                    if key not in declared and key not in state:
+                        state[key] = deepcopy(value)
+            try:
+                result = operation(state)
+            except Exception:
+                if not state.get("autosave_pending"):
+                    raise
+                result = state
+            if result.get("autosave_pending"):
+                result["pipeline_status"] = "awaiting_generation_save"
+            return result
+        return step
+
+    def route_after_save(next_step):
+        def route(state):
+            return "pause" if state.get("autosave_pending") else "continue"
+        return route, {"pause": END, "continue": next_step}
+
     grafo = StateGraph(LivroStatePromptMestre)
 
-    grafo.add_node("curador_tema", start)
-    grafo.add_node("roteirista", lambda s: roteirista_node(s, chamar_llm))
-    grafo.add_node("revisor", review)
-    grafo.add_node("complementos_editoriais", lambda s: _complementos_node(s, chamar_llm))
-    grafo.add_node("ilustrador", lambda s: ilustrador_node(s, gerar_imagem))
-    grafo.add_node("atividades_colorir", lambda s: atividades_colorir_node(s, gerar_imagem))
-    grafo.add_node("audiobook", lambda s: audiobook_node(s, chamar_llm))
-    grafo.add_node("narrador", lambda s: narracao_node(s, gerar_audio))
-    grafo.add_node("dedicatoria", lambda s: dedicatoria_node(s, chamar_llm))
-    grafo.add_node("tradutor", lambda s: tradutor_node(s, chamar_llm))
-    grafo.add_node("sinopse", lambda s: sinopse_node(s, chamar_llm))
-    grafo.add_node("palavras_chave", lambda s: pesquisa_palavras_chave_node(s, chamar_llm))
-    grafo.add_node("categorias", lambda s: pesquisa_categorias_node(s, chamar_llm))
-    grafo.add_node("diagramador", lambda s: diagramador_node(s))
-    grafo.add_node("capa", lambda s: capa_node(s, gerar_imagem))
-    grafo.add_node("marketing", lambda s: marketing_lancamento_node(s, chamar_llm))
+    grafo.add_node("curador_tema", guarded(start))
+    grafo.add_node("roteirista", guarded(lambda s: roteirista_node(s, chamar_llm)))
+    grafo.add_node("revisor", guarded(review))
+    grafo.add_node("complementos_editoriais", guarded(lambda s: _complementos_node(s, chamar_llm)))
+    grafo.add_node("ilustrador", guarded(lambda s: ilustrador_node(s, gerar_imagem)))
+    grafo.add_node("atividades_colorir", guarded(lambda s: atividades_colorir_node(s, gerar_imagem)))
+    grafo.add_node("audiobook", guarded(lambda s: audiobook_node(s, chamar_llm)))
+    grafo.add_node("narrador", guarded(lambda s: narracao_node(s, gerar_audio)))
+    grafo.add_node("dedicatoria", guarded(lambda s: dedicatoria_node(s, chamar_llm)))
+    grafo.add_node("tradutor", guarded(lambda s: tradutor_node(s, chamar_llm)))
+    grafo.add_node("sinopse", guarded(lambda s: sinopse_node(s, chamar_llm)))
+    grafo.add_node("palavras_chave", guarded(lambda s: pesquisa_palavras_chave_node(s, chamar_llm)))
+    grafo.add_node("categorias", guarded(lambda s: pesquisa_categorias_node(s, chamar_llm)))
+    grafo.add_node("diagramador", guarded(lambda s: diagramador_node(s)))
+    grafo.add_node("capa", guarded(lambda s: capa_node(s, gerar_imagem)))
+    grafo.add_node("marketing", guarded(lambda s: marketing_lancamento_node(s, chamar_llm)))
 
     if resume_after_emotional_review:
-        grafo.add_node("retomar_mapa_emocional", resume)
+        grafo.add_node("retomar_mapa_emocional", guarded(resume))
         grafo.set_entry_point("retomar_mapa_emocional")
-        grafo.add_edge("retomar_mapa_emocional", "complementos_editoriais")
+        route, options = route_after_save("complementos_editoriais")
+        grafo.add_conditional_edges("retomar_mapa_emocional", route, options)
     else:
         grafo.set_entry_point("curador_tema")
-    grafo.add_edge("curador_tema", "roteirista")
-    grafo.add_edge("roteirista", "revisor")
+    for first, following in (("curador_tema", "roteirista"), ("roteirista", "revisor")):
+        route, options = route_after_save(following)
+        grafo.add_conditional_edges(first, route, options)
     grafo.add_conditional_edges(
         "revisor",
         after_review,
         {"revise": "roteirista", "approved": "complementos_editoriais", "human_review": END},
     )
-    grafo.add_edge("complementos_editoriais", "ilustrador")
-    grafo.add_edge("ilustrador", "atividades_colorir")
-    grafo.add_edge("atividades_colorir", "audiobook")
-    grafo.add_edge("audiobook", "narrador")
-    grafo.add_edge("narrador", "dedicatoria")
-    grafo.add_edge("dedicatoria", "tradutor")
-    grafo.add_edge("tradutor", "sinopse")
-    grafo.add_edge("sinopse", "palavras_chave")
-    grafo.add_edge("palavras_chave", "categorias")
-    grafo.add_edge("categorias", "diagramador")
-    grafo.add_edge("diagramador", "capa")
-    grafo.add_edge("capa", "marketing")
+    chain = ("complementos_editoriais", "ilustrador", "atividades_colorir", "audiobook", "narrador",
+             "dedicatoria", "tradutor", "sinopse", "palavras_chave", "categorias", "diagramador", "capa", "marketing")
+    for first, following in zip(chain, chain[1:]):
+        route, options = route_after_save(following)
+        grafo.add_conditional_edges(first, route, options)
     grafo.add_edge("marketing", END)
 
     return grafo.compile()

@@ -8,10 +8,12 @@ Por baixo, os dados usam storage_backend.py:
 from __future__ import annotations
 
 from copy import deepcopy
+from collections import OrderedDict
 import json
 import os
 import re
 import time
+import threading
 import uuid
 from pathlib import Path
 
@@ -27,6 +29,158 @@ from storage_updates import update_json_document
 
 class ProtectedBookUpdate(PermissionError):
     """A legacy snapshot cannot replace a product's paid-execution record."""
+
+
+BOOK_SAVE_CONTEXT_KEY = "_book_save_context"
+_BOOK_TRANSIENT_FIELDS = {BOOK_SAVE_CONTEXT_KEY, "autosave_pending"}
+_MISSING = object()
+_BLOCKED = object()
+_BOOK_READ_SCHEMA = "faithbloom.book-read.v2"
+# Baselines remain server-side. The graph/session carries only an unguessable
+# handle, so an old raw book is never copied into provider prompts or exports.
+_BOOK_READ_CONTEXTS = OrderedDict()
+_BOOK_READ_LOCK = threading.RLock()
+_BOOK_READ_MAX_CONTEXTS = 256
+_BOOK_READ_MAX_BYTES = 32 * 1024 * 1024
+
+
+class BookSaveConflict(storage.StorageConflict):
+    """The received/edited draft is retained while a field conflict is resolved."""
+    def __init__(self, fields=(), *, missing_baseline=False):
+        super().__init__()
+        self.fields = tuple(fields)
+        self.missing_baseline = missing_baseline
+        self.args = (("Reabra o livro salvo antes de continuar esta edição. O rascunho recebido foi preservado."
+                      if missing_baseline else
+                      "Outra edição alterou os mesmos campos. O rascunho recebido foi preservado; confira a versão atual antes de salvar."),)
+
+
+def _book_payload(state: dict) -> dict:
+    """Strip the in-memory read carrier; normalize JSON keys before field diffs."""
+    value = {key: value for key, value in state.items() if key not in _BOOK_TRANSIENT_FIELDS}
+    return json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
+
+
+def _book_read_path(reference: str) -> str:
+    path = storage.uri_to_path(reference) if is_storage_uri(reference) else storage._tenant_path(
+        storage._normalize_storage_path(reference, allow_empty=False), action="storage.read")
+    logical = path.split("/", 2)[-1] if path.startswith("tenants/") else path
+    if not logical.endswith(".json") or not logical.startswith(("livros/", "livros_colorir/")):
+        raise ValueError("A referência não corresponde a um livro salvo.")
+    return path
+
+
+def bind_book_read_context(state: dict, reference: str, raw_document: dict) -> dict:
+    """Bind the EXACT document already read; this function never fetches a baseline.
+
+    Generic loaders do not attach this carrier to editorial products, whose
+    runtime has its own snapshot contract. Explicit callers may bind a draft;
+    the legacy writer still rejects every persisted editorial execution record.
+    """
+    path = _book_read_path(reference)
+    if not isinstance(raw_document, dict) or not isinstance(state, dict):
+        raise storage.StorageCorrupt("O livro salvo precisa de recuperação.")
+    state.pop(BOOK_SAVE_CONTEXT_KEY, None)
+    state["storage_path"] = storage_uri(path)
+    context = {"schema": _BOOK_READ_SCHEMA, "path": path,
+               "raw": _book_payload(raw_document), "view": _book_payload(state)}
+    token = uuid.uuid4().hex
+    size = len(json.dumps(context, ensure_ascii=False).encode("utf-8"))
+    with _BOOK_READ_LOCK:
+        _BOOK_READ_CONTEXTS[token] = (context, size)
+        while (len(_BOOK_READ_CONTEXTS) > _BOOK_READ_MAX_CONTEXTS
+               or sum(item[1] for item in _BOOK_READ_CONTEXTS.values()) > _BOOK_READ_MAX_BYTES):
+            _BOOK_READ_CONTEXTS.popitem(last=False)
+    state[BOOK_SAVE_CONTEXT_KEY] = {"schema": _BOOK_READ_SCHEMA, "path": path, "token": token}
+    return state
+
+
+def get_book_read_context(state: dict, reference: str) -> dict:
+    """Return a copy of the exact observed baseline after current authorization.
+
+    Eviction, a worker restart, or a mismatched handle requires an explicit
+    reload. Never reconstruct a baseline from a late storage read.
+    """
+    path = _book_read_path(reference)
+    carrier = state.get(BOOK_SAVE_CONTEXT_KEY) if isinstance(state, dict) else None
+    if (not isinstance(carrier, dict) or carrier.get("schema") != _BOOK_READ_SCHEMA
+            or carrier.get("path") != path or not isinstance(carrier.get("token"), str)):
+        raise BookSaveConflict(missing_baseline=True)
+    with _BOOK_READ_LOCK:
+        entry = _BOOK_READ_CONTEXTS.get(carrier["token"])
+        if entry is None or entry[0].get("path") != path:
+            raise BookSaveConflict(missing_baseline=True)
+        _BOOK_READ_CONTEXTS.move_to_end(carrier["token"])
+        return deepcopy(entry[0])
+
+
+def _field_changes(before, after, prefix=()):
+    if isinstance(before, dict) and isinstance(after, dict):
+        for key in sorted(set(before) | set(after)):
+            if not prefix and key == "storage_path":
+                continue
+            old, new = before.get(key, _MISSING), after.get(key, _MISSING)
+            if old is _MISSING and isinstance(new, dict) and new:
+                yield from _field_changes({}, new, (*prefix, key))
+            elif old is not _MISSING and new is not _MISSING and isinstance(old, dict) and isinstance(new, dict):
+                yield from _field_changes(old, new, (*prefix, key))
+            elif old is _MISSING or new is _MISSING or old != new:
+                yield (*prefix, key), new
+
+
+def _field_value(value, path):
+    for key in path:
+        if not isinstance(value, dict):
+            return _BLOCKED
+        if key not in value:
+            return _MISSING
+        value = value[key]
+    return value
+
+
+def _set_field(value, path, wanted):
+    for key in path[:-1]:
+        if key not in value:
+            value[key] = {}
+        value = value[key]
+    if wanted is _MISSING:
+        value.pop(path[-1], None)
+    else:
+        value[path[-1]] = deepcopy(wanted)
+
+
+def _fill_missing(target: dict, defaults: dict) -> None:
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = deepcopy(value)
+        elif isinstance(target[key], dict) and isinstance(value, dict):
+            _fill_missing(target[key], value)
+
+
+def _reuse_read_values(value, observed, raw):
+    """Keep durable media URIs for leaves unchanged from the materialized read."""
+    if raw is not _MISSING and value == observed:
+        return deepcopy(raw)
+    if isinstance(value, dict) and isinstance(observed, dict) and isinstance(raw, dict):
+        return {key: _reuse_read_values(item, observed.get(key, _MISSING), raw.get(key, _MISSING))
+                for key, item in value.items()}
+    if isinstance(value, list) and isinstance(observed, list) and isinstance(raw, list):
+        return [_reuse_read_values(item, observed[index] if index < len(observed) else _MISSING,
+                                  raw[index] if index < len(raw) else _MISSING)
+                for index, item in enumerate(value)]
+    return deepcopy(value)
+
+
+def _refresh_book_working_state(state: dict, raw: dict, reference: str, *, materialize=True) -> None:
+    if isinstance(raw.get("editorial_product"), dict):
+        state.pop(BOOK_SAVE_CONTEXT_KEY, None)
+        state["storage_path"] = reference
+        return
+    materialize = materialize and not isinstance(raw.get("comic_product"), dict)
+    view = materializar_assets_em_objeto(ensure_project_schema(deepcopy(raw))) if materialize else deepcopy(raw)
+    state.clear()
+    state.update(view)
+    bind_book_read_context(state, reference, raw)
 
 
 def _book_update_path(reference: str, prefix: str) -> str:
@@ -70,28 +224,63 @@ def _assert_legacy_book_update(current, incoming: dict) -> None:
 
 
 def _update_existing_book(reference: str, state: dict, *, prefix: str, assets_prefix: str) -> str:
-    """Guard the latest record; ordinary narrative snapshots still need CAS baselines.
-
-    Preparation/uploads stay outside the replayable callback. A protected
-    product that appears during preparation is vetoed again before the write;
-    an already uploaded asset can remain orphaned after that conflict.
-    """
+    """Merge only edits since the actual read, preserving other sessions' fields."""
     if not isinstance(state, dict):
         raise TypeError("O projeto precisa ser um objeto de dados.")
-    incoming = deepcopy(state)
+    incoming = _book_payload(state)
     path = _book_update_path(reference, prefix)
     declared = incoming.get("storage_path")
     if declared and _book_update_path(declared, prefix) != path:
         raise ValueError("A cópia pertence a outro caminho de projeto. Nenhum livro foi alterado.")
-    _assert_legacy_book_update(BACKEND.get_json(path, None), incoming)
-    prepared = persistir_assets_em_objeto(ensure_project_schema(incoming), assets_prefix)
+    current = BACKEND.get_json(path, None)
+    _assert_legacy_book_update(current, incoming)
+    context = get_book_read_context(state, reference)
+    baseline_raw, baseline_view = _book_payload(context["raw"]), _book_payload(context["view"])
+    _assert_legacy_book_update(baseline_raw, incoming)
+    changes = list(_field_changes(baseline_view, incoming))
+    # Detect an existing conflict before reading/uploading any new media.
+    def validate_fields(document, prepared=None):
+        conflicts = []
+        for field, new in changes:
+            now = _field_value(document, field)
+            old = _field_value(baseline_raw, field)
+            observed = _field_value(baseline_view, field)
+            wanted = _field_value(prepared, field) if prepared is not None and new is not _MISSING else new
+            if now is _BLOCKED or not (now == old or (old is _MISSING and now == observed) or now == wanted):
+                conflicts.append(".".join(field))
+        if conflicts:
+            raise BookSaveConflict(conflicts)
+    validate_fields(current)
+    prepared = ensure_project_schema(_reuse_read_values(ensure_project_schema(incoming), baseline_view, baseline_raw))
+    changed_values = {}
+    for field, new in changes:
+        if new is not _MISSING:
+            _set_field(changed_values, field, _field_value(prepared, field))
+    persisted_changes = persistir_assets_em_objeto(changed_values, assets_prefix)
+    for field, new in changes:
+        if new is not _MISSING:
+            _set_field(prepared, field, _field_value(persisted_changes, field))
+    canonical = storage_uri(path)
 
     def replace_current(current):
         _assert_legacy_book_update(current, prepared)
-        return deepcopy(prepared)
+        validate_fields(current, prepared)
+        result = deepcopy(current)
+        schema_defaults = {key: prepared[key] for key in ("_faithbloom_schema", "_faithbloom_schema_version",
+            "_faithbloom_migrations", "project_meta", "workflow", "content_protection", "stable_release", "authorship")
+            if key in prepared}
+        _fill_missing(result, schema_defaults)
+        for field, new in changes:
+            wanted = _MISSING if new is _MISSING else _field_value(prepared, field)
+            _set_field(result, field, wanted)
+        result["storage_path"] = canonical
+        result.pop(BOOK_SAVE_CONTEXT_KEY, None)
+        result.pop("autosave_pending", None)
+        return result
 
-    update_json_document(BACKEND, path, replace_current, allow_legacy_pilot=True)
-    return storage_uri(path)
+    committed = update_json_document(BACKEND, path, replace_current, allow_legacy_pilot=True)
+    _refresh_book_working_state(state, committed, canonical)
+    return canonical
 
 
 def _slug(titulo: str) -> str:
@@ -109,7 +298,8 @@ def _save_json(path: str, data) -> str:
 
 
 def salvar_livro(state: dict) -> str:
-    state = ensure_project_schema(dict(state))
+    original = state
+    state = ensure_project_schema(_book_payload(state))
     colecao_slug = _slug(state.get("colecao", "sem-colecao"))
     slug = _slug(state.get("titulo", ""))
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -118,7 +308,9 @@ def salvar_livro(state: dict) -> str:
     _save_json(path, serializavel)
     if state.get("personagens"):
         atualizar_biblioteca_personagens(state.get("colecao", "sem-colecao"), state["personagens"])
-    return storage_uri(path)
+    reference = storage_uri(path)
+    _refresh_book_working_state(original, serializavel, reference)
+    return reference
 
 
 def atualizar_livro_salvo(storage_path: str, state: dict) -> str:
@@ -152,11 +344,15 @@ def listar_livros(colecao: str | None = None) -> list[dict]:
 
 def carregar_livro(colecao: str, nome_arquivo: str) -> dict:
     path = nome_arquivo if "/" in nome_arquivo else f"livros/{_slug(colecao)}/{nome_arquivo}"
+    path = _book_read_path(path)
     dados = _json(path, {}) or {}
     # Compatibilidade: projetos antigos são migrados apenas na cópia carregada.
     # A versão persistida só muda quando a autora salvar explicitamente uma nova versão.
-    dados = ensure_project_schema(dados)
-    return materializar_assets_em_objeto(dados)
+    view = materializar_assets_em_objeto(ensure_project_schema(deepcopy(dados)))
+    if isinstance(view.get("editorial_product"), dict):
+        view["storage_path"] = storage_uri(path)
+        return view
+    return bind_book_read_context(view, path, dados)
 
 
 def listar_colecoes() -> list[str]:
@@ -206,13 +402,16 @@ def carregar_asset_marca(colecao: str, tipo: str) -> str | None:
 
 
 def salvar_livro_colorir(state: dict) -> str:
-    state = ensure_project_schema(dict(state))
+    original = state
+    state = ensure_project_schema(_book_payload(state))
     slug = _slug(state.get("titulo", ""))
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     path = f"livros_colorir/{slug}-{timestamp}-{uuid.uuid4().hex[:12]}.json"
     serializavel = persistir_assets_em_objeto(dict(state), f"assets/colorir/{slug}")
     _save_json(path, serializavel)
-    return storage_uri(path)
+    reference = storage_uri(path)
+    _refresh_book_working_state(original, serializavel, reference)
+    return reference
 
 
 def atualizar_livro_colorir_salvo(storage_path: str, state: dict) -> str:
@@ -235,8 +434,13 @@ def listar_livros_colorir() -> list[dict]:
 
 def carregar_livro_colorir(nome_arquivo: str) -> dict:
     path = nome_arquivo if "/" in nome_arquivo else f"livros_colorir/{nome_arquivo}"
-    dados = ensure_project_schema(_json(path, {}) or {})
-    return materializar_assets_em_objeto(dados)
+    path = _book_read_path(path)
+    raw = _json(path, {}) or {}
+    view = materializar_assets_em_objeto(ensure_project_schema(deepcopy(raw)))
+    if isinstance(view.get("editorial_product"), dict):
+        view["storage_path"] = storage_uri(path)
+        return view
+    return bind_book_read_context(view, path, raw)
 
 
 def temas_colorir_usados() -> list[str]:

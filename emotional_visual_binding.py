@@ -358,17 +358,27 @@ def book_scene_direction(state, number):
     return deepcopy(matches[0])
 
 
-def persist_book_emotional_map(state):
+def persist_book_emotional_map(state, *, snapshot=None):
     """Persist to the exact saved identity, preserving newer unrelated metadata."""
     require_book_emotional_map(state)
-    from armazenamento import salvar_livro, atualizar_livro_salvo
+    from armazenamento import salvar_livro
+    from editorial_project_updates import load_metadata_snapshot, update_metadata_fields
     import storage_backend as storage
     out = deepcopy(state)
     reference = str(out.get("storage_path") or "")
     if reference:
         canonical = reference if storage.is_storage_uri(reference) else storage.storage_uri(reference)
         path = storage.uri_to_path(canonical)
-        saved = storage.BACKEND.get_json(path, None)
+        if snapshot is None:
+            from armazenamento import get_book_read_context
+            context = get_book_read_context(out, canonical)
+            snapshot = {"reference": canonical, "kind": "story", "book_id": context["raw"].get("book_id"),
+                        "baseline": deepcopy(context["raw"]), "state": deepcopy(state)}
+        elif storage.uri_to_path(snapshot["reference"]) != path:
+            raise PermissionError("A revisão pertence a outro livro. Nenhuma obra foi alterada.")
+        # Reauthorize/read without replacing the snapshot observed before review.
+        load_metadata_snapshot(canonical)
+        saved = deepcopy(snapshot["baseline"])
         if not isinstance(saved, dict) or (saved.get("book_id") and saved["book_id"] != out["book_id"]):
             raise PermissionError("A referência salva não pertence a este livro. Nenhuma outra obra foi alterada.")
         if _book_content(saved, include_emotions=False) != _book_content(out, include_emotions=False):
@@ -385,9 +395,10 @@ def persist_book_emotional_map(state):
         for key in ("book_id", "paleta_emocional_preset", "emotional_book_binding"):
             if key in out:
                 saved[key] = deepcopy(out[key])
-        saved["storage_path"] = canonical
-        atualizar_livro_salvo(canonical, saved)
-        out = saved
+        fields = ("cenas_texto", "mapa_emocional", "book_id", "paleta_emocional_preset", "emotional_book_binding")
+        committed = update_metadata_fields(snapshot, {key: saved[key] for key in fields if key in saved},
+            watched_fields=("cenas_texto", "personagens", "style_dna_id", "style_dna", "style_master", "versao_narrativa_ativa"))
+        out = committed["state"]
     else:
         # This is an explicit save by the author, never a same-title lookup.
         out["storage_path"] = salvar_livro(out)

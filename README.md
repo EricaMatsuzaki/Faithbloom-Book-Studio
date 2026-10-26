@@ -6,6 +6,8 @@ Conexões dos agentes: [estado por cargo, competências exigidas e evidências d
 
 Operação: [correções de fila, perfis, arquivos por conta e próximas prioridades](docs/OPERATIONAL_READINESS.md). O relatório separa implementação, testes locais, aceitação no Streamlit e requisitos para oferecer o SaaS comercialmente.
 
+Fluxos de criação: [salvamento, recuperação de resultados e ilustrações opcionais](docs/PILOT_FLOW_RECOVERY.md). Inclui os percursos de livro narrativo, livro de colorir e produtos editoriais especializados verificados por testes de integração.
+
 > **Estúdio editorial inteligente, visual e multimodal** — com controle humano, consistência de personagens, produção editorial, publicação e evolução futura para um assistente pessoal integrado.
 >
 > Autoria / direção do produto: **Erica Matsuzaki**
