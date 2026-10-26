@@ -29,12 +29,15 @@ from state import LivroState, PersonagemDNA, CenaImagem
 from emotion_colors import paleta_para_prompt
 from emotional_color_director import direcao_emocional, prompt_direcao_visual
 from agent_skills import skill_contract
+from generation_autosave import persist_generation_snapshot
+from emotional_visual_binding import (require_book_emotional_map, book_scene_direction, direction_prompt,
+                                      require_book_source_current, book_visual_style)
 
 ESTILO_VISUAL_FIXO = (
     "Ilustração digital 2D, traços arredondados, texturas macias. "
     "Proporções fofas: cabeça grande, olhos grandes e expressivos, "
     "corpo pequeno e rechonchudo. Sombras suaves, sem contornos duros, "
-    "atmosfera de conto de fadas. Luz dourada e acolhedora. "
+    "atmosfera de conto de fadas. A luz e a temperatura seguem a direção emocional aprovada de cada cena. "
     "Personagens e cenários 100% originais - não referenciar nenhum "
     "estúdio de animação específico."
 )
@@ -78,14 +81,27 @@ def _direcao_da_cena(cena: dict) -> dict:
     )
 
 
+def _personagem_para_cena(cena: dict, personagens: dict) -> dict | None:
+    nome = str(cena.get("personagem_principal") or "").strip().casefold()
+    if nome:
+        for chave, personagem in personagens.items():
+            if nome in {str(chave).strip().casefold(), str(personagem.get("nome") or "").strip().casefold()}:
+                return personagem
+        return None
+    for personagem in personagens.values():
+        if personagem.get("papel") == "protagonista":
+            return personagem
+    return next((p for p in personagens.values() if p.get("imagem_referencia")), None)
+
+
 def prompt_cena(
-    cena: dict, personagens: dict[str, PersonagemDNA], lado_spread: str
+    cena: dict, personagens: dict[str, PersonagemDNA], lado_spread: str, *, estilo_visual: str | None = None
 ) -> str:
-    protagonista = personagens.get(cena.get("personagem_principal", ""), None)
+    protagonista = _personagem_para_cena(cena, personagens)
     dna = protagonista["descricao_fixa"] if protagonista else ""
     direcao = _direcao_da_cena(cena)
     return (
-        f"{ESTILO_VISUAL_FIXO}\n"
+        f"{estilo_visual if estilo_visual is not None else ESTILO_VISUAL_FIXO}\n"
         f"DNA fixo do personagem (nunca alterar): {dna}\n"
         f"Figurino desta cena (pode variar conforme a narrativa): "
         f"{cena.get('figurino', 'padrão')}\n"
@@ -101,47 +117,70 @@ def prompt_cena(
     ) + skill_contract("illustrator", compact=True)
 
 
-def ilustrador_node(state: LivroState, gerar_imagem) -> LivroState:
-    for nome, personagem in state["personagens"].items():
-        if not personagem.get("imagem_referencia"):
-            state["personagens"][nome] = gerar_referencia_personagem(
-                personagem, gerar_imagem
-            )
+def _require_private_source_consent(state, consent_confirmed):
+    from governance_callbacks import source_uses_personal_data
+    spec = (state.get("editorial_product") or {}).get("spec") or {}
+    private = source_uses_personal_data(state)
+    private = private or any(value in {"real_experience", "real_life", "experiencia_real", "real_life_story"} for value in (state.get("origin"), state.get("origem"), spec.get("origin")) if isinstance(value, str))
+    if private and consent_confirmed is not True:
+        raise PermissionError("Autorize o envio dos dados pessoais à IA para esta geração; a aprovação emocional não substitui consentimento atual.")
 
+
+def _checked_image_result(value):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("O provedor não retornou uma imagem válida. Nenhum resultado vazio foi salvo.")
+    return value
+
+
+def _approved_scene_prompt(state, cena, lado):
+    item = book_scene_direction(state, cena["numero"])
+    return prompt_cena(cena, state.get("personagens", {}), lado, estilo_visual=_book_style_prompt(state)) + "\nDIREÇÃO EMOCIONAL CANÔNICA APROVADA (prevalece sobre sugestões livres):\n" + direction_prompt(item)
+
+
+def _book_style_prompt(state):
+    style = book_visual_style(state)
+    if not style:
+        return ESTILO_VISUAL_FIXO
+    import json
+    return ("STYLE DNA APROVADO DESTA OBRA: " + json.dumps(style, ensure_ascii=False, sort_keys=True)
+            + ". Aplicar estas regras de renderização sem alterar a identidade do Character Master. "
+            "Luz e temperatura seguem a direção emocional aprovada; personagens e cenários originais, sem copiar estúdios.")
+
+
+def ilustrador_node(state: LivroState, gerar_imagem, *, consent_confirmed=False) -> LivroState:
     imagens_enviadas = state.get("imagens_cenas_enviadas", {})
     imagens_enviadas = {str(k): v for k, v in imagens_enviadas.items()}
-    cenas_imagem: list[CenaImagem] = []
     for i, cena in enumerate(state["cenas_texto"]):
         numero = cena["numero"]
+        atual = obter_imagem_cena(state, numero)
         if str(numero) in imagens_enviadas:
-            cenas_imagem.append(
-                CenaImagem(
-                    numero=numero,
-                    prompt_final="(imagem enviada pela autora - não gerada por IA)",
-                    caminho_arquivo=imagens_enviadas[str(numero)],
-                    aprovado=True,
-                    origem="enviada_pela_autora",
-                )
-            )
+            if atual and atual.get("caminho_arquivo") == imagens_enviadas[str(numero)] and atual.get("aprovado"):
+                continue
+            require_book_source_current(state, require_approval=False)
+            definir_imagem_cena(state, numero, imagens_enviadas[str(numero)],
+                "(imagem enviada pela autora - não gerada por IA)", "enviada_pela_autora", aprovado=True)
+            persist_generation_snapshot(state, reason=f"scene_uploaded:{numero}")
+            continue
+        if atual and atual.get("caminho_arquivo"):
             continue
 
         lado = "esquerda" if i % 2 == 0 else "direita"
-        protagonista = state["personagens"].get(
-            cena.get("personagem_principal", "")
-        )
-        imagem_base = protagonista["imagem_referencia"] if protagonista else None
-        prompt = prompt_cena(cena, state["personagens"], lado)
-        caminho = gerar_imagem(prompt=prompt, imagem_base=imagem_base)
-        cenas_imagem.append(
-            CenaImagem(
-                numero=numero,
-                prompt_final=prompt,
-                caminho_arquivo=caminho,
-                aprovado=False,
-                origem="gerada_pelo_agente",
-            )
-        )
-    state["cenas_imagem"] = cenas_imagem
+        protagonista = _personagem_para_cena(cena, state.get("personagens", {}))
+        if protagonista is None:
+            raise ValueError(f"Cena {numero}: não encontrei a referência do personagem indicado. Confira o personagem antes de gerar.")
+        if not protagonista.get("imagem_referencia") or protagonista.get("aparencia_aprovada") is not True:
+            raise ValueError(f"Cena {numero}: falta uma imagem de referência aprovada. Crie e aprove o Character Master antes de gerar a história.")
+        imagem_base = protagonista.get("imagem_referencia")
+        if not imagem_base:
+            raise ValueError(f"Cena {numero}: falta uma imagem de referência para gerar a ilustração.")
+        require_book_emotional_map(state)
+        require_book_source_current(state)
+        _require_private_source_consent(state, consent_confirmed)
+        prompt = _approved_scene_prompt(state, cena, lado)
+        caminho = _checked_image_result(gerar_imagem(prompt=prompt, imagem_base=imagem_base))
+        definir_imagem_cena(state, numero, caminho, prompt, "gerada_pelo_agente", aprovado=False)
+        require_book_source_current(state)
+        persist_generation_snapshot(state, reason=f"scene_illustrated:{numero}")
     return state
 
 
@@ -197,44 +236,43 @@ def definir_imagem_cena(state: dict, numero: int, caminho: str, prompt: str, ori
 
 
 def _referencia_para_cena(state: dict, cena: dict) -> str | None:
-    nome = cena.get("personagem_principal", "")
-    personagem = state.get("personagens", {}).get(nome)
-    if personagem and personagem.get("imagem_referencia"):
-        return personagem["imagem_referencia"]
-    for p in state.get("personagens", {}).values():
-        if p.get("papel") == "protagonista" and p.get("imagem_referencia"):
-            return p["imagem_referencia"]
-    for p in state.get("personagens", {}).values():
-        if p.get("imagem_referencia"):
-            return p["imagem_referencia"]
-    return None
+    personagem = _personagem_para_cena(cena, state.get("personagens", {}))
+    if not personagem or personagem.get("aparencia_aprovada") is not True:
+        return None
+    return personagem.get("imagem_referencia")
 
 
-def gerar_cena_unica(state: dict, numero: int, gerar_imagem, instrucao_extra: str = "") -> dict:
+def gerar_cena_unica(state: dict, numero: int, gerar_imagem, instrucao_extra: str = "", *, consent_confirmed=False) -> dict:
     """Gera/regera somente UMA cena e preserva a versão anterior."""
     cena = _cena_por_numero(state, numero)
     idx = next((i for i, c in enumerate(state.get("cenas_texto", [])) if int(c.get("numero", -1)) == int(numero)), 0)
     lado = "esquerda" if idx % 2 == 0 else "direita"
-    prompt = prompt_cena(cena, state.get("personagens", {}), lado)
+    prompt = prompt_cena(cena, state.get("personagens", {}), lado, estilo_visual=_book_style_prompt(state))
     if instrucao_extra.strip():
         prompt += (
             "\nINSTRUÇÃO ESPECÍFICA DA AUTORA PARA ESTA CENA: " + instrucao_extra.strip()
             + "\nAltere somente o que foi pedido. Preserve personagens, identidade visual e elementos já aprovados."
         )
     base = _referencia_para_cena(state, cena)
-    caminho = gerar_imagem(prompt=prompt, imagem_base=base)
+    if not base:
+        raise ValueError(f"Cena {numero}: falta uma imagem de referência do personagem para gerar a ilustração.")
+    require_book_emotional_map(state)
+    require_book_source_current(state)
+    _require_private_source_consent(state, consent_confirmed)
+    prompt += "\nDIREÇÃO EMOCIONAL CANÔNICA APROVADA:\n" + direction_prompt(book_scene_direction(state, numero))
+    caminho = _checked_image_result(gerar_imagem(prompt=prompt, imagem_base=base))
     return definir_imagem_cena(state, numero, caminho, prompt, "gerada_pelo_agente", aprovado=False)
 
 
-def criar_variacao_cena(state: dict, numero: int, gerar_imagem, instrucao: str = "") -> dict:
+def criar_variacao_cena(state: dict, numero: int, gerar_imagem, instrucao: str = "", *, consent_confirmed=False) -> dict:
     """Cria uma variação a partir da imagem atual, mantendo a atual no histórico."""
     atual = obter_imagem_cena(state, numero)
     if not atual or not atual.get("caminho_arquivo"):
-        return gerar_cena_unica(state, numero, gerar_imagem, instrucao)
+        return gerar_cena_unica(state, numero, gerar_imagem, instrucao, consent_confirmed=consent_confirmed)
     cena = _cena_por_numero(state, numero)
     pedido = instrucao.strip() or "Crie uma variação sutil desta cena mantendo personagens, rosto, proporções, roupas e composição principal reconhecíveis."
     prompt = (
-        f"{ESTILO_VISUAL_FIXO}\n"
+        f"{_book_style_prompt(state)}\n"
         f"Cena original: {cena.get('texto', '')}\n"
         f"Contexto: {cena.get('contexto_visual', '')}\n"
         f"{prompt_direcao_visual({'direcao': _direcao_da_cena(cena), 'expressao': cena.get('expressao', cena.get('emocao','')), 'instrucao_autora': cena.get('instrucao_emocional','')})}\n"
@@ -242,7 +280,13 @@ def criar_variacao_cena(state: dict, numero: int, gerar_imagem, instrucao: str =
         f"Pedido da autora: {pedido}\n"
         "Gerar uma NOVA versão; não colocar texto na imagem."
     )
-    caminho = gerar_imagem(prompt=prompt, imagem_base=atual.get("caminho_arquivo"))
+    require_book_emotional_map(state)
+    require_book_source_current(state)
+    _require_private_source_consent(state, consent_confirmed)
+    if not _referencia_para_cena(state, cena):
+        raise ValueError(f"Cena {numero}: falta referência do Character Master aprovado.")
+    prompt += "\nDIREÇÃO EMOCIONAL CANÔNICA APROVADA:\n" + direction_prompt(book_scene_direction(state, numero))
+    caminho = _checked_image_result(gerar_imagem(prompt=prompt, imagem_base=atual.get("caminho_arquivo")))
     return definir_imagem_cena(state, numero, caminho, prompt, "variacao_ia", aprovado=False)
 
 
@@ -281,3 +325,4 @@ def restaurar_ultima_imagem_cena(state: dict, numero: int) -> dict:
 
 # Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
 SKILL_PROFILE_IDS = ('illustrator',)
+

@@ -1,0 +1,67 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "data_governance",
+  "name": "Agente de Governança de Dados",
+  "mission": "Verificar persistência, linhagem, acesso, consentimento, retenção e recuperação sem alterar dados ou originais.",
+  "module": "agents/governanca_dados.py",
+  "skill_domains": {
+    "lifecycle": [
+      "classificação de dados",
+      "minimização",
+      "retenção",
+      "consentimento"
+    ],
+    "integrity": [
+      "linhagem",
+      "identidade de projeto",
+      "versionamento",
+      "backup e restauração"
+    ],
+    "access": [
+      "isolamento de tenant",
+      "controle de acesso",
+      "armazenamento privado",
+      "evidências de exposição"
+    ]
+  },
+  "runtime_contract": {
+    "entrypoints": [
+      "run_diagnostic",
+      "check_data_action"
+    ],
+    "essential_skills": [
+      "classificação de dados",
+      "consentimento",
+      "linhagem"
+    ],
+    "inputs": [
+      "metadados e contexto de privacidade"
+    ],
+    "outputs": [
+      "achados sobre consentimento, retenção e escopo sem expor manuscrito"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "achados com fonte e escopo",
+    "UNKNOWN quando não há evidência",
+    "nenhuma alteração destrutiva automática"
+  ],
+  "evidence_requirements": [
+    "fontes locais inspecionadas",
+    "evidência observada e rastreável de execução"
+  ],
+  "non_negotiables": [
+    "não ler bibliotecas pessoais completas durante diagnóstico",
+    "não expor manuscritos, documentos, fotos, tokens ou identidades no relatório",
+    "não apagar dados nem alterar Masters ou originais",
+    "backup declarado não equivale a restauração testada",
+    "isolamento de dados exige evidência; configuração desconhecida permanece UNKNOWN"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

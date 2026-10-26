@@ -13,6 +13,7 @@ from __future__ import annotations
 from author_profiles import author_display_from_state, list_author_profiles, profile_display_name, set_project_authors
 
 import os
+import json
 import shutil
 import uuid
 
@@ -22,14 +23,23 @@ from family_profiles import assign_saved_project_to_profile
 from state_colorir import LivroColorirState, PaginaColorir
 from openrouter_client import chamar_llm, gerar_imagem
 from agents.gerador_ideias_colorir import gerador_ideias_colorir_node
-from agents.line_art_colorir import gerar_pagina_colorir, gerar_variacao_line_art, criar_registro_variacao
+from agents.line_art_colorir import (
+    gerar_pagina_colorir, gerar_variacao_line_art, criar_registro_variacao,
+    prompt_identidade_capa_colorir, sujeitos_capa_colorir, referencias_capa_colorir,
+)
 from agents.diagramador_colorir import diagramador_colorir_node
 from armazenamento import (
-    salvar_livro_colorir, listar_livros_colorir, temas_colorir_usados,
+    salvar_livro_colorir, atualizar_livro_colorir_salvo, listar_livros_colorir, temas_colorir_usados,
     salvar_asset_marca, listar_galeria, salvar_na_galeria,
     carregar_biblioteca_personagens, listar_colecoes,
 )
 from capa_profissional import gerar_capa_print_ready
+from qualidade_impressao import preflight_livro, analisar_pdf_miolo
+from renderizador_editorial import renderizar_miolo_pdf
+from character_universe import listar_personagens_oficiais, carregar_personagem_oficial, personagem_para_prompt
+from asset_library import get_asset, get_asset_by_uri
+from visual_master_manager import current_color_master_details
+from character_asset_selector import asset_option_label
 
 from coloring_presets import (
     PUBLICOS, FAIXAS_ETARIAS, ESPESSURAS, COMPLEXIDADES, FUNDOS,
@@ -48,6 +58,84 @@ ORIGENS = {
     "🖼️ Imagem da Galeria → Line Art": "galeria",
     "👥 Personagem da Biblioteca → Line Art": "biblioteca_personagem",
 }
+ORIGENS_COM_REFERENCIA = {
+    "imagem_enviada", "foto_real", "imagem_enviada_converter", "galeria", "biblioteca_personagem",
+}
+
+
+def _salvar_projeto_atual(state: dict) -> bool:
+    """Persiste também os arquivos gerados após a diagramação, no projeto atual."""
+    caminho = st.session_state.get("caminho_salvo_c", "") or state.get("storage_path", "")
+    if not str(state.get("titulo") or "").strip():
+        st.session_state.coloring_save_error = "Defina o título do projeto antes de gerar e salvar as páginas."
+        st.error(st.session_state.coloring_save_error)
+        return False
+    salvo = False
+    try:
+        # Successful writes refresh the observed snapshot in the working state.
+        # Keep it for the next checkpoint instead of discarding a temporary copy.
+        if caminho:
+            caminho = atualizar_livro_colorir_salvo(caminho, state)
+        else:
+            caminho = salvar_livro_colorir(state)
+            st.session_state.coloring_profile_link_pending = {
+                "path": caminho, "profile_id": st.session_state.get("faithbloom_workspace_profile_id", ""),
+            }
+        # O arquivo já existe mesmo se a vinculação ao perfil falhar depois.
+        st.session_state.caminho_salvo_c = caminho
+        state["storage_path"] = caminho
+        salvo = True
+        pending = st.session_state.get("coloring_profile_link_pending") or {}
+        if pending.get("path") == caminho:
+            assign_saved_project_to_profile(
+                pending.get("profile_id", ""), "coloring", caminho, dict(state),
+            )
+            st.session_state.pop("coloring_profile_link_pending", None)
+        st.session_state.pop("coloring_save_error", None)
+        if st.session_state.pop("coloring_after_save_stage", None) == "resultado":
+            st.session_state.etapa_c = "resultado"
+        return True
+    except Exception:
+        st.session_state.coloring_save_error = (
+            "O projeto foi salvo, mas o vínculo com o perfil ainda precisa ser concluído. Tente novamente."
+            if salvo else "Os arquivos gerados nesta sessão ainda precisam ser salvos. Tente novamente."
+        )
+        st.error(st.session_state.coloring_save_error)
+        return False
+
+
+def _retry_coloring_save(state: dict) -> bool:
+    pending = st.session_state.get("coloring_profile_link_pending")
+    if not pending:
+        return _salvar_projeto_atual(state)
+    try:
+        if pending.get("path") != state.get("storage_path"):
+            raise ValueError("O vínculo pendente pertence a outro projeto.")
+        # Only the profile link failed; do not rewrite the already-saved book.
+        from editorial_project_updates import load_metadata_snapshot
+        saved = load_metadata_snapshot(pending["path"], kind="coloring")["state"]
+        assign_saved_project_to_profile(pending.get("profile_id", ""), "coloring", pending["path"], saved)
+    except Exception:
+        st.error("O projeto continua salvo. Não foi possível confirmar o vínculo com o perfil; tente novamente.")
+        return False
+    st.session_state.pop("coloring_profile_link_pending", None)
+    st.session_state.pop("coloring_save_error", None)
+    if st.session_state.pop("coloring_after_save_stage", None) == "resultado":
+        st.session_state.etapa_c = "resultado"
+    return True
+
+
+def _render_coloring_save_recovery(state: dict) -> None:
+    st.warning(st.session_state.coloring_save_error)
+    st.info("A tentativa abaixo apenas salva os arquivos já recebidos. Se outra edição alterou este projeto ou a sessão perdeu a versão de leitura, baixe esta cópia e reabra a versão atual pela Biblioteca antes de conferir suas alterações.")
+    draft = {key: value for key, value in state.items() if not key.startswith("_")}
+    st.download_button("Baixar cópia do projeto de colorir não salvo",
+        json.dumps(draft, ensure_ascii=False, indent=2, default=str).encode("utf-8"),
+        file_name="faithbloom-colorir-rascunho-nao-salvo.json", mime="application/json",
+        key="coloring_unsaved_draft")
+    if st.button("💾 Tentar salvar novamente") and _retry_coloring_save(state):
+        st.rerun()
+    st.stop()
 
 
 def _salvar_upload(upload, prefixo: str) -> str:
@@ -56,6 +144,49 @@ def _salvar_upload(upload, prefixo: str) -> str:
     with open(caminho, "wb") as f:
         f.write(upload.getvalue())
     return caminho
+
+
+def _referencias_biblioteca(colecao: str) -> list[dict]:
+    """Reutiliza Masters já aprovados; referências legadas continuam disponíveis."""
+    referencias = []
+    for item in listar_personagens_oficiais(colecao):
+        personagem = carregar_personagem_oficial(item["id"])
+        if personagem.get("status") == "arquivado" or "coloring" not in ((personagem.get("metadata") or {}).get("usos_permitidos") or []):
+            continue
+        for role, label in (("line_art_master", "Line Art Master"), ("color_master", "Color Master")):
+            caminho = personagem.get(role) or ""
+            if not caminho or not os.path.isfile(caminho):
+                continue
+            recorded_id = (personagem.get("metadata") or {}).get("current_master_asset_ids", {}).get(role)
+            if recorded_id:
+                asset = get_asset(recorded_id, materialize_file=True)
+                if not asset or asset.get("caminho_arquivo") != caminho:
+                    asset = None
+            elif role == "color_master":
+                details = current_color_master_details(personagem)
+                asset = details["asset"] if details["consistent"] else None
+            else:
+                asset = get_asset_by_uri(caminho, materialize_file=False)
+            status = (asset or {}).get("visual_status") or ((asset or {}).get("metadata") or {}).get("visual_status")
+            if not asset or not asset.get("approved") or asset.get("status") == "archived" or status in {"REJECTED", "ARCHIVED", "MASTER_CANDIDATE", "RESTORATION_CANDIDATE"}:
+                continue
+            referencias.append({
+                "id": f"official:{item['id']}", "nome": personagem.get("nome") or item.get("nome"),
+                "caminho": caminho, "label": label, "character_id": item["id"],
+                "selector_label": asset_option_label({**asset, "nome": personagem.get("nome") or item.get("nome"),
+                                                      "visual_status": label, "colecao": colecao}),
+                "master_role": role, "asset_id": asset["id"],
+                "dna_prompt": personagem_para_prompt(personagem, "line_art", contexto="coloring"),
+                "color_dna_prompt": personagem_para_prompt(personagem, "color", contexto="coloring"),
+            })
+            break
+    biblioteca = carregar_biblioteca_personagens(colecao) if colecao else {}
+    for key, personagem in biblioteca.items():
+        caminho = personagem.get("imagem_referencia") or ""
+        if caminho and os.path.isfile(caminho):
+            referencias.append({"id": f"legacy:{key}", "nome": personagem.get("nome") or key,
+                                "caminho": caminho, "label": "Biblioteca legada"})
+    return referencias
 
 
 def _preset_atual(state: dict, pagina: dict | None = None) -> dict:
@@ -79,13 +210,15 @@ def _registrar_variacao_inicial(pagina: dict) -> None:
 
 
 def _gerar_uma_pagina(state: dict, pagina: dict) -> str:
-    preset = _preset_atual(state, pagina)
     origem = pagina.get("origem", "gerar_ia")
+    referencia = pagina.get("imagem_referencia") or pagina.get("caminho_foto_original") or pagina.get("caminho_imagem_enviada")
+    if origem in ORIGENS_COM_REFERENCIA and (not referencia or not os.path.isfile(referencia)):
+        raise ValueError("Envie ou escolha uma imagem disponível antes de gerar esta página.")
     if origem == "imagem_enviada":
         # Já é uma line art pronta: reutiliza sem crédito.
-        return pagina.get("caminho_imagem_enviada") or pagina.get("imagem_referencia", "")
+        return referencia
 
-    referencia = pagina.get("imagem_referencia") or pagina.get("caminho_foto_original") or pagina.get("caminho_imagem_enviada")
+    preset = _preset_atual(state, pagina)
     transformar = origem in {"foto_real", "imagem_enviada_converter", "galeria", "biblioteca_personagem"}
     return gerar_pagina_colorir(
         pagina.get("nome", ""), pagina.get("categoria", ""), pagina.get("cena", ""), gerar_imagem,
@@ -95,6 +228,7 @@ def _gerar_uma_pagina(state: dict, pagina: dict) -> str:
         prompt_livre=pagina.get("prompt_livre", ""),
         instrucao_extra=pagina.get("prompt_adicional", ""),
         transformar_referencia=transformar,
+        character_dna_prompt=pagina.get("character_dna_prompt", ""),
     )
 
 
@@ -168,6 +302,7 @@ def _pagina_from_form(state: dict) -> dict | None:
     uploaded_path = ""
     galeria_id = ""
     personagem_nome = ""
+    personagem_oficial = {}
 
     if origem == "prompt_livre":
         prompt_livre = st.text_area("✍️ Escreva exatamente o desenho que deseja", placeholder="Uma cabana aconchegante entre flores, line art relaxante...")
@@ -194,16 +329,18 @@ def _pagina_from_form(state: dict) -> dict | None:
             referencia = item["caminho_arquivo"]; galeria_id = item["id"]
             st.image(referencia, width=240)
     elif origem == "biblioteca_personagem":
-        colecoes = listar_colecoes()
+        colecoes = sorted(set(listar_colecoes()) | {item.get("colecao") for item in listar_personagens_oficiais() if item.get("colecao")}, key=str.casefold)
         colecao = st.selectbox("Coleção da Biblioteca", colecoes) if colecoes else st.text_input("Nome da coleção")
-        biblioteca = carregar_biblioteca_personagens(colecao) if colecao else {}
-        personagens = [(k, v) for k, v in biblioteca.items() if v.get("imagem_referencia") and os.path.exists(v.get("imagem_referencia", ""))]
+        personagens = _referencias_biblioteca(colecao) if colecao else []
         if not personagens:
-            st.warning("Nenhum personagem com referência visual disponível nesta coleção neste ambiente.")
+            st.warning("Nenhum Master aprovado ou referência legada disponível nesta coleção neste ambiente.")
         else:
-            keys = [k for k, _ in personagens]
-            personagem_nome = st.selectbox("Personagem", keys, format_func=lambda k: biblioteca[k].get("nome", k))
-            referencia = biblioteca[personagem_nome]["imagem_referencia"]
+            options = {item["id"]: item for item in personagens}
+            escolhido = st.selectbox("Personagem", list(options), format_func=lambda key: options[key].get("selector_label") or f"{options[key]['nome']} · {options[key]['label']}")
+            personagem_oficial = options[escolhido]
+            personagem_nome = personagem_oficial["nome"]
+            referencia = personagem_oficial["caminho"]
+            st.caption(f"Referência: {personagem_oficial['label']}" + (f" · Asset {personagem_oficial['asset_id'][:8]}" if personagem_oficial.get("asset_id") else ""))
             st.image(referencia, width=240)
 
     prompt_extra = st.text_area(
@@ -216,7 +353,10 @@ def _pagina_from_form(state: dict) -> dict | None:
     idx = pids.index(default) if default in pids else 0
     preset_id = st.selectbox("Estilo desta página", pids, index=idx, format_func=lambda x: next(p["nome"] for p in presets if p["id"] == x)) if pids else ""
 
-    if st.button("➕ Adicionar página ao projeto", type="primary", disabled=not (nome.strip() or prompt_livre.strip())):
+    referencia_pronta = bool(referencia and os.path.isfile(referencia))
+    if origem in ORIGENS_COM_REFERENCIA and not referencia_pronta:
+        st.caption("Envie ou escolha uma imagem para adicionar esta página.")
+    if st.button("➕ Adicionar página ao projeto", type="primary", disabled=not (nome.strip() or prompt_livre.strip()) or (origem in ORIGENS_COM_REFERENCIA and not referencia_pronta)):
         pagina = PaginaColorir(
             nome=nome or "Página sem título", categoria=categoria, sexo=sexo, cena=cena,
             origem=origem, prompt_livre=prompt_livre, prompt_adicional=prompt_extra,
@@ -229,6 +369,12 @@ def _pagina_from_form(state: dict) -> dict | None:
         if origem == "imagem_enviada" and referencia:
             pagina["caminho_arquivo"] = referencia
             _registrar_variacao_inicial(pagina)
+        if personagem_oficial.get("character_id"):
+            pagina.update({"character_id": personagem_oficial["character_id"],
+                           "character_master_role": personagem_oficial["master_role"],
+                           "character_master_asset_id": personagem_oficial["asset_id"],
+                           "character_dna_prompt": personagem_oficial["dna_prompt"],
+                           "character_color_dna_prompt": personagem_oficial["color_dna_prompt"]})
         return pagina
     return None
 
@@ -243,16 +389,25 @@ def _render_pagina_card(state: dict, pagina: dict, i: int):
             st.image(pagina["caminho_arquivo"], width=360)
 
         c1, c2, c3, c4 = st.columns(4)
-        if c1.button("✨ Gerar" if not pagina.get("caminho_arquivo") else "🔄 Nova versão", key=f"gen_c_{i}"):
-            with st.spinner("Criando line art..."):
-                caminho = _gerar_uma_pagina(state, pagina)
+        projeto_nomeado = bool(str(state.get("titulo") or "").strip())
+        if c1.button("✨ Gerar" if not pagina.get("caminho_arquivo") else "🔄 Nova versão", key=f"gen_c_{i}", disabled=not projeto_nomeado):
+            try:
+                with st.spinner("Criando line art..."):
+                    caminho = _gerar_uma_pagina(state, pagina)
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+            except Exception:
+                st.error("Não foi possível gerar esta página. As páginas já criadas continuam disponíveis; tente novamente.")
+                return
             pagina["caminho_arquivo"] = caminho
             pagina["status"] = "pronta"
             pagina["aprovada"] = False
             _registrar_variacao_inicial(pagina)
+            _salvar_projeto_atual(state)
             st.rerun()
 
-        if c2.button("✅ Aprovar", key=f"ap_c_{i}", disabled=not pagina.get("caminho_arquivo")):
+        if c2.button("✅ Aprovar", key=f"ap_c_{i}", disabled=not os.path.isfile(pagina.get("caminho_arquivo", ""))):
             pagina["aprovada"] = True; pagina["status"] = "aprovada"; st.rerun()
         if c3.button("💾 Galeria", key=f"gal_c_{i}", disabled=not pagina.get("caminho_arquivo")):
             item = salvar_na_galeria(
@@ -271,14 +426,21 @@ def _render_pagina_card(state: dict, pagina: dict, i: int):
                     placeholder="Mantenha a composição; deixe o coelhinho menor, mais fofo e com menos detalhes no fundo...",
                     key=f"var_prompt_{i}",
                 )
-                if st.button("✨ Criar variação sem apagar a atual", key=f"var_btn_{i}", disabled=not instr.strip()):
+                if st.button("✨ Criar variação sem apagar a atual", key=f"var_btn_{i}", disabled=not instr.strip() or not projeto_nomeado):
                     preset = _preset_atual(state, pagina)
-                    with st.spinner("Criando variação..."):
-                        v = gerar_variacao_line_art(pagina, gerar_imagem, preset=preset, instrucao=instr)
+                    try:
+                        with st.spinner("Criando variação..."):
+                            v = gerar_variacao_line_art(pagina, gerar_imagem, preset=preset,
+                                instrucao=instr)
+                    except Exception:
+                        st.error("Não foi possível criar a variação. A imagem atual e o histórico foram preservados; tente novamente.")
+                        return
                     pagina.setdefault("variacoes", []).append(v)
                     pagina["caminho_arquivo"] = v["caminho_arquivo"]
                     pagina["variacao_selecionada_id"] = v["id"]
                     pagina["aprovada"] = False
+                    pagina["status"] = "pronta"
+                    _salvar_projeto_atual(state)
                     st.rerun()
 
             variacoes = pagina.get("variacoes", [])
@@ -361,6 +523,10 @@ def render_coloring_studio():
     elif st.session_state.etapa_c == "paginas":
         st.subheader(f"🖍️ {s.get('titulo','')}")
         st.caption(f"{s.get('publico','')} · {s.get('faixa_etaria','')} · {s.get('tema_geral','')}")
+        if st.session_state.get("coloring_save_error"):
+            _render_coloring_save_recovery(s)
+        if not str(s.get("titulo") or "").strip():
+            st.warning("Defina o título em Configurações antes de gerar as páginas.")
         cback, cstyle = st.columns([1,3])
         if cback.button("← Configurações"): st.session_state.etapa_c="entrada"; st.rerun()
         with cstyle.expander("🎨 Trocar/criar estilos"):
@@ -380,11 +546,15 @@ def render_coloring_studio():
         st.progress(aprovadas/max(1,len(s.get("paginas",[]))), text=f"{aprovadas}/{len(s.get('paginas',[]))} páginas aprovadas")
         if st.button("📐 Diagramar projeto aprovado", type="primary", disabled=not s.get("paginas") or aprovadas != len(s.get("paginas",[]))):
             s.update(diagramador_colorir_node(dict(s)))
-            caminho=salvar_livro_colorir(dict(s)); assign_saved_project_to_profile(st.session_state.get("faithbloom_workspace_profile_id", ""), "coloring", caminho, dict(s)); st.session_state.caminho_salvo_c=caminho
-            st.session_state.etapa_c="resultado"; st.rerun()
+            st.session_state.coloring_after_save_stage = "resultado"
+            if _salvar_projeto_atual(s):
+                st.session_state.etapa_c="resultado"; st.rerun()
 
     elif st.session_state.etapa_c == "resultado":
-        st.success("Projeto de colorir diagramado e salvo.")
+        if st.session_state.get("coloring_save_error"):
+            _render_coloring_save_recovery(s)
+        else:
+            st.success("Projeto de colorir diagramado e salvo.")
         st.caption(st.session_state.get("caminho_salvo_c", ""))
         if s.get("checklist_kdp"): st.json(s["checklist_kdp"])
         st.subheader("🖍️ Páginas aprovadas")
@@ -393,38 +563,75 @@ def render_coloring_studio():
             if p.get("caminho_arquivo") and os.path.exists(p["caminho_arquivo"]):
                 cols[i%3].image(p["caminho_arquivo"], caption=p.get("nome",""))
         st.divider()
+        st.subheader("📄 Miolo PDF")
+        bleed_pdf = st.checkbox("Incluir sangria no miolo", value=False, key="coloring_pdf_bleed")
+        pf = preflight_livro(dict(s), bleed=bleed_pdf)
+        for bloqueio in pf["bloqueios"]:
+            st.warning(bloqueio)
+        if st.button("📘 Gerar PDF do miolo de colorir", disabled=bool(pf["bloqueios"])):
+            destino = os.path.join("exportacoes_kdp", "colorir-" + uuid.uuid4().hex[:10], "miolo_print_ready.pdf")
+            with st.spinner("Montando o miolo com desenhos e versos em branco..."):
+                resultado = renderizar_miolo_pdf(dict(s), destino=destino, bleed=bleed_pdf)
+            if not resultado.get("ok") or resultado.get("avisos"):
+                st.error(resultado.get("motivo") or "Revise as páginas antes de exportar o miolo.")
+                for aviso in resultado.get("avisos", []):
+                    st.warning(aviso)
+            else:
+                analise = analisar_pdf_miolo(
+                    resultado["caminho"], float(s.get("trim_largura_in") or 8.5),
+                    float(s.get("trim_altura_in") or 8.5), bleed=bleed_pdf, paginas_esperadas=resultado["paginas"],
+                )
+                if analise.get("erros"):
+                    st.error("O PDF gerado precisa de revisão antes de ser salvo como miolo final.")
+                    for erro in analise["erros"]:
+                        st.warning(erro)
+                else:
+                    s["pdf_miolo"] = resultado["caminho"]
+                    s["pdf_miolo_config"] = {"bleed": bleed_pdf, "paginas": resultado["paginas"], "page_size_in": resultado["page_size_in"]}
+                    s["pdf_miolo_preflight"] = analise
+                    _salvar_projeto_atual(s)
+                    st.rerun()
+        if s.get("pdf_miolo") and os.path.isfile(s["pdf_miolo"]):
+            with open(s["pdf_miolo"], "rb") as f:
+                st.download_button("⬇️ Baixar miolo de colorir (PDF)", f, file_name="miolo_colorir_print_ready.pdf", mime="application/pdf")
+        st.divider()
         st.subheader("📕 Capa física profissional")
         st.caption("A arte é gerada separadamente; o FaithBloom monta contracapa + lombada + frente matematicamente, preservando as melhorias da Fase 7.")
         if st.button("✨ Gerar artes e montar capa paperback", disabled=not s.get("paginas")):
-            referencia = next((p.get("caminho_arquivo") for p in s.get("paginas", []) if p.get("caminho_arquivo")), None)
+            referencias = referencias_capa_colorir(s)
+            direcao_identidade = prompt_identidade_capa_colorir(sujeitos_capa_colorir(s))
             prompt_frente = (
                 f"Arte COLORIDA original para capa de livro de colorir chamado '{s.get('titulo','')}'. "
                 f"Tema: {s.get('tema_geral','')}. Manter coerência visual com a referência do miolo, "
                 "cores planas/limpas, composição atraente, SEM texto, título, logotipo ou barcode. "
-                "Deixar respiro visual na parte superior para tipografia posterior."
+                "Deixar respiro visual na parte superior para tipografia posterior.\n"
+                + direcao_identidade
             )
             prompt_verso = (
                 f"Arte COLORIDA original e mais discreta para CONTRACAPA do livro '{s.get('titulo','')}', "
                 f"tema {s.get('tema_geral','')}. Mesma linguagem visual da capa e do miolo, SEM texto, "
-                "sem barcode desenhado, com áreas calmas para sinopse e código de barras serem colocados depois."
+                "sem barcode desenhado, com áreas calmas para sinopse e código de barras serem colocados depois.\n"
+                + direcao_identidade
             )
             with st.spinner("Gerando artes de frente e verso..."):
-                frente = gerar_imagem(prompt=prompt_frente, imagem_base=referencia)
-                verso = gerar_imagem(prompt=prompt_verso, imagem_base=referencia)
+                frente = gerar_imagem(prompt=prompt_frente, **referencias)
+                verso = gerar_imagem(prompt=prompt_verso, **referencias)
                 pasta_saida = os.path.join("exportacoes_kdp", "colorir-" + uuid.uuid4().hex[:10])
                 capa = gerar_capa_print_ready(
                     frente, verso, pasta_saida,
                     trim_w=float(s.get("trim_largura_in", 8.5)),
                     trim_h=float(s.get("trim_altura_in", 8.5)),
                     paginas=int(s.get("paginas_fisicas_total") or max(24, len(s.get("paginas", []))*2)),
-                    papel="cor_premium", titulo=s.get("titulo", ""), subtitulo=s.get("tema_geral", ""),
+                    papel="branco", titulo=s.get("titulo", ""), subtitulo=s.get("tema_geral", ""),
                     autora=author_display_from_state(s), colecao=s.get("colecao", ""),
                     sinopse="Livro de colorir criado no FaithBloom Book Studio.",
                     reservar_barcode=True,
                 )
-            s["capa_fisica_wrap"] = capa["caminho_pdf"]
+            s["capa_fisica_wrap"] = capa.get("caminho_png") or capa["caminho_pdf"]
+            s["capa_fisica_pdf"] = capa["caminho_pdf"]
             s["capa_fisica_dimensoes"] = capa
             st.session_state.capa_colorir_phase8 = capa
+            _salvar_projeto_atual(s)
             st.rerun()
 
         capa = st.session_state.get("capa_colorir_phase8") or s.get("capa_fisica_dimensoes")
@@ -434,6 +641,8 @@ def render_coloring_studio():
                 with open(capa["caminho_pdf"], "rb") as f:
                     st.download_button("⬇️ Baixar capa física Print Ready (PDF)", f, file_name="capa_colorir_print_ready.pdf")
 
-        st.info("A Fase 6 continua sendo o motor do PDF Print Ready do miolo; a Fase 8 concentra a criação, reutilização, variações e aprovação das line arts.")
         if st.button("Novo Coloring Book"):
+            for key in ("capa_colorir_phase8", "caminho_salvo_c", "coloring_save_error", "coloring_profile_link_pending", "coloring_after_save_stage", "coloring_pdf_bleed", "ideias_colorir"):
+                st.session_state.pop(key, None)
             st.session_state.state_c=LivroColorirState(paginas=[]); st.session_state.etapa_c="entrada"; st.rerun()
+

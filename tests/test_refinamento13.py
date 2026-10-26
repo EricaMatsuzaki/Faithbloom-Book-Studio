@@ -76,7 +76,7 @@ class Refinamento13Tests(unittest.TestCase):
         self.assertFalse(d["ok_for_production"])
         ids={x["id"] for x in d["blockers"]}
         self.assertIn("auth", ids)
-        self.assertIn("openrouter", ids)
+        self.assertIn("text_provider", ids)
 
     def test_stable_gate_keeps_bible_guard(self):
         gate=stable_release_gate(settings={"bible_guard_required":True, "author_name":"Erica", "default_locale":"pt-BR"}, environ={"FAITHBLOOM_DEPLOYMENT_MODE":"development"})

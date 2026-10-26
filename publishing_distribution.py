@@ -29,7 +29,9 @@ from typing import Any
 
 from platform_registry import get_platform, registry_snapshot, verification_state
 from platform_format_engine import normalizar_master, preflight_target, compatibility
-from storage_backend import BACKEND, is_storage_uri, materializar
+from translation_localization import normalize_locale
+from storage_backend import BACKEND, is_storage_uri, materializar, resolve_local_output
+from saas_access import AccessDenied
 from pacote_publicacao import normalizar_metadata, disclosure_ia
 
 DATA_PREFIX = "publishing_distribution"
@@ -63,16 +65,20 @@ def _exists_file(value: str | None) -> bool:
     if is_storage_uri(value):
         try:
             return BACKEND.exists(value.replace("fb://", "", 1))
+        except AccessDenied:
+            raise
         except Exception:
             return False
-    return Path(str(value)).exists()
+    return Path(materializar(str(value))).exists()
 
 
 def _materialize_if_needed(value: str | None) -> str | None:
     if not value:
         return None
     try:
-        return materializar(value) if is_storage_uri(value) else value
+        return materializar(value)
+    except AccessDenied:
+        raise
     except Exception:
         return value
 
@@ -189,6 +195,17 @@ def ai_disclosure_readiness(state: dict) -> dict:
     }
 
 
+def _edition_locale_mismatch(source_language: str, requested_locale: str, edition_language: str) -> dict | None:
+    source=normalize_locale(source_language or "pt-BR")
+    requested=normalize_locale(requested_locale or edition_language or source)
+    edition=normalize_locale(edition_language or source)
+    if requested==source and edition==source:
+        return None
+    return {"code":"edition_locale_mismatch","message":
+            f"O destino solicita {requested}, mas a obra e os arquivos selecionados pertencem à edição {source}. "
+            "Abra a edição localizada correspondente e recalcule o plano; alterar somente o locale não traduz o livro."}
+
+
 def create_distribution_plan(state: dict, targets: list[dict], guardian_report: dict | None = None,
                              edition_overrides: dict | None = None) -> dict:
     """Cria matriz de distribuição por destino sem executar publicação externa."""
@@ -214,6 +231,13 @@ def create_distribution_plan(state: dict, targets: list[dict], guardian_report: 
         spec_state = verification_state(platform)
         meta = metadata_readiness(state, locale=target.get("locale") or edition_master.get("language"))
         blockers = []
+        locale_blocker=_edition_locale_mismatch(
+            state.get("idioma_original") or "pt-BR",
+            target.get("locale") or edition_master.get("language"),
+            edition_master.get("language"),
+        )
+        if locale_blocker:
+            blockers.append(locale_blocker)
         if not gate["passed"]:
             blockers.append({"code": "quality_guardian_gate", "message": gate["message"]})
         if (pid, product) in conflicts:
@@ -304,6 +328,11 @@ def update_submission(plan: dict, edition_id: str, status: str, *, external_id: 
         raise KeyError(edition_id)
     if status in {"submitted", "processing", "live"} and row.get("readiness") != "ready":
         raise ValueError("Esta edição ainda está bloqueada e não pode ser marcada como submetida/live.")
+    source_language=(out.get("master") or {}).get("language")
+    if source_language and status in {"submitted","processing","live"}:
+        locale_blocker=_edition_locale_mismatch(source_language,row.get("locale"),(row.get("master") or {}).get("language"))
+        if locale_blocker:
+            raise ValueError(locale_blocker["message"])
     sub = row.setdefault("submission", {})
     sub.update({"status": status, "external_id": external_id.strip(), "store_url": store_url.strip(), "notes": notes.strip(), "updated_at": _now()})
     if status == "submitted" and not sub.get("submitted_at"): sub["submitted_at"] = _now()
@@ -338,50 +367,80 @@ def _copy_asset(src: str | None, dst: Path) -> bool:
     return True
 
 
-def build_channel_package(state: dict, plan: dict, edition_id: str, output_root: str = "saida_distribuicao") -> dict:
+def build_channel_package(state: dict, plan: dict, edition_id: str, output_root: str | None = None) -> dict:
     """Gera pacote de UMA edição somente se ela estiver pronta internamente."""
+    output_root = resolve_local_output(output_root, default_path="saida_distribuicao")
     row = next((x for x in plan.get("editions", []) if x.get("edition_id") == edition_id), None)
     if not row:
         raise KeyError(edition_id)
     if row.get("readiness") != "ready":
         raise ValueError("Edição bloqueada: resolva o preflight/Quality Gate antes de gerar o pacote final do canal.")
+    locale_blocker=_edition_locale_mismatch(
+        state.get("idioma_original") or "pt-BR",row.get("locale"),
+        (row.get("master") or {}).get("language"),
+    )
+    if locale_blocker:
+        # Also protect packages built from a saved plan made before this guard.
+        raise ValueError(locale_blocker["message"])
 
     platform_id = row["platform_id"]
     product = row["product"]
-    root = Path(output_root) / _slug(state.get("titulo") or "book") / f"{platform_id}__{product}__{_slug(row.get('locale') or 'locale')}"
-    if root.exists(): shutil.rmtree(root)
-    (root / "FILES").mkdir(parents=True)
-    (root / "METADATA").mkdir(parents=True)
-    (root / "RECORDS").mkdir(parents=True)
-
+    root = Path(output_root) / _slug(state.get("titulo") or "book") / f"{_slug(platform_id)}__{_slug(product)}__{_slug(row.get('locale') or 'locale')}"
+    root = Path(resolve_local_output(root, default_path=root))
+    zip_path = Path(resolve_local_output(root.with_suffix(".zip"), default_path=root.with_suffix(".zip")))
     assets = row.get("assets") or {}
-    copied = []
+    selected = []
     if product in {"paperback", "hardcover"}:
-        if _copy_asset(assets.get("interior_pdf"), root / "FILES" / "interior.pdf"): copied.append("FILES/interior.pdf")
-        if _copy_asset(assets.get("cover_pdf"), root / "FILES" / "cover.pdf"): copied.append("FILES/cover.pdf")
+        selected = [(assets.get("interior_pdf"), "interior.pdf", "FILES/interior.pdf"),
+                    (assets.get("cover_pdf"), "cover.pdf", "FILES/cover.pdf")]
     elif product == "ebook":
-        if _copy_asset(assets.get("epub"), root / "FILES" / "book.epub"): copied.append("FILES/book.epub")
-        if _copy_asset(assets.get("cover_ebook"), root / "FILES" / ("cover" + Path(str(_materialize_if_needed(assets.get('cover_ebook')) or '.jpg')).suffix)): copied.append("FILES/cover")
+        selected = [(assets.get("epub"), "book.epub", "FILES/book.epub"),
+                    (assets.get("cover_ebook"), None, "FILES/cover")]
     elif product == "audiobook":
-        if _copy_asset(assets.get("audiobook_master"), root / "FILES" / "audiobook_master.mp3"): copied.append("FILES/audiobook_master.mp3")
+        selected = [(assets.get("audiobook_master"), "audiobook_master.mp3", "FILES/audiobook_master.mp3")]
     else:
-        if _copy_asset(assets.get("digital_file"), root / "FILES" / Path(str(_materialize_if_needed(assets.get("digital_file")) or "digital_file.pdf")).name): copied.append("FILES/digital")
-
-    (root / "METADATA" / "metadata.json").write_text(json.dumps(row.get("metadata", {}), ensure_ascii=False, indent=2), encoding="utf-8")
-    (root / "RECORDS" / "preflight.json").write_text(json.dumps(row.get("preflight", {}), ensure_ascii=False, indent=2), encoding="utf-8")
-    (root / "RECORDS" / "platform_spec_snapshot.json").write_text(json.dumps(row.get("specification", {}), ensure_ascii=False, indent=2), encoding="utf-8")
-    (root / "RECORDS" / "quality_gate.json").write_text(json.dumps(plan.get("quality_gate", {}), ensure_ascii=False, indent=2), encoding="utf-8")
-    (root / "RECORDS" / "ai_disclosure.json").write_text(json.dumps(plan.get("ai_disclosure", {}), ensure_ascii=False, indent=2), encoding="utf-8")
-    (root / "README.txt").write_text(
+        selected = [(assets.get("digital_file"), None, "FILES/digital")]
+    # Resolve every selected input before any export directory/file is touched.
+    files = []
+    for source, name, label in selected:
+        actual = _materialize_if_needed(source)
+        if not actual:
+            continue
+        if name is None:
+            name = "cover" + (Path(actual).suffix or ".jpg") if product == "ebook" else Path(actual).name
+        files.append((actual, root / "FILES" / name, label))
+    records = {
+        root / "METADATA" / "metadata.json": row.get("metadata", {}),
+        root / "RECORDS" / "preflight.json": row.get("preflight", {}),
+        root / "RECORDS" / "platform_spec_snapshot.json": row.get("specification", {}),
+        root / "RECORDS" / "quality_gate.json": plan.get("quality_gate", {}),
+        root / "RECORDS" / "ai_disclosure.json": plan.get("ai_disclosure", {}),
+    }
+    readme = root / "README.txt"
+    destinations = [dst for _, dst, _ in files] + list(records) + [readme, zip_path]
+    for destination in destinations:
+        resolve_local_output(destination, default_path=destination)
+    if any(Path(source).resolve() == destination.resolve() for source, _, _ in files for destination in destinations):
+        raise ValueError("O pacote deve preservar os arquivos de origem.")
+    copied, members = [], []
+    for actual, destination, label in files:
+        if _copy_asset(actual, destination):
+            copied.append(label)
+            members.append(destination)
+    for destination, value in records.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        members.append(destination)
+    readme.write_text(
         f"FaithBloom Distribution Package\nPlatform: {row.get('platform_name')}\nProduct: {product}\nLocale: {row.get('locale')}\n\n"
         "READY = aprovado pelo gate interno conhecido do FaithBloom. Ainda use o preview/validador/formulário oficial da plataforma e confirme requisitos atuais antes de publicar.\n",
         encoding="utf-8",
     )
-    zip_path = root.with_suffix(".zip")
-    if zip_path.exists(): zip_path.unlink()
+    members.append(readme)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in root.rglob("*"):
-            if p.is_file(): z.write(p, p.relative_to(root.parent))
+        # Never remove the package tree or absorb unrelated/stale files into it.
+        for p in members:
+            z.write(p, p.relative_to(root.parent))
     return {"folder": str(root), "zip": str(zip_path), "copied": copied, "edition_id": edition_id}
 
 
@@ -399,8 +458,20 @@ def save_distribution_plan(plan: dict) -> dict:
 
 
 def load_distribution_plan(plan_id: str) -> dict:
-    return _read_json(f"{DATA_PREFIX}/plans/{plan_id}.json", {}) or {}
+    plan=deepcopy(_read_json(f"{DATA_PREFIX}/plans/{plan_id}.json", {}) or {})
+    source_language=(plan.get("master") or {}).get("language")
+    if source_language:
+        for row in plan.get("editions",[]):
+            blocker=_edition_locale_mismatch(source_language,row.get("locale"),(row.get("master") or {}).get("language"))
+            if blocker:
+                blockers=row.setdefault("blockers",[])
+                if not any(item.get("code")==blocker["code"] for item in blockers):
+                    blockers.append(blocker)
+                row["readiness"]="blocked"
+        plan["summary"]=summarize_distribution(plan.get("editions",[]))
+    return plan
 
 
 def list_distribution_plans() -> list[dict]:
     return sorted(_read_json(INDEX_PATH, []) or [], key=lambda x: x.get("updated_at", ""), reverse=True)
+

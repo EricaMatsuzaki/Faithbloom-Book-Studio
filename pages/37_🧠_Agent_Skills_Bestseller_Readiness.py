@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import streamlit as st
+import json
+from pathlib import Path
+from agents.engenheiro_saas_automacao import run_diagnostic
+from ai_provider_router import chamar_llm
 
-from agent_skills import all_agent_profiles, get_agent_profile, validate_registry
+from agent_skills import all_agent_profiles, get_agent_profile, validate_registry, agent_capability_inventory
 from bestseller_readiness import evaluate_bestseller_readiness
 from biblical_reference_validator import (
     create_reference_candidate, validate_reference_candidate, reference_gate,
@@ -12,7 +16,8 @@ from market_intelligence import (
     OBSERVED_SOURCE_TYPES, make_market_evidence, validate_market_evidence,
     build_market_brief, classify_market_mode,
 )
-from armazenamento import listar_livros, carregar_livro, atualizar_livro_salvo
+from armazenamento import listar_livros
+from project_metadata_ui import open_project_metadata
 
 st.set_page_config(page_title="Agent Skills & Bestseller Readiness", page_icon="🧠", layout="wide")
 st.title("🧠 Agent Skills & Bestseller Readiness")
@@ -21,34 +26,50 @@ st.caption(
     "O FaithBloom não prevê nem garante best-seller."
 )
 
-books = listar_livros()
+try:
+    books = listar_livros()
+except Exception:
+    st.error("Não foi possível abrir os projetos desta sessão. Confira o acesso e atualize a página.")
+    st.stop()
 selected_book = None
 state = None
+editor = None
 if books:
-    labels = [f"{x.get('titulo','(sem título)')} · {x.get('colecao','')}" for x in books]
-    idx = st.selectbox("Book Master para auditoria", range(len(books)), format_func=lambda i: labels[i])
-    selected_book = books[idx]
-    state = carregar_livro(selected_book.get("colecao", ""), selected_book.get("storage_path") or selected_book.get("arquivo"))
+    book_map = {x.get("storage_path") or x.get("arquivo"): x for x in books}
+    reference = st.selectbox("Book Master para auditoria", list(book_map),
+        format_func=lambda ref: f"{book_map[ref].get('titulo','(sem título)')} · {book_map[ref].get('colecao','')}")
+    selected_book = book_map[reference]
+    editor = open_project_metadata(reference, namespace="project_readiness")
+    state = editor.state
 else:
     st.info("Nenhum Story Book salvo ainda. A biblioteca de skills pode ser auditada mesmo sem projeto.")
 
 
-def persist(msg: str):
-    if selected_book and state is not None:
-        atualizar_livro_salvo(selected_book.get("storage_path") or selected_book.get("arquivo"), state)
+def persist(msg: str, *, fields, watched_fields=()):
+    if editor is not None and state is not None and editor.save(state,fields=list(fields),watched_fields=tuple(watched_fields)):
         st.success(msg)
+        return True
+    return False
 
 
-t1, t2, t3, t4 = st.tabs(["🤖 Skills dos agentes", "📈 Bestseller Readiness", "📖 Referência bíblica", "🔎 Evidência de mercado"])
+READINESS_INPUTS = ("titulo", "faixa_etaria", "cenas_texto", "revisao_aprovada", "personagens", "cenas_imagem",
+    "arte_capa_frontal", "capa_ebook", "capa_fisica_pdf", "capa_fisica_preflight", "sinopse_vendas_curta",
+    "palavras_chave_kdp", "categorias_sugeridas", "versiculo_referencia", "bible_reference_validation",
+    "market_evidence", "material_lancamento", "quality_guardian_certificate", "preflight_impressao", "pdf_miolo_print_ready")
+REFERENCE_INPUTS = ("titulo", "cenas_texto", "historia", "versao_narrativa_ativa", "versiculo_referencia")
+MARKET_INPUTS = ("titulo", "faixa_etaria", "colecao", "tema_geral", "cenas_texto", "market_evidence")
+
+
+t1, t2, t3, t4, t5 = st.tabs(["🤖 Skills dos agentes", "📈 Bestseller Readiness", "📖 Referência bíblica", "🔎 Evidência de mercado", "🛠️ Engenharia"])
 
 with t1:
     audit = validate_registry()
     c1, c2, c3 = st.columns(3)
     c1.metric("Papéis especializados", audit.get("role_count", 0))
-    c2.metric("Módulos agents/", audit.get("module_count", 0))
+    c2.metric("Módulos com perfil", audit.get("module_count", 0))
     c3.metric("Registry", "PASS" if audit.get("ok") else "BLOCKED")
     if audit.get("ok"):
-        st.success("Todos os papéis possuem missão, skills, critérios, limites e handoffs formais.")
+        st.success("Cadastro, contratos e destinos de encaminhamento conferidos. A qualidade das entregas exige testes e revisão do resultado.")
     else:
         st.error("O registry possui inconsistências.")
         st.json(audit.get("errors", []))
@@ -78,7 +99,34 @@ with t1:
             st.markdown("**Evidências necessárias**")
             for x in p["evidence_requirements"]:
                 st.write("•", x)
-    st.caption(f"Módulo: agents/{p['module']} · execução: {p['execution']}")
+    st.caption(f"Módulo: {p.get('module_directory', 'agents')}/{p['module']} · execução: {p['execution']}")
+    contract = p.get("runtime_contract") or {}
+    st.markdown("**Entradas que este agente precisa receber**")
+    for item in contract.get("inputs", []):
+        st.write("•", item)
+    st.markdown("**Entregas esperadas deste agente**")
+    for item in contract.get("outputs", []):
+        st.write("•", item)
+    with st.expander("Verificar as conexões e os contratos dos agentes"):
+        st.caption("Esta verificação confere configuração e instruções por cargo. A qualidade da entrega e o acesso aos serviços reais precisam de evidência própria.")
+        if st.button("Verificar todos os agentes", key="agent_connections_inspect"):
+            try:
+                st.session_state["agent_connections_inventory"] = agent_capability_inventory()
+            except Exception:
+                st.error("Não foi possível conferir os contratos atuais. Nenhum agente foi executado por esta verificação.")
+        inventory = st.session_state.get("agent_connections_inventory")
+        if inventory:
+            rows = []
+            for role in inventory.get("roles", []):
+                config = role.get("configuration") or {}
+                rows.append({"Agente": role.get("name", role.get("role_id")),
+                             "Contrato": "Conferido" if config.get("ok") else "Precisa de ajuste",
+                             "Tipo": role.get("execution", ""),
+                             "Qualidade da entrega": "Exige revisão do resultado",
+                             "Serviço real": "Não utilizado por este executor local" if role.get("execution") == "deterministic" else "Validação externa pendente"})
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.download_button("Baixar inventário detalhado por cargo", json.dumps(inventory, ensure_ascii=False, indent=2),
+                               file_name="faithbloom_agentes_conexoes.json", mime="application/json", key="agent_connections_download")
 
 with t2:
     if state is None:
@@ -106,16 +154,17 @@ with t2:
                     st.caption("Próxima ação: " + item["action"])
                 if item.get("evidence"):
                     st.json(item["evidence"])
-        if st.button("💾 Salvar Bestseller Readiness neste projeto", use_container_width=True):
+        if st.button("💾 Salvar Bestseller Readiness neste projeto", use_container_width=True,disabled=not editor.can_save):
             state["bestseller_readiness_report"] = report
             state["agent_skill_audit"] = validate_registry()
-            persist("Readiness e auditoria de skills salvos no Book Master.")
+            persist("Readiness e auditoria de skills salvos no Book Master.",
+                fields=("bestseller_readiness_report","agent_skill_audit"),watched_fields=READINESS_INPUTS)
 
 with t3:
     if state is None:
         st.info("Abra um Story Book cristão para validar a referência.")
     else:
-        ref = st.text_input("Referência", value=state.get("versiculo_referencia", ""), help="Ex.: Lucas 2:11. O texto bíblico completo não é inserido nem traduzido aqui.")
+        ref = st.text_input("Referência", value=state.get("versiculo_referencia", ""), help="Ex.: Lucas 2:11. O texto bíblico completo não é inserido nem traduzido aqui.",key=editor.key("bible_reference"))
         existing = state.get("bible_reference_candidate") or create_reference_candidate(ref, suggested_by="manual")
         if existing.get("reference") != ref:
             existing = create_reference_candidate(ref, suggested_by="manual")
@@ -125,13 +174,13 @@ with t3:
         else:
             st.warning("⚠️ A referência ainda é candidata até fonte + contexto + aprovação humana serem registrados.")
 
-        source_name = st.text_input("Fonte bíblica/consulta aprovada", value=(state.get("bible_reference_validation") or {}).get("source_name", ""), placeholder="Ex.: edição bíblica/portal/licença usada para conferir a referência")
-        source_ref = st.text_input("Referência da fonte (URL, ISBN ou identificação)", value=(state.get("bible_reference_validation") or {}).get("source_reference", ""))
-        context_note = st.text_area("Nota de contexto", value=(state.get("bible_reference_validation") or {}).get("context_note", ""), placeholder="Explique brevemente por que o contexto do versículo sustenta a aplicação na história. Não copie o texto bíblico.")
-        context_verified = st.checkbox("Conferi o contexto da passagem na fonte indicada", value=bool((state.get("bible_reference_validation") or {}).get("context_verified")))
-        human_approved = st.checkbox("Aprovo esta referência para esta história", value=bool((state.get("bible_reference_validation") or {}).get("human_approved")))
-        approved_by = st.text_input("Aprovado por", value=(state.get("bible_reference_validation") or {}).get("approved_by", ""))
-        if st.button("📖 Validar referência/contexto", use_container_width=True):
+        source_name = st.text_input("Fonte bíblica/consulta aprovada", value=(state.get("bible_reference_validation") or {}).get("source_name", ""), placeholder="Ex.: edição bíblica/portal/licença usada para conferir a referência",key=editor.key("bible_source_name"))
+        source_ref = st.text_input("Referência da fonte (URL, ISBN ou identificação)", value=(state.get("bible_reference_validation") or {}).get("source_reference", ""),key=editor.key("bible_source_ref"))
+        context_note = st.text_area("Nota de contexto", value=(state.get("bible_reference_validation") or {}).get("context_note", ""), placeholder="Explique brevemente por que o contexto do versículo sustenta a aplicação na história. Não copie o texto bíblico.",key=editor.key("bible_context_note"))
+        context_verified = st.checkbox("Conferi o contexto da passagem na fonte indicada", value=bool((state.get("bible_reference_validation") or {}).get("context_verified")),key=editor.key("bible_context_verified"))
+        human_approved = st.checkbox("Aprovo esta referência para esta história", value=bool((state.get("bible_reference_validation") or {}).get("human_approved")),key=editor.key("bible_human_approved"))
+        approved_by = st.text_input("Aprovado por", value=(state.get("bible_reference_validation") or {}).get("approved_by", ""),key=editor.key("bible_approved_by"))
+        if st.button("📖 Validar referência/contexto", use_container_width=True,disabled=not editor.can_save):
             candidate = create_reference_candidate(ref, reason=existing.get("reason", ""), suggested_by=existing.get("suggested_by", "manual"))
             validated = validate_reference_candidate(
                 candidate, source_name=source_name, source_reference=source_ref,
@@ -141,12 +190,13 @@ with t3:
             state["versiculo_referencia"] = ref
             state["bible_reference_candidate"] = candidate
             state["bible_reference_validation"] = validated
-            persist("Registro de referência bíblica atualizado. Nenhum texto bíblico foi traduzido pela IA.")
-            if validated["status"] == "validated":
-                st.success("✅ Referência/contexto validados.")
-            else:
-                st.warning("Ainda faltam itens para validação completa.")
-                st.json([x for x in validated["checks"] if not x["ok"]])
+            if persist("Registro de referência bíblica atualizado. Nenhum texto bíblico foi traduzido pela IA.",
+                fields=("versiculo_referencia","bible_reference_candidate","bible_reference_validation"),watched_fields=REFERENCE_INPUTS):
+                if validated["status"] == "validated":
+                    st.success("✅ Referência/contexto validados.")
+                else:
+                    st.warning("Ainda faltam itens para validação completa.")
+                    st.json([x for x in validated["checks"] if not x["ok"]])
 
 with t4:
     if state is None:
@@ -167,17 +217,17 @@ with t4:
                         st.warning("; ".join(v["issues"]))
 
         st.markdown("#### ➕ Adicionar evidência observada")
-        source_type = st.selectbox("Tipo de fonte", sorted(OBSERVED_SOURCE_TYPES))
-        source_name = st.text_input("Nome da fonte", key="market_source_name")
-        source_url = st.text_input("URL/referência da fonte", key="market_source_url")
-        market = st.text_input("Mercado", value="Amazon.com / en-US", key="market_market")
-        observation = st.text_area("Observação factual", key="market_observation", placeholder="Ex.: títulos concorrentes observados usam X; faixa de preço observada... Não escreva suposição como fato.")
-        observed_at = st.text_input("Data/hora da observação", placeholder="2026-09-03", key="market_observed_at")
+        source_type = st.selectbox("Tipo de fonte", sorted(OBSERVED_SOURCE_TYPES),key=editor.key("market_source_type"))
+        source_name = st.text_input("Nome da fonte", key=editor.key("market_source_name"))
+        source_url = st.text_input("URL/referência da fonte", key=editor.key("market_source_url"))
+        market = st.text_input("Mercado", value="Amazon.com / en-US", key=editor.key("market_market"))
+        observation = st.text_area("Observação factual", key=editor.key("market_observation"), placeholder="Ex.: títulos concorrentes observados usam X; faixa de preço observada... Não escreva suposição como fato.")
+        observed_at = st.text_input("Data/hora da observação", placeholder="2026-09-03", key=editor.key("market_observed_at"))
         c1, c2 = st.columns(2)
-        metric_name = c1.text_input("Métrica (opcional)", key="market_metric_name")
-        metric_value = c2.text_input("Valor observado (opcional)", key="market_metric_value")
-        verified = st.checkbox("Conferi manualmente esta evidência", key="market_verified")
-        if st.button("➕ Adicionar evidência", use_container_width=True):
+        metric_name = c1.text_input("Métrica (opcional)", key=editor.key("market_metric_name"))
+        metric_value = c2.text_input("Valor observado (opcional)", key=editor.key("market_metric_value"))
+        verified = st.checkbox("Conferi manualmente esta evidência", key=editor.key("market_verified"))
+        if st.button("➕ Adicionar evidência", use_container_width=True,disabled=not editor.can_save):
             item = make_market_evidence(
                 source_type=source_type, source_name=source_name, source_url=source_url,
                 market=market, observation=observation, observed_at=observed_at,
@@ -191,13 +241,46 @@ with t4:
                 evidence.append(item)
                 state["market_evidence"] = evidence
                 state["market_intelligence_brief"] = build_market_brief(state, evidence=evidence)
-                persist("Evidência de mercado salva com proveniência.")
-                st.rerun()
+                if persist("Evidência de mercado salva com proveniência.",fields=("market_evidence","market_intelligence_brief"),watched_fields=MARKET_INPUTS):
+                    st.rerun()
 
-        if evidence and st.button("🧾 Atualizar Market Intelligence Brief", use_container_width=True):
+        if evidence and st.button("🧾 Atualizar Market Intelligence Brief", use_container_width=True,disabled=not editor.can_save):
             state["market_intelligence_brief"] = build_market_brief(state, evidence=evidence)
-            persist("Market Intelligence Brief atualizado.")
-            st.json(state["market_intelligence_brief"])
+            if persist("Market Intelligence Brief atualizado.",fields=("market_intelligence_brief",),watched_fields=MARKET_INPUTS):
+                st.json(state["market_intelligence_brief"])
+
+if editor is not None and editor.stale:
+    editor.preserve_form_inputs({name:st.session_state.get(editor.key(name)) for name in (
+        "bible_reference","bible_source_name","bible_source_ref","bible_context_note",
+        "bible_context_verified","bible_human_approved","bible_approved_by",
+        "market_source_type","market_source_name","market_source_url","market_market",
+        "market_observation","market_observed_at","market_metric_name","market_metric_value","market_verified")})
 
 st.divider()
 st.caption("FaithBloom 2.0 · Refinamento 21 · Skill contracts não substituem revisão humana especializada; Bestseller Readiness não é previsão de vendas.")
+
+
+with t5:
+    st.subheader("Diagnóstico técnico")
+    st.caption("A auditoria local não usa IA. A revisão profunda envia os módulos selecionados ao provedor de texto configurado. Os resultados são diagnósticos e propostas; não alteram código nem fazem deploy.")
+    request = st.text_area("Problema ou objetivo", key="engineering_request", placeholder="Ex.: O app falha ao retomar a geração de imagens.")
+    root = Path(__file__).resolve().parents[1]
+    options = sorted({p.relative_to(root).as_posix() for folder in (root, root / "agents", root / "pages") for p in folder.glob("*.py") if not p.is_symlink()})
+    modules = st.multiselect("Módulos para revisão profunda", options, key="engineering_modules")
+    deep = st.checkbox("Incluir revisão profunda por IA dos módulos selecionados", key="engineering_deep")
+    persistent_failure = st.checkbox("A falha persiste mesmo com testes aprovados", key="engineering_runtime_failure")
+    if st.button("Executar diagnóstico", disabled=not request.strip() or (deep and not modules), key="engineering_run"):
+        try:
+            with st.spinner("Analisando o código e seus contratos..."):
+                report = run_diagnostic(request, modules=modules,
+                    context={"tests_pass_but_feature_broken": persistent_failure},
+                    chamar_llm=chamar_llm if deep else None)
+            st.session_state["engineering_report"] = report
+        except Exception as exc:
+            st.error(f"O diagnóstico não foi concluído ({type(exc).__name__}). Verifique a seleção de módulos, o provedor e tente novamente. O relatório anterior foi preservado.")
+    report = st.session_state.get("engineering_report")
+    if report:
+        st.write("**Pedido analisado:**", report["plan"]["request"])
+        st.write("Auditoria:", report["audit"]["status"])
+        st.json(report)
+        st.download_button("Baixar diagnóstico", data=json.dumps(report, ensure_ascii=False, indent=2), file_name="faithbloom_engineering_diagnostic.json", mime="application/json")

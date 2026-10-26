@@ -5,10 +5,16 @@ from armazenamento import listar_colecoes
 from character_universe import (
     criar_personagem_oficial, listar_personagens_oficiais, carregar_personagem_oficial,
     adicionar_variacao, salvar_preset, personagem_para_prompt, VARIAVEIS_PADRAO,
-    adicionar_referencia
+    adicionar_referencia, detectar_personagens_mesmo_nome, arquivar_personagem,
+    restaurar_personagem, mel_canonica_protegida, MEL_CANONICAL_COLLECTION,
+)
+from collection_management import (
+    archive_collection, collection_summary, filter_active_collection_names,
+    list_archived_collections, restore_collection,
 )
 from asset_library import get_asset, get_thumbnail, list_assets
 from character_asset_selector import asset_option_label, asset_preview_details, assets_by_id
+from jarvis_character_handoff_ui import render_character_handoff_inbox
 from openrouter_client import gerar_imagem, OpenRouterFaithBloomError
 from scene_color_controls import COLOR_TREATMENTS, LIGHTING, SCENE_PRESETS, build_restoration_prompt
 from visual_master_manager import (
@@ -26,9 +32,82 @@ selected_asset_id = st.session_state.get("faithbloom_selected_asset_id", "")
 if selected_asset_path and os.path.exists(selected_asset_path):
     st.success("🖼️ Asset selecionado na Asset Library: você pode adicioná-lo ao Reference Pack ou defini-lo como Master de um personagem abaixo.")
 
+# Navegação segura: nunca assumir silenciosamente a primeira coleção salva.
+colecoes_salvas = [str(c).strip() for c in listar_colecoes() if str(c).strip()]
+indice_personagens = listar_personagens_oficiais(incluir_arquivados=True)
+colecoes_com_personagens = [str(i.get('colecao') or '').strip() for i in indice_personagens if str(i.get('colecao') or '').strip()]
+colecoes = filter_active_collection_names(colecoes_salvas + colecoes_com_personagens)
 
-colecoes = listar_colecoes()
-colecao = st.text_input('Coleção', value=colecoes[0] if colecoes else 'Pequenas Histórias, Grandes Lições')
+with st.expander('🧹 Gerenciar coleções de teste', expanded=False):
+    st.caption('Arquivar é não destrutivo: remove a coleção desta lista e arquiva os Character Masters ativos, preservando livros, assets, DNA, Masters, referências, versões e histórico.')
+    candidatas = [c for c in colecoes if c != MEL_CANONICAL_COLLECTION]
+    if candidatas:
+        alvo_colecao = st.selectbox('Coleção a arquivar/ocultar', candidatas, key='collection_manager_archive_target')
+        resumo_colecao = collection_summary(alvo_colecao)
+        st.caption(
+            f"{resumo_colecao['characters_active']} personagem(ns) ativo(s) · "
+            f"{resumo_colecao['characters_total']} personagem(ns) no histórico"
+        )
+        confirmar_colecao = st.checkbox(
+            f'Confirmo que desejo arquivar/ocultar a coleção “{alvo_colecao}” sem apagar seus dados',
+            key='collection_manager_archive_confirm',
+        )
+        if st.button('🗄️ Arquivar/ocultar coleção', disabled=not confirmar_colecao, key='collection_manager_archive_button'):
+            try:
+                archive_collection(alvo_colecao, confirmed=confirmar_colecao)
+            except (ValueError, PermissionError, KeyError) as exc:
+                st.error(str(exc))
+            else:
+                st.session_state.pop('character_universe_collection_selector', None)
+                st.success(f'Coleção “{alvo_colecao}” arquivada sem exclusão de livros ou assets.')
+                st.rerun()
+    else:
+        st.info('Não há coleções de teste disponíveis para arquivar. A coleção canônica está protegida.')
+
+    arquivadas = list_archived_collections()
+    if arquivadas:
+        st.divider()
+        restaurar_nome = st.selectbox('Coleções arquivadas', sorted(arquivadas, key=str.casefold), key='collection_manager_restore_target')
+        confirmar_restore = st.checkbox(
+            f'Confirmo que desejo restaurar a coleção “{restaurar_nome}”',
+            key='collection_manager_restore_confirm',
+        )
+        if st.button('♻️ Restaurar coleção', disabled=not confirmar_restore, key='collection_manager_restore_button'):
+            try:
+                restore_collection(restaurar_nome, confirmed=confirmar_restore)
+            except (ValueError, PermissionError, KeyError) as exc:
+                st.error(str(exc))
+            else:
+                st.success(f'Coleção “{restaurar_nome}” restaurada.')
+                st.rerun()
+
+colecao_opcao = st.selectbox(
+    'Coleção',
+    ['— Selecione uma coleção —', *colecoes],
+    key='character_universe_collection_selector',
+    help='Escolha uma coleção existente. A lista usa rolagem automaticamente quando houver muitas coleções.',
+)
+colecao = '' if colecao_opcao == '— Selecione uma coleção —' else colecao_opcao
+
+if not colecao:
+    st.info('Escolha uma coleção acima para ver os personagens. Nenhuma coleção é assumida automaticamente.')
+    st.stop()
+
+st.caption(f'📚 Coleção ativa: **{colecao}**')
+render_character_handoff_inbox(colecao)
+mostrar_arquivados = st.checkbox('Mostrar personagens arquivados', value=False)
+
+# Alerta operacional considera somente duplicidades ativas; registros arquivados permanecem no histórico.
+duplicados = detectar_personagens_mesmo_nome(incluir_arquivados=False)
+for grupo in duplicados.values():
+    relacionados = [x for x in grupo if x.get('colecao') == colecao]
+    if relacionados:
+        nome_dup = relacionados[0].get('nome', 'Personagem')
+        resumo = ' · '.join(
+            f"{x.get('colecao') or 'Sem coleção'} — ⭐ oficial/ativo"
+            for x in grupo
+        )
+        st.warning(f"⚠️ Nome duplicado detectado: {nome_dup}. {resumo}")
 
 with st.expander('➕ Criar Character Master oficial', expanded=False):
     nome = st.text_input('Nome do personagem')
@@ -50,15 +129,29 @@ with st.expander('➕ Criar Character Master oficial', expanded=False):
         criar_personagem_oficial(colecao, nome.strip(), dna, metadata={'usos_permitidos': usos})
         st.success('Character Master oficial salvo.'); st.rerun()
 
-itens = listar_personagens_oficiais(colecao)
+itens = listar_personagens_oficiais(colecao, incluir_arquivados=mostrar_arquivados)
 if not itens:
-    st.info('Ainda não há personagens oficiais nesta coleção.')
+    st.info('Ainda não há personagens oficiais nesta coleção.' if not mostrar_arquivados else 'Nenhum personagem encontrado nesta coleção.')
+else:
+    personagem_por_id = {str(item.get('id')): item for item in itens}
+    personagem_opcao = st.selectbox(
+        'Personagem',
+        ['__todos__', *personagem_por_id.keys()],
+        format_func=lambda pid: 'Todos os personagens' if pid == '__todos__' else str(personagem_por_id[pid].get('nome') or 'Personagem'),
+        key=f'character_universe_character_selector_{colecao}',
+        help='A lista mostra somente personagens da coleção escolhida e usa rolagem automaticamente quando necessário.',
+    )
+    if personagem_opcao != '__todos__':
+        itens = [personagem_por_id[personagem_opcao]]
+        st.caption(f"📚 {colecao} → ⭐ {personagem_por_id[personagem_opcao].get('nome', 'Personagem')}")
 
 for item in itens:
     p = carregar_personagem_oficial(item['id'])
     with st.container(border=True):
-        st.subheader('⭐ ' + p.get('nome',''))
-        st.caption('Personagem oficial · ' + p.get('colecao','') + ' · usos: ' + ', '.join(p.get('metadata',{}).get('usos_permitidos',[])))
+        status = p.get('status', 'oficial')
+        status_label = '🗄️ ARQUIVADO' if status == 'arquivado' else '⭐ OFICIAL · ATIVO'
+        st.subheader(('🗄️ ' if status == 'arquivado' else '⭐ ') + p.get('nome',''))
+        st.caption(f"{status_label} · Coleção: {p.get('colecao','')} · usos: " + ', '.join(p.get('metadata',{}).get('usos_permitidos',[])))
         dna = p.get('dna',{})
         st.write(dna.get('descricao_master') or dna.get('caracteristicas_bloqueadas') or 'DNA ainda não preenchido.')
         if dna.get('campos_bloqueados'):
@@ -68,6 +161,29 @@ for item in itens:
         c2.metric('Line Art Master','✅' if p.get('line_art_master') else '—')
         c3.metric('Reference Pack',len(p.get('reference_pack',[])))
         c4.metric('Variações preservadas',len(p.get('variacoes',[])))
+
+        if status == 'arquivado':
+            st.info('Arquivado sem excluir DNA, Masters, referências, assets, versões ou histórico.')
+            if st.button('♻️ Restaurar personagem', key=f"restore_character_{p['id']}"):
+                restaurar_personagem(p['id']); st.rerun()
+            continue
+
+        if mel_canonica_protegida(p):
+            st.success('🔒 Mel canônica protegida: coleção Pequenas Histórias, Grandes Lições · Color Master oficial · Reference Pack presente.')
+            st.caption('Esta Character Master permanece ativa. Use o arquivamento apenas na Mel antiga/duplicada.')
+        else:
+            confirmar_arquivo = st.checkbox(
+                'Confirmo que desejo arquivar este personagem sem apagar seu histórico',
+                key=f"confirm_archive_character_{p['id']}",
+            )
+            if st.button('🗄️ Arquivar personagem', key=f"archive_character_{p['id']}", disabled=not confirmar_arquivo):
+                try:
+                    arquivar_personagem(p['id'])
+                except PermissionError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success('Personagem arquivado. DNA, Masters, referências, assets, versões e histórico foram preservados.')
+                    st.rerun()
 
         master_details = current_color_master_details(p)
         current_master = master_details['asset'] if master_details['consistent'] else None
@@ -219,7 +335,6 @@ for item in itens:
                         st.error(str(exc))
                         if st.session_state[result_key]:
                             st.info('As candidatas já concluídas foram preservadas abaixo.')
-
 
         result_ids = st.session_state.get(f"results_{p['id']}", [])
         if result_ids:

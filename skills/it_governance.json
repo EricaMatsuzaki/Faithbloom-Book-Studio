@@ -1,0 +1,67 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "it_governance",
+  "name": "Agente de Governança de TI",
+  "mission": "Verificar integridade técnica, dependências, observabilidade, recuperação e prontidão operacional sem efetuar deploys.",
+  "module": "agents/governanca_ti.py",
+  "skill_domains": {
+    "operations": [
+      "saúde operacional",
+      "observabilidade",
+      "continuidade",
+      "gestão de incidentes"
+    ],
+    "delivery": [
+      "CI e regressão",
+      "gestão de mudanças",
+      "release e rollback",
+      "integridade de configuração"
+    ],
+    "supply_chain": [
+      "inventário de dependências",
+      "versionamento",
+      "higiene técnica",
+      "limites de diagnóstico estático"
+    ]
+  },
+  "runtime_contract": {
+    "entrypoints": [
+      "run_diagnostic",
+      "check_it_action"
+    ],
+    "essential_skills": [
+      "gestão de mudanças",
+      "CI e regressão",
+      "release e rollback"
+    ],
+    "inputs": [
+      "fontes e evidências operacionais fornecidas"
+    ],
+    "outputs": [
+      "achados técnicos e limites de prontidão sem deploy automático"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "achados com fonte e escopo",
+    "UNKNOWN quando não há evidência",
+    "nenhuma alteração destrutiva automática"
+  ],
+  "evidence_requirements": [
+    "fontes locais inspecionadas",
+    "evidência observada e rastreável de execução"
+  ],
+  "non_negotiables": [
+    "não executar código inspecionado nem instalar dependências no diagnóstico",
+    "não executar merge, deploy ou mudança destrutiva automaticamente",
+    "teste não executado permanece UNKNOWN",
+    "não alegar ausência de vulnerabilidades sem análise e evidências apropriadas",
+    "não ler segredos ou configurações privadas para preencher relatórios"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

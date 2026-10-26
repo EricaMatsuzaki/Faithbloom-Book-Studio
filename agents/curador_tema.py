@@ -19,6 +19,7 @@ from emotion_colors import EMOCOES
 from agent_skills import skill_contract
 from biblical_reference_validator import create_reference_candidate
 from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria, perfil_etario
+from generation_autosave import persist_generation_snapshot
 
 PROMPT_CURADOR = """\
 Você é o Curador de Tema do FaithBloom Book Studio. A autora forneceu um
@@ -74,8 +75,15 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += skill_contract("theme_curator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere a sugestão em JSON.")
-    if not isinstance(resposta, dict):
-        resposta = {}
+    required = {"emocao_central": "emocao_central", "versiculo_referencia": "versiculo_referencia",
+                "aprendizado_cristao": "aprendizado_cristao", "titulo": "titulo_sugerido"}
+    if not isinstance(resposta, dict) or any(
+        not state.get(target) and (not isinstance(resposta.get(key), str) or not resposta[key].strip())
+        for target, key in required.items()
+    ):
+        raise ValueError("A curadoria veio vazia ou incompleta. Os dados anteriores foram preservados.")
+    if not state.get("emocao_central") and resposta["emocao_central"] not in EMOCOES:
+        raise ValueError("O Curador sugeriu uma emoção fora da tabela canônica; revise antes de continuar.")
 
     # Só preenche o que não foi informado manualmente - nunca sobrescreve valor real.
     if not state.get("emocao_central"):
@@ -99,6 +107,14 @@ def curador_tema_node(state: LivroState, chamar_llm) -> LivroState:
             suggested_ref, reason=resposta.get("justificativa", ""), suggested_by="theme_curator"
         )
         state.setdefault("bible_reference_validation", dict(state["bible_reference_candidate"]))
+
+    # A preparação da ideia já cria/atualiza o Book Master quando coleção+título
+    # existem. Assim toda geração posterior tem um destino persistente.
+    try:
+        persist_generation_snapshot(state, reason="theme_curated")
+    except Exception as exc:
+        state["autosave_status"] = "error"
+        state["autosave_error"] = str(exc)
     return state
 
 

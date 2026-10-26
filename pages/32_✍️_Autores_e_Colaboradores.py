@@ -4,9 +4,9 @@ import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import (
-    listar_livros, carregar_livro, atualizar_livro_salvo,
-    listar_livros_colorir, carregar_livro_colorir, atualizar_livro_colorir_salvo,
+    listar_livros, listar_livros_colorir,
 )
+from project_metadata_ui import open_project_metadata
 from author_profiles import (
     CONTRIBUTOR_ROLES, create_author_profile, list_author_profiles,
     update_author_profile, profile_display_name, ensure_project_authorship,
@@ -24,9 +24,17 @@ hero(
 
 profiles_tab, credits_tab = st.tabs(["👤 Perfis", "📚 Créditos por projeto"])
 
+
+def profiles_for_page(*, include_archived=False):
+    try:
+        return list_author_profiles(include_archived=include_archived)
+    except Exception:
+        st.error("Não foi possível abrir os perfis editoriais nesta sessão. Confira o acesso e atualize a página.")
+        st.stop()
+
 with profiles_tab:
     section_title("Perfis editoriais", "Um perfil pode ser autor em um livro, tradutor em outro ou nem participar de determinado projeto.", "People")
-    profiles = list_author_profiles(include_archived=True)
+    profiles = profiles_for_page(include_archived=True)
     with st.expander("➕ Criar novo perfil", expanded=not profiles):
         with st.form("new_author_profile"):
             c1,c2=st.columns(2)
@@ -46,7 +54,7 @@ with profiles_tab:
                 except Exception as exc:
                     st.error(str(exc))
 
-    profiles=list_author_profiles(include_archived=True)
+    profiles=profiles_for_page(include_archived=True)
     if not profiles:
         st.info("Nenhum perfil criado ainda.")
     else:
@@ -64,55 +72,67 @@ with profiles_tab:
             socials=st.text_input("Links/redes",value=", ".join(p.get("social_links") or []))
             active=st.checkbox("Perfil ativo",value=bool(p.get("active",True)))
             if st.form_submit_button("Salvar alterações"):
-                update_author_profile(p["id"],display_name=display,pen_name=pen,legal_name=legal,bio=bio,locales=[x.strip() for x in locales.split(",") if x.strip()],website=website,social_links=[x.strip() for x in socials.split(",") if x.strip()],active=active)
-                st.success("Perfil atualizado. Livros antigos mantêm o snapshot de crédito até você atualizar o projeto explicitamente.")
-                st.rerun()
+                try:
+                    update_author_profile(p["id"],display_name=display,pen_name=pen,legal_name=legal,bio=bio,locales=[x.strip() for x in locales.split(",") if x.strip()],website=website,social_links=[x.strip() for x in socials.split(",") if x.strip()],active=active)
+                    st.success("Perfil atualizado. Livros antigos mantêm o snapshot de crédito até você atualizar o projeto explicitamente.")
+                    st.rerun()
+                except Exception:
+                    st.error("Não foi possível confirmar a alteração do perfil. Seus campos continuam disponíveis para revisão.")
 
 with credits_tab:
     section_title("Créditos do livro", "Escolha autor principal, coautores e colaboradores. A autoria pertence ao projeto, não ao usuário logado.", "Project")
-    story=[{"kind":"story",**x} for x in listar_livros()]
-    coloring=[{"kind":"coloring",**x} for x in listar_livros_colorir()]
+    try:
+        story=[{"kind":"story",**x} for x in listar_livros()]
+        coloring=[{"kind":"coloring",**x} for x in listar_livros_colorir()]
+    except Exception:
+        st.error("Não foi possível abrir os projetos desta sessão. Confira o acesso e atualize a página.")
+        st.stop()
     projects=story+coloring
     if not projects:
         st.info("Ainda não há livros salvos.")
     else:
         active=st.session_state.get("faithbloom_active_project") or {}
-        default_idx=0
-        for i,b in enumerate(projects):
-            if active.get("storage_path") and active.get("storage_path")==b.get("storage_path"):
-                default_idx=i; break
-        idx=st.selectbox("Projeto",range(len(projects)),index=default_idx,format_func=lambda i:f"{'📖' if projects[i]['kind']=='story' else '🖍️'} {projects[i].get('titulo')} · {projects[i].get('colecao') or projects[i].get('tema_geral') or 'sem coleção'}")
-        card=projects[idx]
-        if card["kind"]=="story":
-            state=carregar_livro(card.get("colecao",""),card.get("storage_path") or card.get("arquivo"))
-            save=lambda updated: atualizar_livro_salvo(card.get("storage_path") or card.get("arquivo"),updated)
-        else:
-            state=carregar_livro_colorir(card.get("storage_path") or card.get("arquivo"))
-            save=lambda updated: atualizar_livro_colorir_salvo(card.get("storage_path") or card.get("arquivo"),updated)
-        state=ensure_project_authorship(state)
+        project_map={x.get("storage_path") or x.get("arquivo"):x for x in projects}
+        references=list(project_map)
+        active_ref=str(active.get("storage_path") or "").removeprefix("fb://")
+        default_idx=next((i for i,ref in enumerate(references) if str(ref).removeprefix("fb://")==active_ref),0)
+        selected_ref=st.selectbox("Projeto",references,index=default_idx,format_func=lambda ref:f"{'📖' if project_map[ref]['kind']=='story' else '🖍️'} {project_map[ref].get('titulo')} · {project_map[ref].get('colecao') or project_map[ref].get('tema_geral') or 'sem coleção'}")
+        card=project_map[selected_ref]
+        editor=open_project_metadata(card.get("storage_path") or card.get("arquivo"),kind=card["kind"],namespace="project_credits")
+        state=ensure_project_authorship(editor.state)
+        def save(updated):
+            try:
+                return editor.save(updated,fields=["authorship","autora"])
+            except Exception:
+                st.error("Não foi possível preparar os créditos para salvar. Recarregue o projeto e confira os perfis escolhidos.")
+                return False
         summary=authorship_summary(state)
         callout("Crédito atual", summary["author_display"] or "Nenhum autor definido", "✍️")
 
-        active_profiles=list_author_profiles()
+        active_profiles=profiles_for_page()
         profile_map={p["id"]:p for p in active_profiles}
         labels={p["id"]:profile_display_name(p) for p in active_profiles}
         current_ids=[x.get("profile_id") for x in state["authorship"]["authors"] if x.get("profile_id") in profile_map]
         if active_profiles:
             primary_default=current_ids[0] if current_ids else list(profile_map)[0]
-            primary=st.selectbox("Autor(a) principal",options=list(profile_map),index=list(profile_map).index(primary_default),format_func=lambda pid:labels[pid])
+            primary=st.selectbox("Autor(a) principal",options=list(profile_map),index=list(profile_map).index(primary_default),format_func=lambda pid:labels[pid],key=editor.key("primary"))
             co_defaults=[x for x in current_ids[1:] if x != primary]
-            coauthors=st.multiselect("Coautores",options=[x for x in profile_map if x != primary],default=co_defaults,format_func=lambda pid:labels[pid])
+            coauthors=st.multiselect("Coautores",options=[x for x in profile_map if x != primary],default=co_defaults,format_func=lambda pid:labels[pid],key=editor.key("coauthors"))
             ordered=[primary]
             if coauthors:
                 st.caption("Defina a ordem dos coautores (2 = primeiro coautor).")
                 order_rows=[]
                 for j,pid in enumerate(coauthors,2):
-                    n=st.number_input(f"Ordem · {labels[pid]}",min_value=2,max_value=99,value=j,step=1,key=f"author_order_{card.get('storage_path')}_{pid}")
+                    n=st.number_input(f"Ordem · {labels[pid]}",min_value=2,max_value=99,value=j,step=1,key=editor.key(f"author_order_{pid}"))
                     order_rows.append((int(n),pid))
                 ordered += [pid for _,pid in sorted(order_rows,key=lambda x:(x[0],labels[x[1]].casefold()))]
-            if st.button("Salvar autoria deste projeto",use_container_width=True):
-                updated=set_project_authors(state,ordered); save(updated)
-                st.success("Autoria salva no projeto. O usuário logado não foi alterado."); st.rerun()
+            if st.button("Salvar autoria deste projeto",use_container_width=True,disabled=not editor.can_save):
+                try:
+                    updated=set_project_authors(state,ordered)
+                    if save(updated):
+                        st.success("Autoria salva no projeto. O usuário logado não foi alterado."); st.rerun()
+                except Exception:
+                    st.error("Não foi possível preparar a autoria. Confira os perfis escolhidos antes de salvar novamente.")
         else:
             st.warning("Crie pelo menos um perfil na aba Perfis para substituir o crédito legado deste livro.")
 
@@ -121,21 +141,34 @@ with credits_tab:
         if rows:
             for r in rows:
                 c1,c2,c3=st.columns([3,2,1]); c1.write(f"**{r['name']}**"); c2.caption(r["role_label"])
-                if c3.button("Remover",key=f"rm_{card.get('storage_path')}_{r['profile_id']}_{r['role']}"):
-                    updated=remove_project_credit(state,profile_id=r["profile_id"],role=r["role"]); save(updated); st.rerun()
+                if c3.button("Remover",key=editor.key(f"rm_{r['profile_id']}_{r['role']}"),disabled=not editor.can_save):
+                    updated=remove_project_credit(state,profile_id=r["profile_id"],role=r["role"])
+                    if save(updated): st.rerun()
         if active_profiles:
             c1,c2=st.columns(2)
-            pid=c1.selectbox("Pessoa",list(profile_map),format_func=lambda x:labels[x],key=f"contrib_person_{card.get('storage_path')}")
+            pid=c1.selectbox("Pessoa",list(profile_map),format_func=lambda x:labels[x],key=editor.key("contrib_person"))
             role_opts=[k for k in CONTRIBUTOR_ROLES if k not in {"author","coauthor"}]
-            role=c2.selectbox("Função",role_opts,format_func=lambda x:CONTRIBUTOR_ROLES[x],key=f"contrib_role_{card.get('storage_path')}")
-            credit_as=st.text_input("Crédito como (opcional)",placeholder="Deixe vazio para usar o nome de publicação do perfil",key=f"contrib_credit_{card.get('storage_path')}")
-            if st.button("Adicionar colaborador",use_container_width=True,key=f"add_contrib_{card.get('storage_path')}"):
-                updated=add_project_contributor(state,pid,role,credit_as=credit_as); save(updated); st.rerun()
+            role=c2.selectbox("Função",role_opts,format_func=lambda x:CONTRIBUTOR_ROLES[x],key=editor.key("contrib_role"))
+            credit_as=st.text_input("Crédito como (opcional)",placeholder="Deixe vazio para usar o nome de publicação do perfil",key=editor.key("contrib_credit"))
+            if st.button("Adicionar colaborador",use_container_width=True,key=editor.key("add_contrib"),disabled=not editor.can_save):
+                try:
+                    updated=add_project_contributor(state,pid,role,credit_as=credit_as)
+                    if save(updated): st.rerun()
+                except Exception:
+                    st.error("Não foi possível preparar o colaborador. Confira o perfil escolhido antes de salvar novamente.")
 
         st.markdown("#### Crédito na capa")
-        override=st.text_input("Override opcional",value=state["authorship"].get("cover_credit_override", ""),help="Se vazio, a capa usa automaticamente a autoria estruturada do projeto.",key=f"cover_credit_{card.get('storage_path')}")
-        if st.button("Salvar crédito de capa",key=f"save_cover_credit_{card.get('storage_path')}"):
-            updated=set_cover_credit_override(state,override); save(updated); st.success("Crédito de capa salvo."); st.rerun()
+        override=st.text_input("Override opcional",value=state["authorship"].get("cover_credit_override", ""),help="Se vazio, a capa usa automaticamente a autoria estruturada do projeto.",key=editor.key("cover_credit"))
+        if st.button("Salvar crédito de capa",key=editor.key("save_cover_credit"),disabled=not editor.can_save):
+            updated=set_cover_credit_override(state,override)
+            if save(updated): st.success("Crédito de capa salvo."); st.rerun()
+
+        if editor.stale:
+            editor.preserve_form_inputs({"cover_credit_override":override,
+                "author_profile_ids":ordered if active_profiles else [],
+                "contributor_profile_id":pid if active_profiles else None,
+                "contributor_role":role if active_profiles else None,
+                "contributor_credit":credit_as if active_profiles else ""})
 
         with st.expander("Ver estrutura editorial deste projeto"):
             st.json(authorship_summary(state))

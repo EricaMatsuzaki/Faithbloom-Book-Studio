@@ -132,7 +132,7 @@ O agente não reescreve a história e não inventa/traduz livremente texto bíbl
 
 ### Prompt-Mestre Studio
 
-Nova página Streamlit: `pages/38_Prompt_Mestre_Studio.py`.
+Nova página Streamlit: `pages/38_🪄_Prompt_Mestre_Studio.py`.
 
 Permite:
 

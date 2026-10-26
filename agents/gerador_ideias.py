@@ -65,11 +65,14 @@ def gerador_ideias_node(
     )
     prompt += skill_contract("idea_generator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as ideias em JSON.")
-    if isinstance(resposta, list):
-        return resposta
-    if isinstance(resposta, dict):
-        return resposta.get("ideias", [])
-    return []
+    ideias = resposta if isinstance(resposta, list) else resposta.get("ideias", []) if isinstance(resposta, dict) else []
+    campos = ('titulo_sugerido', 'situacao', 'emocao_central', 'pista_licao')
+    if not isinstance(ideias, list) or not ideias or any(
+        not isinstance(ideia, dict) or any(not isinstance(ideia.get(campo), str) or not ideia[campo].strip() for campo in campos)
+        for ideia in ideias
+    ):
+        raise ValueError("O gerador não retornou ideias completas; nenhuma sugestão vazia foi aceita.")
+    return ideias
 
 
 # Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).
