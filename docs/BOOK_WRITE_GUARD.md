@@ -1,6 +1,6 @@
 # Proteção do salvamento legado de livros
 
-Atualizado em 25/10/2026.
+Atualizado em 26/10/2026.
 
 `armazenamento.atualizar_livro_salvo` autoriza a referência e verifica o livro
 atual antes de preparar assets. A gravação usa a atualização atômica suportada
@@ -18,21 +18,25 @@ esse registro por um payload legado. Isso fecha o caso reproduzido em que uma
 cópia antiga apagava uma tentativa ativa e permitia uma segunda chamada paga.
 `save_product` continua usando seu caminho próprio com revisão e tentativa.
 
-Essa proteção tem um limite funcional explícito: aplicação genérica de imagens,
-mapa emocional e atualizações de autoria/skills em produtos especializados são
-recusadas enquanto esses fluxos não tiverem writers próprios que preservem a
-execução. As páginas 32/37 ainda precisam de tratamento dedicado desse veto.
-O bloqueio não deve ser removido para contornar a migração.
+Aplicação de imagens, mapa emocional e autoria/skills usam agora
+`editorial_project_updates`: atualizações restritas aos campos pretendidos,
+comparadas com o documento observado pela tela. Produtos especializados passam
+pelo writer de execução próprio, preservando tentativas e revisões. Uma geração
+ativa, incerta ou com resposta recebida ainda não aplicada impede essas edições.
+A guarda do writer genérico permanece; esses fluxos não a contornam.
 
-Snapshots narrativos comuns ainda não têm proteção geral de revisão/baseline.
-Este lote não resolve todas as perdas concorrentes de notas ou aprovações.
+Snapshots narrativos comuns usam a versão efetivamente aberta, mantida em um
+registro interno limitado e referenciada por um identificador opaco na sessão.
+Campos independentes são mesclados; alterações concorrentes do mesmo campo
+geram conflito antes de substituir o conteúdo. Contexto ausente ou expirado
+exige reabrir o projeto. A recuperação conserva o resultado recebido e repete
+somente o salvamento, com conferência explícita antes de reaplicá-lo.
 Assets enviados antes de surgir um conflito podem permanecer órfãos; não há
 transação entre arquivos e JSON. A compatibilidade Supabase legada continua
 limitada a processos no mesmo host/cache; o modo RPC não foi ativado pelo lote.
 
-O snapshot de código passou em 1.932 testes e 2 subtestes, incluindo processos
+O snapshot de código passou em 2.029 testes e 2 subtestes, incluindo processos
 Linux reais, conflitos de revisão e provedores/HTTP simulados. A auditoria
-registrou zero bloqueadores e 69 avisos, três adicionais por imports de helpers
-entre testes. A fixture visual foi ajustada para simular uma restauração externa
-pelo backend de teste, preservando os asserts de identidade e de chamadas.
+registrou zero bloqueadores e 75 avisos. Os percursos entre telas e os limites
+da evidência estão em [PILOT_FLOW_RECOVERY.md](PILOT_FLOW_RECOVERY.md).
 Nenhuma geração paga, migração, mensagem ou ativação comercial foi realizada.

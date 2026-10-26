@@ -1,6 +1,6 @@
 # O que falta para a operação completa
 
-Atualizado em 25/10/2026, após os lotes de agentes, fila/perfis, execução visual/editorial e proteção do salvamento legado.
+Atualizado em 26/10/2026, após os lotes de agentes, fila/perfis, execução visual/editorial e recuperação dos fluxos de criação.
 
 A autora confirmou que IA e armazenamento já estão configurados no Streamlit.
 Este documento separa correções de código, validação com serviços reais e
@@ -21,7 +21,8 @@ real terminou corretamente. O modo comercial continua bloqueado.
 | Biblioteca de imagens | Metadados, miniaturas e fallbacks não ignoram uma negativa de acesso nem copiam arquivos locais de outra conta. | Aprovação humana de Masters e fidelidade visual continuam necessárias. |
 | Execução visual | Reserva de orçamento e primeira tentativa paga são confirmadas juntas no livro-razão do projeto. Checkpoints e reconciliação verificam a tentativa atual; um retorno atrasado não substitui a conferência humana. A interface lê os totais desse registro. | A proteção exige armazenamento local compartilhado ou RPC; o piloto legado coordena somente o mesmo host/cache. Galeria, cenas, aprovações e limites por plano continuam em registros separados. |
 | Produtos editoriais especializados | Studio e Orquestrador compartilham a tentativa paga no produto canônico. Respostas recebidas são salvas antes de aplicar a unidade; a recuperação reutiliza essas respostas e preserva edições concorrentes. A interface permite conferir resultados incertos e baixar a cópia recebida. | Outros executores e escritores legados de Book Master ainda precisam migrar. A criação do produto e seu run são registros separados. A evidência de encerramento remoto continua dependendo do operador. |
-| Salvamento legado de livros | O writer central revalida destino existente, identidade e permissão e recusa substituir produtos com registro de execução editorial. Um snapshot antigo não pode apagar uma tentativa para liberar outra chamada paga. | Os fluxos especializados que ainda usam o writer genérico recebem veto e precisam de migração. Snapshots narrativos comuns ainda precisam de revisão/baseline; veja [BOOK_WRITE_GUARD.md](BOOK_WRITE_GUARD.md). |
+| Salvamento de livros | O writer central revalida destino, identidade, permissão e versão observada. Campos independentes são mesclados; conflitos preservam o resultado recebido para conferência e recuperação sem nova geração. Imagens, mapa emocional e autoria/skills possuem atualizações específicas que preservam a execução especializada. | Contexto de edição ausente ou expirado exige reabertura. Não há transação entre JSON e assets; o piloto legado continua limitado ao mesmo host/cache. Veja [BOOK_WRITE_GUARD.md](BOOK_WRITE_GUARD.md). |
+| Percursos entre telas | Criar e Retomar salvam cada etapa antes da próxima chamada; Colorir mantém o contexto entre imagem, aprovação e PDF. Produtos especializados podem abrir ilustrações opcionais no mesmo livro, com seu público e consentimento próprios. | Os testes usam provedores simulados. A validação autenticada no Streamlit permanece necessária; veja [PILOT_FLOW_RECOVERY.md](PILOT_FLOW_RECOVERY.md). |
 
 ## Próximas prioridades de código
 
@@ -33,7 +34,8 @@ real terminou corretamente. O modo comercial continua bloqueado.
    para o limite do projeto e a coordenação de alterações de aprovação/origem.
    Os controles diários de consumo também precisam de integração própria.
 2. **Demais registros compartilhados.** Migrar índices da galeria, personagens,
-   estilos, planos, checkpoints e atualizações simultâneas do mesmo Book Master.
+   estilos, planos e checkpoints que ainda usam substituição de documento.
+   O salvamento narrativo do Book Master já compara os campos observados.
    Todos os escritores de um índice precisam usar o mesmo contrato; migrar só um
    deles não impede perda de atualizações. Preservar aprovações e originais.
 3. **Demais arquivos e estados legados.** Completar o inventário de gerações,
