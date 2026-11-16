@@ -63,6 +63,12 @@ class LivroState(TypedDict, total=False):
     faixa_etaria: str                  # 3-5 | 6-8 | 9-12 | 3-8 (compatibilidade)
     age_profile_id: str                # id normalizado pelo Age Profile Engine
     storage_path: str                  # caminho fb:// do rascunho/projeto salvo, quando já persistido
+    _book_save_context: dict            # token opaco do baseline em memória; nunca persistir no Book Master
+    autosave_pending: dict              # resultado recebido aguardando persistência/conferência; não reenviar IA
+    autosave_status: str
+    autosave_error: str
+    autosave_last_reason: str
+    autosave_last_path: str
 
     # --- Curador de Tema (opcional) ---
     _entrada_tema_livre: str           # tema/resumo livre, se a autora não quiser preencher tudo manualmente
@@ -71,10 +77,17 @@ class LivroState(TypedDict, total=False):
     # --- Personagens ---
     personagens: dict[str, PersonagemDNA]
 
-    # --- Roteirista ---
+    # --- Roteirista / versões narrativas ---
     sinopse_poetica: str
     cenas_texto: list[CenaTexto]
     licao_final: str
+    proposta_roteirista: dict                    # visão autoral antes da história completa
+    versao_roteirista_autoral: dict              # quinta versão, gerada pela skill storyteller
+    comparativo_estilos: dict[str, dict]          # quatro estilos formais preservados
+    versoes_narrativas_salvas: dict[str, dict]    # biblioteca persistente das versões geradas
+    versao_narrativa_ativa: str                   # estilo_1|estilo_2|estilo_3|misto|roteirista_autoral
+    versao_narrativa_origem: str                  # comparative_story_director|storyteller_skill
+    historico_derivados_por_versao: dict[str, list[dict]]  # preserva revisão/mapa/imagens ao trocar versão
     cenas_bloqueadas: list[int]           # cenas aprovadas que não devem ser alteradas automaticamente
     historico_cenas: dict[int, list[dict]] # versões anteriores por cena
     mapa_emocional: list[dict]             # Emotional & Color Director, aprovado antes da geração em lote

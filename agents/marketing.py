@@ -64,7 +64,10 @@ def marketing_lancamento_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += skill_contract("marketing_launch")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere o material de lançamento em JSON.")
-    state["material_lancamento"] = resposta if isinstance(resposta, dict) else {}
+    campos = ("legenda_instagram", "descricao_pinterest", "email_lancamento", "pedido_avaliacao")
+    if not isinstance(resposta, dict) or any(not isinstance(resposta.get(campo), str) or not resposta[campo].strip() for campo in campos):
+        raise ValueError("O material de lançamento veio incompleto. A versão anterior foi preservada.")
+    state["material_lancamento"] = {campo: resposta[campo].strip() for campo in campos}
     return state
 
 

@@ -1,0 +1,2777 @@
+{
+  "schema": "faithbloom.agent-connections-snapshot.v1",
+  "date_japan": "2026-10-17",
+  "base_feature_commit": "8578cdfe6241f5eb65ee19c919dc37f06d100e06",
+  "scope": "source contracts and explicit offline behavioral cases; not a live production certificate",
+  "local_behavior_evidence": {
+    "junit_artifact": "agent-integration-roles-final.xml",
+    "passing_role_cases": 31
+  },
+  "role_count": 31,
+  "roles": [
+    {
+      "role_id": "ai_governance",
+      "name": "Agente de Governança de IA",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/governanca_ia.py",
+      "skills_declared": [
+        "inventário de modelos",
+        "proveniência de resultados",
+        "avaliação de IA",
+        "limites de inferência",
+        "aprovação humana",
+        "guardas de custos",
+        "segurança de prompts",
+        "preservação de Masters",
+        "evidências verificáveis",
+        "avaliação por faixa etária",
+        "continuidade editorial",
+        "monitoramento de falhas"
+      ],
+      "essential_skills": [
+        "inventário de modelos",
+        "guardas de custos",
+        "aprovação humana"
+      ],
+      "inputs": [
+        "fontes, metadados e contexto da ação"
+      ],
+      "outputs": [
+        "achados sanitizados e decisão pré-ação, UNKNOWN sem evidência"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "ai_governance",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        34,
+        40
+      ],
+      "entrypoint_static_presence": {
+        "run_diagnostic": true,
+        "check_generation_action": true
+      },
+      "source_evidence": [
+        "agents/governanca_ia.py:38",
+        "agents/governanca_ia.py:31"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "c401be8935fe24049599247d49691f9d2ecbb6d91cd44bd761d5649e090d8e07",
+      "consumer": "governance.py:run_all_diagnostics and governance_runtime.py: stored findings before guarded generation",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[ai_governance]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "audiobook_director",
+      "name": "Diretor de Audiobook",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/audiobook.py",
+      "skills_declared": [
+        "read-aloud direction",
+        "pacing",
+        "pause design",
+        "emotion",
+        "pronunciation planning",
+        "character voices",
+        "TTS portability",
+        "comic timing",
+        "emotional performance"
+      ],
+      "essential_skills": [
+        "read-aloud direction",
+        "pause design",
+        "TTS portability"
+      ],
+      "inputs": [
+        "texto aprovado",
+        "idioma, público e emoções"
+      ],
+      "outputs": [
+        "roteiro de performance semanticamente idêntico"
+      ],
+      "quality_criteria": [
+        "texto semanticamente idêntico",
+        "pausas intencionais",
+        "emoção coerente",
+        "Bible Guard preservado",
+        "clímax e recompensa emocional audíveis sem exagero melodramático"
+      ],
+      "required_handoffs": [
+        "narrator",
+        "audio_qa"
+      ],
+      "configuration": {
+        "role_id": "audiobook_director",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "audiobook_node": true
+      },
+      "source_evidence": [
+        "agents/audiobook.py:85"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "99e9a94d13347fe43a6b06c8592d948317d8da84e23017ce391c8821f2028d17",
+      "consumer": "agents/audiobook.py:narracao_node: exact approved words plus performance markings",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[audiobook_director]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "character_creator",
+      "name": "Criador de Personagem",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/criador_personagem.py",
+      "skills_declared": [
+        "design de personagem",
+        "silhueta",
+        "paleta canônica",
+        "proporções",
+        "marcas permanentes",
+        "expressividade",
+        "potencial de série",
+        "acting emocional",
+        "memorabilidade"
+      ],
+      "essential_skills": [
+        "design de personagem",
+        "paleta canônica",
+        "marcas permanentes"
+      ],
+      "inputs": [
+        "ideia e estilo",
+        "idade e contexto do universo"
+      ],
+      "outputs": [
+        "DNA e referência candidata sujeita à aprovação"
+      ],
+      "quality_criteria": [
+        "DNA fixo separado de variáveis",
+        "descrição reproduzível",
+        "identidade visual diferenciável",
+        "expressões capazes de sustentar o arco emocional"
+      ],
+      "required_handoffs": [
+        "character_universe",
+        "character_variations",
+        "illustrator"
+      ],
+      "configuration": {
+        "role_id": "character_creator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "criar_personagem_a_partir_de_ideia": true
+      },
+      "source_evidence": [
+        "agents/criador_personagem.py:41"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "c0d0dcea3e5d9714c926035ef72b2cdfd0abef0305460f71233e4770f0a02d96",
+      "consumer": "pages/1_📖_Criar_do_Zero.py: candidate DNA and human-approved visual reference",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[character_creator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "character_variations",
+      "name": "Variações de Personagem",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/personagens_variacoes.py",
+      "skills_declared": [
+        "variações controladas",
+        "pose",
+        "roupa",
+        "expressão",
+        "temporada",
+        "festividade",
+        "versionamento",
+        "acting visual"
+      ],
+      "essential_skills": [
+        "variações controladas",
+        "expressão",
+        "versionamento"
+      ],
+      "inputs": [
+        "personagem e DNA fixo",
+        "referência-base e variáveis autorizadas"
+      ],
+      "outputs": [
+        "variações versionadas e aprovação explícita"
+      ],
+      "quality_criteria": [
+        "DNA travado preservado",
+        "base da variação registrada",
+        "A/B/C preservadas",
+        "expressão coerente com emoção sem alterar identidade"
+      ],
+      "required_handoffs": [
+        "character_universe",
+        "character_consistency"
+      ],
+      "configuration": {
+        "role_id": "character_variations",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "gerar_primeira_referencia": true,
+        "gerar_variacao": true,
+        "aprovar_variacao": true
+      },
+      "source_evidence": [
+        "agents/personagens_variacoes.py:51",
+        "agents/personagens_variacoes.py:76",
+        "agents/personagens_variacoes.py:150"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "aaae30e8b2966185cfbe3d6b1ef0139f0f83a85a691f81a2544178458b80d397",
+      "consumer": "\"pages/1_📖_Criar_do_Zero.py\" and \"retomar_fluxo.py\": gallery followed by explicit approval",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[character_variations]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "coloring_activity_creator",
+      "name": "Atividades para Colorir",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/atividades_colorir.py",
+      "skills_declared": [
+        "seleção de cenas",
+        "simplificação",
+        "line art",
+        "continuidade de personagem",
+        "adequação infantil",
+        "seleção de momentos memoráveis"
+      ],
+      "essential_skills": [
+        "seleção de cenas",
+        "simplificação",
+        "continuidade de personagem"
+      ],
+      "inputs": [
+        "cenas da história",
+        "DNA e referências autorizadas"
+      ],
+      "outputs": [
+        "páginas de colorir derivadas sem substituir os Masters"
+      ],
+      "quality_criteria": [
+        "cenas distintas",
+        "line art reutilizável",
+        "referência do personagem preservada",
+        "momentos escolhidos representam a jornada"
+      ],
+      "required_handoffs": [
+        "coloring_doctor",
+        "asset_library"
+      ],
+      "configuration": {
+        "role_id": "coloring_activity_creator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "atividades_colorir_node": true
+      },
+      "source_evidence": [
+        "agents/atividades_colorir.py:49"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "7cada6816c2d25f2a6be3e9cacc0e4420ae0f643f2cf6025f393660ed4825571",
+      "consumer": "renderizador_editorial.py: paginas_colorir; checkpoints preserve completed pages",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[coloring_activity_creator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "coloring_idea_generator",
+      "name": "Gerador de Ideias de Coloring",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/gerador_ideias_colorir.py",
+      "skills_declared": [
+        "conceito de coloring book",
+        "coerência temática",
+        "variedade de páginas",
+        "faixa etária",
+        "potencial de coleção",
+        "engajamento infantil"
+      ],
+      "essential_skills": [
+        "conceito de coloring book",
+        "variedade de páginas",
+        "faixa etária"
+      ],
+      "inputs": [
+        "quantidade",
+        "temas_usados"
+      ],
+      "outputs": [
+        "conceitos distintos de coloring book"
+      ],
+      "quality_criteria": [
+        "tema consistente",
+        "variedade sem repetição",
+        "complexidade apropriada",
+        "atividade convidativa"
+      ],
+      "required_handoffs": [
+        "line_art_specialist",
+        "coloring_layout"
+      ],
+      "configuration": {
+        "role_id": "coloring_idea_generator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "gerador_ideias_colorir_node": true
+      },
+      "source_evidence": [
+        "agents/gerador_ideias_colorir.py:52"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "cedaa5f910006fb862fbf2652c0acfccf6a2a441d85ac6b525e4d40f2f2035ae",
+      "consumer": "coloring_studio.py: selected concept and editable page descriptions",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[coloring_idea_generator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "coloring_layout",
+      "name": "Diagramador de Coloring",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/diagramador_colorir.py",
+      "skills_declared": [
+        "paginação",
+        "verso em branco",
+        "margens",
+        "ordem editorial",
+        "páginas opcionais",
+        "print layout",
+        "ritmo visual"
+      ],
+      "essential_skills": [
+        "paginação",
+        "verso em branco",
+        "margens"
+      ],
+      "inputs": [
+        "páginas de colorir e opções editoriais"
+      ],
+      "outputs": [
+        "sequência física com alternância e versos em branco"
+      ],
+      "quality_criteria": [
+        "ordem consistente",
+        "frentes/versos intencionais",
+        "sem elemento crítico fora da safe area",
+        "experiência fluida"
+      ],
+      "required_handoffs": [
+        "print_preflight",
+        "cover_specialist"
+      ],
+      "configuration": {
+        "role_id": "coloring_layout",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        29,
+        47
+      ],
+      "entrypoint_static_presence": {
+        "montar_layout_colorir": true,
+        "diagramador_colorir_node": true
+      },
+      "source_evidence": [
+        "agents/diagramador_colorir.py:27",
+        "agents/diagramador_colorir.py:45"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "c7e6e95aa9e9d5d45068a01f5fa7b7c99ef63630d2462401f52fb04bfce9fb76",
+      "consumer": "coloring_studio.py and agents/line_art_colorir.py: physical PDF order and exact cover page count",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[coloring_layout]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "cover_specialist",
+      "name": "Especialista de Capa",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/capa.py",
+      "skills_declared": [
+        "cover concept",
+        "thumbnail readability",
+        "visual hierarchy",
+        "character identity",
+        "genre fit",
+        "back cover breathing room",
+        "print wrap",
+        "emotional hook",
+        "distinctiveness"
+      ],
+      "essential_skills": [
+        "character identity",
+        "print wrap",
+        "thumbnail readability"
+      ],
+      "inputs": [
+        "história e Masters",
+        "formato, páginas e especificação da plataforma"
+      ],
+      "outputs": [
+        "arte sem texto e composição técnica separada revisáveis"
+      ],
+      "quality_criteria": [
+        "arte sem texto gerado pela IA",
+        "foco reconhecível em thumbnail",
+        "Master separado da tipografia",
+        "wrap calculado",
+        "capa comunica emoção/promessa sem enganar"
+      ],
+      "required_handoffs": [
+        "cover_master",
+        "print_preflight",
+        "bestseller_readiness"
+      ],
+      "configuration": {
+        "role_id": "cover_specialist",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [
+        133
+      ],
+      "entrypoint_static_presence": {
+        "prompt_arte_capa_frontal": true,
+        "gerar_artes_capa": true,
+        "montar_capa_fisica": true
+      },
+      "source_evidence": [
+        "agents/capa.py:89",
+        "agents/capa.py:109",
+        "agents/capa.py:131"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "148e8ef15101b3c727a3f75bc1c9dd25a2609bda2394174d1e7c79bcf6d16ff8",
+      "consumer": "capa_profissional.py and pages/7_🚀_Lançamento.py: separate art, typography and print preflight",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[cover_specialist]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "cybersecurity",
+      "name": "Agente de Cibersegurança",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/ciberseguranca.py",
+      "skills_declared": [
+        "autenticação e autorização",
+        "isolamento de tenant",
+        "validação de uploads",
+        "least privilege",
+        "proteção de segredos",
+        "dados pessoais",
+        "auditoria sanitizada",
+        "armazenamento privado",
+        "revisão de vulnerabilidades",
+        "resposta a incidentes",
+        "mudanças seguras",
+        "evidências de hardening"
+      ],
+      "essential_skills": [
+        "proteção de segredos",
+        "autenticação e autorização",
+        "auditoria sanitizada"
+      ],
+      "inputs": [
+        "fontes selecionadas e contexto de autorização"
+      ],
+      "outputs": [
+        "achados sanitizados; sem ataque, alteração ou certificação fictícia"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "cybersecurity",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        33,
+        39
+      ],
+      "entrypoint_static_presence": {
+        "run_diagnostic": true,
+        "check_security_action": true
+      },
+      "source_evidence": [
+        "agents/ciberseguranca.py:37",
+        "agents/ciberseguranca.py:31"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "1d9adac9939bb1a93f5f3d0bfe77d3e440ac39b9c8a2fbdfd43819565f067818",
+      "consumer": "governance.py:run_all_diagnostics and governance_runtime.py: sanitized security findings, no automatic attack or remediation",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[cybersecurity]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "data_governance",
+      "name": "Agente de Governança de Dados",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/governanca_dados.py",
+      "skills_declared": [
+        "classificação de dados",
+        "minimização",
+        "retenção",
+        "consentimento",
+        "linhagem",
+        "identidade de projeto",
+        "versionamento",
+        "backup e restauração",
+        "isolamento de tenant",
+        "controle de acesso",
+        "armazenamento privado",
+        "evidências de exposição"
+      ],
+      "essential_skills": [
+        "classificação de dados",
+        "consentimento",
+        "linhagem"
+      ],
+      "inputs": [
+        "metadados e contexto de privacidade"
+      ],
+      "outputs": [
+        "achados sobre consentimento, retenção e escopo sem expor manuscrito"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "data_governance",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        32,
+        38
+      ],
+      "entrypoint_static_presence": {
+        "run_diagnostic": true,
+        "check_data_action": true
+      },
+      "source_evidence": [
+        "agents/governanca_dados.py:36",
+        "agents/governanca_dados.py:30"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "1d71e242bf5ec9fb972f94be910fa2eaab54274d742844b89033a7389e9ddf9c",
+      "consumer": "governance.py:run_all_diagnostics and governance_runtime.py: consent/classification before guarded generation",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[data_governance]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "dedication",
+      "name": "Dedicatória",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/dedicatoria.py",
+      "skills_declared": [
+        "escrita afetiva",
+        "tom infantil/familiar",
+        "personalização",
+        "privacidade",
+        "não-invenção",
+        "coerência de voz"
+      ],
+      "essential_skills": [
+        "personalização",
+        "privacidade",
+        "não-invenção"
+      ],
+      "inputs": [
+        "pessoas e relações fornecidas",
+        "tom da obra"
+      ],
+      "outputs": [
+        "dedicatória sem inventar biografia"
+      ],
+      "quality_criteria": [
+        "somente pessoas fornecidas",
+        "relações respeitadas",
+        "texto proporcional ao livro",
+        "tom coerente com a obra"
+      ],
+      "required_handoffs": [
+        "diagrammer"
+      ],
+      "configuration": {
+        "role_id": "dedication",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "dedicatoria_node": true
+      },
+      "source_evidence": [
+        "agents/dedicatoria.py:74"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "17fa7d5c3ee30ec443f0649d9366c8b48f17253212820b3d972240449f276892",
+      "consumer": "renderizador_editorial.py: dedication; translation_localization.py: protected personal names",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[dedication]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "deep_code_review_engineer",
+      "name": "Engenheiro de Code Review Profundo",
+      "kind": "registered_role",
+      "execution": "hybrid",
+      "module": "agents/engenheiro_code_review_profundo.py",
+      "skills_declared": [
+        "line-by-line review",
+        "function-by-function review",
+        "control-flow reasoning",
+        "data-flow reasoning",
+        "state transition analysis",
+        "side-effect analysis",
+        "preconditions/postconditions",
+        "invariants",
+        "edge cases",
+        "error propagation",
+        "dead code detection",
+        "unreachable paths",
+        "implicit assumptions",
+        "contract review",
+        "system architecture",
+        "module boundaries",
+        "dependency direction",
+        "coupling/cohesion",
+        "clean architecture",
+        "SOLID",
+        "domain boundaries",
+        "state machines",
+        "event flows",
+        "anti-corruption layers",
+        "adapter patterns",
+        "provider abstraction",
+        "technical debt",
+        "backward compatibility",
+        "migration safety",
+        "anti-duplication",
+        "Python semantics",
+        "typing",
+        "exceptions",
+        "context managers",
+        "dataclasses",
+        "async concepts",
+        "concurrency hazards",
+        "I/O lifecycle",
+        "file handling",
+        "serialization",
+        "HTTP clients",
+        "timeouts",
+        "retry semantics",
+        "idempotency",
+        "resource cleanup",
+        "Streamlit rerun model",
+        "session_state",
+        "components v2",
+        "browser event lifecycle",
+        "HTML/CSS/JavaScript integration",
+        "mobile Safari",
+        "responsive behavior",
+        "forms",
+        "state synchronization",
+        "component remounts",
+        "audio/microphone permissions",
+        "progress/loading/error UX",
+        "accessibility",
+        "navigation integrity",
+        "requirements traceability",
+        "business rules",
+        "approval gates",
+        "workflow correctness",
+        "cost guardrails",
+        "master/version preservation",
+        "publishing controls",
+        "editorial routing",
+        "user intent preservation",
+        "fail-safe behavior",
+        "truthful status reporting",
+        "authentication/authorization",
+        "RBAC",
+        "tenant isolation",
+        "RLS",
+        "OWASP",
+        "secrets",
+        "injection",
+        "XSS/CSRF",
+        "secure uploads",
+        "least privilege",
+        "privacy by design",
+        "audit logs",
+        "sensitive error handling",
+        "dependency risk",
+        "PostgreSQL/Supabase",
+        "schema constraints",
+        "transactions",
+        "migrations",
+        "rollback",
+        "backup/restore",
+        "consistency",
+        "concurrency",
+        "cache invalidation",
+        "storage lifecycle",
+        "data retention",
+        "referential integrity",
+        "version history",
+        "API contract review",
+        "OpenRouter",
+        "AI providers",
+        "webhooks",
+        "OAuth concepts",
+        "request/response validation",
+        "provider capability mismatch",
+        "fallback behavior",
+        "rate limits",
+        "retry/backoff",
+        "network failure modes",
+        "LLM routing",
+        "tool boundaries",
+        "prompt contracts",
+        "structured output",
+        "context handling",
+        "agent handoffs",
+        "hallucination containment",
+        "human approval",
+        "cost controls",
+        "provider fallback",
+        "evaluation",
+        "observability",
+        "user journey",
+        "interaction friction",
+        "error recovery",
+        "feedback timing",
+        "mobile UX",
+        "empty/loading/error states",
+        "affordances",
+        "progressive disclosure",
+        "trustworthy copy",
+        "task completion",
+        "unit tests",
+        "integration tests",
+        "contract tests",
+        "E2E",
+        "regression tests",
+        "failure reproduction",
+        "minimal failing case",
+        "log forensics",
+        "runtime diagnostics",
+        "browser/provider tests",
+        "fault injection",
+        "test doubles",
+        "coverage gap analysis",
+        "CI failure triage",
+        "test-log root-cause isolation",
+        "fix-and-retest loop",
+        "latency analysis",
+        "memory/resource leaks",
+        "caching",
+        "graceful degradation",
+        "circuit breakers",
+        "backpressure",
+        "recovery",
+        "SLO thinking",
+        "race conditions",
+        "duplicate execution",
+        "replay safety"
+      ],
+      "essential_skills": [
+        "line-by-line review"
+      ],
+      "inputs": [
+        "pedido e fontes selecionadas",
+        "evidência rastreável dos achados"
+      ],
+      "outputs": [
+        "revisão com citações verificadas sem executar o código proposto"
+      ],
+      "quality_criteria": [
+        "diagnóstico vinculado a evidência",
+        "plano não equivale a correção",
+        "teste de regressão e validação de runtime quando aplicável"
+      ],
+      "required_handoffs": [
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "deep_code_review_engineer",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [
+        290
+      ],
+      "entrypoint_static_presence": {
+        "review_sources": true,
+        "build_deep_review_plan": true,
+        "correction_gate": true
+      },
+      "source_evidence": [
+        "agents/engenheiro_code_review_profundo.py:283",
+        "agents/engenheiro_code_review_profundo.py:156",
+        "agents/engenheiro_code_review_profundo.py:266"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "fd20fc74f1e4ebfffb68be656d07902c440c673844fa03beffbf970dd0b43fab",
+      "consumer": "agents/engenheiro_saas_automacao.py: verified code citations; independent regression/runtime proof required",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[deep_code_review_engineer]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "diagrammer",
+      "name": "Diagramador",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/diagramador.py",
+      "skills_declared": [
+        "page sequencing",
+        "text-image alternation",
+        "front matter",
+        "safe areas",
+        "readability",
+        "print structure",
+        "page-turn rhythm",
+        "visual pacing"
+      ],
+      "essential_skills": [
+        "page sequencing",
+        "safe areas",
+        "print structure"
+      ],
+      "inputs": [
+        "conteúdo e imagens aprovados",
+        "perfil etário e formato"
+      ],
+      "outputs": [
+        "layout página a página, contagem e preflight"
+      ],
+      "quality_criteria": [
+        "ordem reproduzível",
+        "sem conteúdo órfão",
+        "layout compatível com preflight",
+        "viradas de página preservam surpresa/emoção quando possível"
+      ],
+      "required_handoffs": [
+        "print_preflight",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "diagrammer",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        44,
+        96
+      ],
+      "entrypoint_static_presence": {
+        "montar_layout": true,
+        "diagramador_node": true
+      },
+      "source_evidence": [
+        "agents/diagramador.py:31",
+        "agents/diagramador.py:94"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "0dae3ee84b75a501be786499ff89c210b2428ba243c23f5fe0aca565c3c84516",
+      "consumer": "renderizador_editorial.py: physical page order; qualidade_impressao.py: independent preflight",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[diagrammer]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "idea_generator",
+      "name": "Gerador de Ideias",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/gerador_ideias.py",
+      "skills_declared": [
+        "ideação infantil",
+        "promessa de leitura",
+        "variedade temática",
+        "potencial de série",
+        "adequação etária",
+        "originalidade",
+        "Heart Arc seed",
+        "releitura e identificação"
+      ],
+      "essential_skills": [
+        "ideação infantil",
+        "adequação etária",
+        "originalidade"
+      ],
+      "inputs": [
+        "quantidade",
+        "temas_usados",
+        "faixa_etaria"
+      ],
+      "outputs": [
+        "ideias originais com título, conflito e promessa de leitura"
+      ],
+      "quality_criteria": [
+        "ideia clara em uma frase",
+        "conflito compreensível",
+        "emoção concreta",
+        "oportunidade visual",
+        "lição não forçada",
+        "gancho que desperta curiosidade"
+      ],
+      "required_handoffs": [
+        "theme_curator",
+        "storyteller"
+      ],
+      "configuration": {
+        "role_id": "idea_generator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "gerador_ideias_node": true
+      },
+      "source_evidence": [
+        "agents/gerador_ideias.py:43"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "f4fc3bc667ad73c5aa48a197e71ed46ebe7a001edc9d2f1e5376f4eda43fdb17",
+      "consumer": "\"pages/1_📖_Criar_do_Zero.py\" and \"pages/39_✍️_Historia_4_Estilos.py\": author-selected premise",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[idea_generator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "illustrator",
+      "name": "Ilustrador",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/ilustrador.py",
+      "skills_declared": [
+        "composição infantil",
+        "character consistency",
+        "story-image alignment",
+        "direção emocional",
+        "luz e cor",
+        "continuidade visual",
+        "safe area",
+        "referência multimodal",
+        "visual storytelling",
+        "humor visual",
+        "recompensa emocional"
+      ],
+      "essential_skills": [
+        "character consistency",
+        "direção emocional",
+        "luz e cor"
+      ],
+      "inputs": [
+        "cena e mapa emocional",
+        "Character Master e Style DNA",
+        "referências autorizadas"
+      ],
+      "outputs": [
+        "imagem e prompt rastreáveis, histórico e aprovação separados"
+      ],
+      "quality_criteria": [
+        "sem texto embutido",
+        "identidade canônica preservada",
+        "ação da cena representada",
+        "imagem revisável antes da aprovação",
+        "imagem aprofunda a emoção sem tornar a cena monocromática",
+        "detalhes visuais apoiam releitura"
+      ],
+      "required_handoffs": [
+        "character_consistency",
+        "quality_guardian",
+        "asset_library"
+      ],
+      "configuration": {
+        "role_id": "illustrator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "prompt_cena": true,
+        "ilustrador_node": true,
+        "gerar_cena_unica": true
+      },
+      "source_evidence": [
+        "agents/ilustrador.py:97",
+        "agents/ilustrador.py:150",
+        "agents/ilustrador.py:245"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "e18ab1b044ac0f4b108240bc341f22bad794972df732000cabc53ade91c76b8e",
+      "consumer": "renderizador_editorial.py: cenas_imagem; agents/ilustrador.py: history and separate approval",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[illustrator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "it_governance",
+      "name": "Agente de Governança de TI",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/governanca_ti.py",
+      "skills_declared": [
+        "saúde operacional",
+        "observabilidade",
+        "continuidade",
+        "gestão de incidentes",
+        "CI e regressão",
+        "gestão de mudanças",
+        "release e rollback",
+        "integridade de configuração",
+        "inventário de dependências",
+        "versionamento",
+        "higiene técnica",
+        "limites de diagnóstico estático"
+      ],
+      "essential_skills": [
+        "gestão de mudanças",
+        "CI e regressão",
+        "release e rollback"
+      ],
+      "inputs": [
+        "fontes e evidências operacionais fornecidas"
+      ],
+      "outputs": [
+        "achados técnicos e limites de prontidão sem deploy automático"
+      ],
+      "quality_criteria": [
+        "achados com fonte e escopo",
+        "UNKNOWN quando não há evidência",
+        "nenhuma alteração destrutiva automática"
+      ],
+      "required_handoffs": [
+        "saas_automation_engineer",
+        "deep_code_review_engineer",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "it_governance",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        35,
+        41
+      ],
+      "entrypoint_static_presence": {
+        "run_diagnostic": true,
+        "check_it_action": true
+      },
+      "source_evidence": [
+        "agents/governanca_ti.py:39",
+        "agents/governanca_ti.py:33"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "aec8d286baa4c5c0536fc9d02d1aea3072b16a06fd348ba49ec87d85fac0a1bf",
+      "consumer": "governance.py:run_all_diagnostics and governance_runtime.py: operational evidence and release limits",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[it_governance]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "line_art_specialist",
+      "name": "Especialista em Line Art",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/line_art_colorir.py",
+      "skills_declared": [
+        "line art",
+        "espessura de traço",
+        "áreas fechadas",
+        "simplicidade por idade",
+        "margens",
+        "printability",
+        "conversão referência→line art",
+        "expressividade"
+      ],
+      "essential_skills": [
+        "line art",
+        "espessura de traço",
+        "áreas fechadas"
+      ],
+      "inputs": [
+        "descrição da página",
+        "idade e complexidade",
+        "DNA e referência quando vinculados"
+      ],
+      "outputs": [
+        "line art revisável com traços, margens e identidade verificáveis"
+      ],
+      "quality_criteria": [
+        "sem cinza indesejado",
+        "contornos legíveis",
+        "não cortar elementos",
+        "personagem consistente",
+        "emoção da cena ainda reconhecível"
+      ],
+      "required_handoffs": [
+        "coloring_doctor",
+        "print_preflight"
+      ],
+      "configuration": {
+        "role_id": "line_art_specialist",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "prompt_pagina_colorir": true,
+        "gerar_pagina_colorir": true,
+        "gerar_variacao_line_art": true
+      },
+      "source_evidence": [
+        "agents/line_art_colorir.py:60",
+        "agents/line_art_colorir.py:99",
+        "agents/line_art_colorir.py:133"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "b9b7ceb9f5fdd8b2634c6c924b34c0ce20d27691bf52dcca0b632449b3108b78",
+      "consumer": "coloring_studio.py: versioned pages; rendering and Coloring Doctor require separate review",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[line_art_specialist]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "market_categories",
+      "name": "Especialista de Categorias",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/pesquisa_mercado.py",
+      "skills_declared": [
+        "category fit",
+        "metadata taxonomy",
+        "marketplace awareness",
+        "compliance",
+        "relevância comercial",
+        "reader fit"
+      ],
+      "essential_skills": [
+        "category fit",
+        "metadata taxonomy",
+        "compliance"
+      ],
+      "inputs": [
+        "livro e mercado-alvo",
+        "evidência de categorias quando disponível"
+      ],
+      "outputs": [
+        "categorias candidatas relevantes e proveniência"
+      ],
+      "quality_criteria": [
+        "categoria coerente com conteúdo",
+        "marketplace explicitado",
+        "árvore tratada como mutável",
+        "nenhuma distorção do livro para encaixar categoria"
+      ],
+      "required_handoffs": [
+        "market_bestseller_intelligence",
+        "publishing_engine"
+      ],
+      "configuration": {
+        "role_id": "market_categories",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "pesquisa_categorias_node": true
+      },
+      "source_evidence": [
+        "agents/pesquisa_mercado.py:82"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "354e37e670b3478c478f2b7672e88f35884f12779ec0bff1de068f6997511939",
+      "consumer": "pacote_publicacao.py and bestseller_readiness.py: candidate metadata with observed/inferred provenance",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[market_categories]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "market_keywords",
+      "name": "Especialista de Keywords",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/pesquisa_mercado.py",
+      "skills_declared": [
+        "search intent",
+        "long-tail keywords",
+        "metadata compliance",
+        "relevância",
+        "market evidence literacy",
+        "reader intent"
+      ],
+      "essential_skills": [
+        "search intent",
+        "metadata compliance",
+        "market evidence literacy"
+      ],
+      "inputs": [
+        "título e sinopse",
+        "mercado e evidência externa quando disponível"
+      ],
+      "outputs": [
+        "keywords e proveniência sem métricas inventadas"
+      ],
+      "quality_criteria": [
+        "sem volume inventado",
+        "sem ranking inventado",
+        "proveniência marcada",
+        "keywords relevantes ao conteúdo",
+        "descoberta não sacrifica fidelidade editorial"
+      ],
+      "required_handoffs": [
+        "market_bestseller_intelligence",
+        "publishing_engine"
+      ],
+      "configuration": {
+        "role_id": "market_keywords",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "pesquisa_palavras_chave_node": true
+      },
+      "source_evidence": [
+        "agents/pesquisa_mercado.py:65"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "354e37e670b3478c478f2b7672e88f35884f12779ec0bff1de068f6997511939",
+      "consumer": "pacote_publicacao.py and bestseller_readiness.py: candidate metadata with observed/inferred provenance",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[market_keywords]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "marketing_launch",
+      "name": "Marketing de Lançamento",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/marketing.py",
+      "skills_declared": [
+        "launch messaging",
+        "social copy",
+        "Pinterest discoverability",
+        "email",
+        "CTA",
+        "review request compliance",
+        "campaign consistency",
+        "emotional positioning",
+        "reader promise"
+      ],
+      "essential_skills": [
+        "launch messaging",
+        "review request compliance",
+        "campaign consistency"
+      ],
+      "inputs": [
+        "livro, público e sinopse"
+      ],
+      "outputs": [
+        "materiais candidatos sem envio nem promessa de vendas"
+      ],
+      "quality_criteria": [
+        "mensagens fiéis ao livro",
+        "CTA claro",
+        "sem incentivo indevido a review",
+        "sem promessa de ranking",
+        "comunicar valor emocional sem transformar fé em clickbait"
+      ],
+      "required_handoffs": [
+        "launch_strategy",
+        "publishing_distribution"
+      ],
+      "configuration": {
+        "role_id": "marketing_launch",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "marketing_lancamento_node": true
+      },
+      "source_evidence": [
+        "agents/marketing.py:49"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "8d266d792d1dfeee80d905aaccc72b4260e6dcf2932a397c2e5d3b4f7e5d91d5",
+      "consumer": "pages/7_🚀_Lançamento.py: draft materials displayed; no automatic message or posting",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[marketing_launch]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "narrator",
+      "name": "Narrador/TTS",
+      "kind": "registered_role",
+      "execution": "tool",
+      "module": "agents/audiobook.py",
+      "skills_declared": [
+        "TTS rendering",
+        "segment naming",
+        "pronunciation execution",
+        "version preservation",
+        "audio file integrity",
+        "pacing fidelity",
+        "emotional fidelity"
+      ],
+      "essential_skills": [
+        "TTS rendering",
+        "version preservation",
+        "audio file integrity"
+      ],
+      "inputs": [
+        "roteiro aprovado e segmentos numerados",
+        "executor TTS configurado"
+      ],
+      "outputs": [
+        "arquivos de áudio rastreáveis preservando versões"
+      ],
+      "quality_criteria": [
+        "segmentos rastreáveis",
+        "nenhuma substituição silenciosa",
+        "mix exige escuta humana",
+        "direção emocional preservada"
+      ],
+      "required_handoffs": [
+        "audio_qa",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "narrator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        126
+      ],
+      "entrypoint_static_presence": {
+        "narracao_node": true
+      },
+      "source_evidence": [
+        "agents/audiobook.py:123"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "99e9a94d13347fe43a6b06c8592d948317d8da84e23017ce391c8821f2028d17",
+      "consumer": "pages/1_📖_Criar_do_Zero.py: per-scene audio; Audiobook Studio provides separate listening/QA",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[narrator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "pedagogical_editor",
+      "name": "Editor Pedagógico",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/complementos_editoriais.py",
+      "skills_declared": [
+        "leitura integral do manuscrito",
+        "adequação etária",
+        "mediação de leitura",
+        "perguntas abertas por idade",
+        "psicologia das cores editorial",
+        "fidelidade à moral",
+        "Bible Guard",
+        "validação de campos e quantidades"
+      ],
+      "essential_skills": [
+        "leitura integral do manuscrito",
+        "perguntas abertas por idade",
+        "Bible Guard"
+      ],
+      "inputs": [
+        "história e mapa emocional",
+        "idade, moral e referência aprovadas"
+      ],
+      "outputs": [
+        "complementos validados antes de substituir o conteúdo salvo"
+      ],
+      "quality_criteria": [
+        "perguntas ligadas à história",
+        "quantidade conforme perfil etário",
+        "nenhum dado pedagógico inventado",
+        "referência bíblica preservada"
+      ],
+      "required_handoffs": [
+        "story_reviewer",
+        "diagrammer"
+      ],
+      "configuration": {
+        "role_id": "pedagogical_editor",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "gerar_complementos_editoriais": true,
+        "validar_complementos": true,
+        "aplicar_complementos": true
+      },
+      "source_evidence": [
+        "agents/complementos_editoriais.py:28",
+        "agents/complementos_editoriais.py:101",
+        "agents/complementos_editoriais.py:144"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "01c0f5e67cd0a410fbbaff24cdc420176f98a150d7e1a5d49bd6c49074af2a21",
+      "consumer": "agents/complementos_editoriais.py: validated complements; renderizador_editorial.py: editorial pages",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[pedagogical_editor]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "photo_to_character",
+      "name": "Foto → Personagem",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/foto_para_personagem.py",
+      "skills_declared": [
+        "image-to-image",
+        "preservação de atributos",
+        "simplificação visual",
+        "consistência estilística",
+        "controle de referência"
+      ],
+      "essential_skills": [
+        "image-to-image",
+        "preservação de atributos",
+        "controle de referência"
+      ],
+      "inputs": [
+        "foto autorizada",
+        "instruções e estilo"
+      ],
+      "outputs": [
+        "imagem derivada revisável sem aprovação automática"
+      ],
+      "quality_criteria": [
+        "referência de origem registrada",
+        "resultado não tratado como identidade oficial sem aprovação"
+      ],
+      "required_handoffs": [
+        "character_universe",
+        "character_variations"
+      ],
+      "configuration": {
+        "role_id": "photo_to_character",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "gerar_personagem_a_partir_de_foto": true
+      },
+      "source_evidence": [
+        "agents/foto_para_personagem.py:36"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "69ecff8949be6418c0fb60756e236f52645616d0021b24e14c055f4e1f469cc7",
+      "consumer": "pages/1_📖_Criar_do_Zero.py: consented derived candidate, never automatic Master",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[photo_to_character]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "saas_automation_engineer",
+      "name": "Arquiteto SaaS, Full-Stack & Automação",
+      "kind": "registered_role",
+      "execution": "deterministic",
+      "module": "agents/engenheiro_saas_automacao.py",
+      "skills_declared": [
+        "software architecture",
+        "modular monolith",
+        "service boundaries",
+        "API design",
+        "event-driven patterns",
+        "state machines",
+        "idempotency",
+        "versioning",
+        "anti-duplication",
+        "domain modeling",
+        "clean architecture",
+        "SOLID",
+        "separation of concerns",
+        "Python",
+        "FastAPI/ASGI concepts",
+        "REST APIs",
+        "JSON APIs",
+        "background jobs",
+        "queues",
+        "webhooks",
+        "rate limiting",
+        "retries",
+        "timeouts",
+        "circuit breakers",
+        "structured errors",
+        "file processing",
+        "API pagination",
+        "caching",
+        "service integrations",
+        "full-stack application development",
+        "frontend-backend integration",
+        "CRUD applications",
+        "dashboard development",
+        "admin portals",
+        "internal tools",
+        "forms and validation",
+        "real-time UI concepts",
+        "session management",
+        "role-aware interfaces",
+        "end-to-end feature delivery",
+        "Streamlit",
+        "HTML",
+        "CSS",
+        "JavaScript",
+        "TypeScript concepts",
+        "React concepts",
+        "Next.js concepts",
+        "responsive UI",
+        "mobile-first design",
+        "accessibility",
+        "component architecture",
+        "design systems",
+        "state synchronization",
+        "browser/mobile compatibility",
+        "microinteractions",
+        "performance",
+        "PWA concepts",
+        "business websites",
+        "marketing websites",
+        "landing pages",
+        "product pages",
+        "pricing pages",
+        "contact pages",
+        "FAQ pages",
+        "blog structure",
+        "navigation architecture",
+        "conversion flows",
+        "lead capture",
+        "newsletter forms",
+        "cookie/consent UX",
+        "responsive sections",
+        "reusable page sections",
+        "information architecture",
+        "user flows",
+        "wireframes",
+        "visual hierarchy",
+        "interaction design",
+        "responsive layouts",
+        "empty states",
+        "loading states",
+        "error states",
+        "onboarding UX",
+        "form UX",
+        "accessibility WCAG concepts",
+        "usability",
+        "design consistency",
+        "technical SEO",
+        "semantic HTML",
+        "metadata",
+        "Open Graph",
+        "structured data concepts",
+        "sitemap",
+        "robots.txt",
+        "Core Web Vitals concepts",
+        "analytics integration",
+        "conversion tracking",
+        "A/B testing concepts",
+        "landing page CRO",
+        "performance budgets",
+        "PostgreSQL/Supabase",
+        "schema design",
+        "migrations",
+        "transactions",
+        "indexes",
+        "row-level security",
+        "data retention",
+        "backup/restore",
+        "audit trails",
+        "query optimization",
+        "data validation",
+        "storage buckets",
+        "signed URLs concepts",
+        "authentication",
+        "authorization",
+        "RBAC",
+        "tenant isolation",
+        "secrets management",
+        "OWASP",
+        "input validation",
+        "secure uploads",
+        "least privilege",
+        "privacy by design",
+        "CSRF/XSS/SQL injection awareness",
+        "secure cookies",
+        "session security",
+        "CORS concepts",
+        "security by default",
+        "fail-closed production gates",
+        "MFA for privileged users",
+        "recent re-authentication for critical actions",
+        "security headers",
+        "vulnerability scanning",
+        "dependency security review",
+        "malicious upload controls",
+        "cross-tenant access prevention",
+        "multi-tenancy",
+        "plans/entitlements",
+        "usage metering",
+        "quotas",
+        "feature flags",
+        "onboarding",
+        "account lifecycle",
+        "billing boundaries",
+        "admin tooling",
+        "trial flows",
+        "subscription UX",
+        "workspace concepts",
+        "invites",
+        "audit history",
+        "product analytics",
+        "workflow automation",
+        "schedulers",
+        "event triggers",
+        "job orchestration",
+        "human approval gates",
+        "deduplication",
+        "replay safety",
+        "dead-letter handling",
+        "cron concepts",
+        "automation state machines",
+        "reconciliation jobs",
+        "notifications",
+        "third-party APIs",
+        "OAuth concepts",
+        "webhook consumers",
+        "webhook producers",
+        "email integrations",
+        "calendar integrations",
+        "storage integrations",
+        "payment integration boundaries",
+        "API adapters",
+        "provider abstraction",
+        "fallback providers",
+        "integration testing",
+        "LLM orchestration",
+        "tool routing",
+        "structured outputs",
+        "prompt/version management",
+        "guardrails",
+        "cost controls",
+        "fallback models",
+        "evaluation",
+        "human-in-the-loop",
+        "agent workflows",
+        "RAG concepts",
+        "context management",
+        "tool permission boundaries",
+        "unit tests",
+        "integration tests",
+        "contract tests",
+        "end-to-end tests",
+        "regression tests",
+        "browser tests",
+        "load tests",
+        "failure injection",
+        "test fixtures",
+        "CI quality gates",
+        "UI smoke tests",
+        "API tests",
+        "migration tests",
+        "accessibility tests concepts",
+        "security regression tests",
+        "Git/GitHub",
+        "branching",
+        "pull requests",
+        "GitHub Actions",
+        "CI/CD",
+        "Streamlit Cloud",
+        "containers",
+        "environment parity",
+        "release strategy",
+        "rollback",
+        "zero-downtime thinking",
+        "environment variables",
+        "preview environments concepts",
+        "deployment diagnostics",
+        "structured logging",
+        "metrics",
+        "tracing",
+        "health checks",
+        "SLO/SLI",
+        "alerting",
+        "error budgets",
+        "incident diagnostics",
+        "correlation IDs",
+        "operational dashboards",
+        "frontend error monitoring concepts",
+        "audit events",
+        "graceful degradation",
+        "fault tolerance",
+        "backpressure",
+        "concurrency safety",
+        "recovery points",
+        "disaster recovery",
+        "capacity planning",
+        "performance optimization",
+        "cache invalidation",
+        "retry safety",
+        "provider outage fallbacks",
+        "code review",
+        "static analysis",
+        "dependency hygiene",
+        "documentation",
+        "ADR",
+        "release checklists",
+        "technical debt control",
+        "maintainability",
+        "developer experience",
+        "naming conventions",
+        "modularity",
+        "refactoring safety"
+      ],
+      "essential_skills": [
+        "full-stack application development",
+        "integration testing",
+        "human approval gates"
+      ],
+      "inputs": [
+        "pedido e fontes locais selecionadas",
+        "evidência de execução quando fornecida"
+      ],
+      "outputs": [
+        "plano e diagnóstico, nunca patch ou deploy executado por IA"
+      ],
+      "quality_criteria": [
+        "diagnóstico vinculado a evidência",
+        "plano não equivale a correção",
+        "teste de regressão e validação de runtime quando aplicável"
+      ],
+      "required_handoffs": [
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "saas_automation_engineer",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": false,
+      "deterministic_gate_source_lines": [
+        338
+      ],
+      "entrypoint_static_presence": {
+        "handle_saas_request": true,
+        "run_diagnostic": true,
+        "automation_safety_gate": true
+      },
+      "source_evidence": [
+        "agents/engenheiro_saas_automacao.py:273",
+        "agents/engenheiro_saas_automacao.py:330",
+        "agents/engenheiro_saas_automacao.py:211"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "análise local não comprova produção, certificação ou execução de correções"
+      ],
+      "source_sha256": "2c1ce98eb17c948c4755b1f6680d2b373570ee3765bdca06e86a02511b7cdfb7",
+      "consumer": "pages/37_🧠_Agent_Skills_Bestseller_Readiness.py: evidence-based diagnostic, no automatic patch/deploy",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[saas_automation_engineer]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "sales_synopsis",
+      "name": "Sinopse de Vendas",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/sinopse.py",
+      "skills_declared": [
+        "copy editorial",
+        "benefit framing",
+        "clareza",
+        "curiosidade",
+        "adequação ao público",
+        "contracapa",
+        "emotional hook",
+        "Heart Arc distillation"
+      ],
+      "essential_skills": [
+        "copy editorial",
+        "adequação ao público",
+        "emotional hook"
+      ],
+      "inputs": [
+        "história completa",
+        "público e aprendizado"
+      ],
+      "outputs": [
+        "sinopse curta e longa fiéis à obra"
+      ],
+      "quality_criteria": [
+        "não entregar o final desnecessariamente",
+        "lição e público claros",
+        "sem alegações falsas",
+        "preservar encanto antes de explicar a moral"
+      ],
+      "required_handoffs": [
+        "market_keywords",
+        "marketing_launch",
+        "cover_specialist"
+      ],
+      "configuration": {
+        "role_id": "sales_synopsis",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "sinopse_node": true
+      },
+      "source_evidence": [
+        "agents/sinopse.py:56"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "d60443027a3e748a93c5d14667532f6895193dbadceb1571790f0feae4e82b12",
+      "consumer": "agents/capa.py and pacote_publicacao.py: backcover and metadata without automatic publication",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[sales_synopsis]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "scene_director",
+      "name": "Diretor de Cena",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "character_guide.py",
+      "skills_declared": [
+        "composição",
+        "enquadramento",
+        "acting e poses",
+        "continuidade visual",
+        "Character DNA",
+        "Style DNA",
+        "World Masters",
+        "cor e iluminação",
+        "adequação etária",
+        "espaço para texto editorial",
+        "opções A/B/C",
+        "originalidade visual"
+      ],
+      "essential_skills": [
+        "Character DNA",
+        "World Masters",
+        "cor e iluminação"
+      ],
+      "inputs": [
+        "trecho e história completa",
+        "Masters, DNA e mapa emocional",
+        "idade e enquadramento"
+      ],
+      "outputs": [
+        "três propostas A/B/C distintas sem gerar imagens"
+      ],
+      "quality_criteria": [
+        "três propostas completas e distintas",
+        "ação fiel ao trecho",
+        "identidade preservada",
+        "paleta atua no ambiente",
+        "não gerar imagem nesta etapa"
+      ],
+      "required_handoffs": [
+        "illustrator",
+        "character_consistency",
+        "emotional_color_director"
+      ],
+      "configuration": {
+        "role_id": "scene_director",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "suggest_scene_concepts": true,
+        "validate_scene_concepts": true,
+        "compose_scene_prompt": true
+      },
+      "source_evidence": [
+        "character_guide.py:272",
+        "character_guide.py:327",
+        "character_guide.py:345"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "3f20087f2d0e8a480e1e3336edc1bb73bfd4ba71c696f968c14ea7f6902e2898",
+      "consumer": "visual_execution.py and comic_studio.py: chosen A/B/C followed by explicit image generation",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[scene_director]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "story_editor",
+      "name": "Editor de História",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/editor_historia.py",
+      "skills_declared": [
+        "edição cena a cena",
+        "clareza infantil",
+        "ritmo",
+        "continuidade",
+        "redução de redundância",
+        "preservação de intenção",
+        "Heart Arc preservation",
+        "voz narrativa"
+      ],
+      "essential_skills": [
+        "edição cena a cena",
+        "continuidade",
+        "preservação de intenção"
+      ],
+      "inputs": [
+        "cena e manuscrito",
+        "instrução delimitada",
+        "faixa_etaria"
+      ],
+      "outputs": [
+        "cena editada ou sugestões sem substituir aprovações"
+      ],
+      "quality_criteria": [
+        "escopo da edição respeitado",
+        "nenhuma mudança colateral",
+        "voz e idade preservadas",
+        "transformação e fé não achatadas pela edição"
+      ],
+      "required_handoffs": [
+        "story_reviewer",
+        "biblical_reference_validator"
+      ],
+      "configuration": {
+        "role_id": "story_editor",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "editar_cena": true,
+        "sugerir_versiculos": true,
+        "sugerir_licoes": true
+      },
+      "source_evidence": [
+        "agents/editor_historia.py:51",
+        "agents/editor_historia.py:109",
+        "agents/editor_historia.py:137"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "61ffee668446321a06db4874f719b86616d5c52615012db629868fc3ed1ed343",
+      "consumer": "\"pages/1_📖_Criar_do_Zero.py\" and \"editorial_remaster_revision.py\": one scene plus explicit persistence",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[story_editor]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "story_reviewer",
+      "name": "Revisor Editorial",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/revisor.py",
+      "skills_declared": [
+        "continuidade",
+        "gramática",
+        "child readability",
+        "read-aloud",
+        "repetição intencional",
+        "densidade por cena",
+        "coerência de arco",
+        "Heart Arc audit",
+        "releitura",
+        "integração cristã não-pregadora"
+      ],
+      "essential_skills": [
+        "continuidade",
+        "gramática",
+        "Heart Arc audit"
+      ],
+      "inputs": [
+        "manuscrito completo",
+        "faixa_etaria",
+        "referência e moral"
+      ],
+      "outputs": [
+        "revisao_aprovada e notas rastreáveis por cena"
+      ],
+      "quality_criteria": [
+        "notas localizadas",
+        "sem reescrita silenciosa",
+        "aprovação somente quando critérios centrais passam",
+        "história funciona sem depender da moral explicada",
+        "transformação é vivida",
+        "fé emerge naturalmente"
+      ],
+      "required_handoffs": [
+        "storyteller",
+        "quality_guardian"
+      ],
+      "configuration": {
+        "role_id": "story_reviewer",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "revisor_node": true
+      },
+      "source_evidence": [
+        "agents/revisor.py:55"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "993372fb574a7fcdcff867242ab0267ca04586b96fcf4f0a163e5daaa336c6a6",
+      "consumer": "graph.py: bounded rewrite loop or human review; manuscript approval before paid production",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[story_reviewer]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "storyteller",
+      "name": "Roteirista",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/roteirista.py",
+      "skills_declared": [
+        "storytelling infantil",
+        "gancho inicial",
+        "page-turn structure",
+        "read-aloud rhythm",
+        "arco emocional",
+        "ação visual",
+        "repetição suave",
+        "integração cristã natural",
+        "continuidade de série",
+        "FaithBloom Heart Arc",
+        "humor e surpresa",
+        "releitura",
+        "recompensa emocional"
+      ],
+      "essential_skills": [
+        "storytelling infantil",
+        "arco emocional",
+        "FaithBloom Heart Arc"
+      ],
+      "inputs": [
+        "tema e faixa etária",
+        "personagens e DNA",
+        "lição e referência aprovadas"
+      ],
+      "outputs": [
+        "cenas numeradas, resolução, celebração e lição final"
+      ],
+      "quality_criteria": [
+        "gancho nas cenas iniciais",
+        "uma ação visual por cena",
+        "emoções concretas",
+        "progressão emocional causal",
+        "transformação vivida e não explicada",
+        "fé orgânica",
+        "fechamento memorável",
+        "história divertida mesmo antes da moral"
+      ],
+      "required_handoffs": [
+        "story_reviewer",
+        "emotional_color_director",
+        "illustrator"
+      ],
+      "configuration": {
+        "role_id": "storyteller",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "roteirista_node": true,
+        "montar_prompt": true
+      },
+      "source_evidence": [
+        "agents/roteirista.py:152",
+        "agents/roteirista.py:119"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "f13580b9c66c62ff1b7579e90a3fdfff5819b876946add3a4555c572a0d74b52",
+      "consumer": "agents/revisor.py and emotional_color_director.py: manuscript review and scene directions",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[storyteller]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "theme_curator",
+      "name": "Curador de Tema",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/curador_tema.py",
+      "skills_declared": [
+        "curadoria temática",
+        "arco emocional",
+        "valores cristãos",
+        "coerência tema-lição",
+        "referência bíblica candidata",
+        "Heart Arc",
+        "fé orgânica"
+      ],
+      "essential_skills": [
+        "curadoria temática",
+        "arco emocional",
+        "referência bíblica candidata"
+      ],
+      "inputs": [
+        "ideia ou tema livre",
+        "faixa_etaria"
+      ],
+      "outputs": [
+        "emoção, aprendizado e referência candidata não validada"
+      ],
+      "quality_criteria": [
+        "emoção válida",
+        "lição infantil concreta",
+        "transformação vivível",
+        "referência marcada como candidata até validação",
+        "integração espiritual leve e coerente"
+      ],
+      "required_handoffs": [
+        "biblical_reference_validator",
+        "storyteller"
+      ],
+      "configuration": {
+        "role_id": "theme_curator",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "curador_tema_node": true
+      },
+      "source_evidence": [
+        "agents/curador_tema.py:56"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "c174d0f2d6fb50e4e1c56bad952cffc9bbe8ac0528ffd595dc2229a0e4f48f2e",
+      "consumer": "agents/roteirista.py: tema, emotion and reference candidate; biblical_reference_validator.py: separate approval",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[theme_curator]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    },
+    {
+      "role_id": "translator_localizer",
+      "name": "Tradutor & Localizador",
+      "kind": "registered_role",
+      "execution": "llm",
+      "module": "agents/tradutor.py",
+      "skills_declared": [
+        "translation",
+        "localization",
+        "child language",
+        "locale variants",
+        "onomatopoeia localization",
+        "glossary consistency",
+        "cultural sensitivity",
+        "Bible Guard",
+        "humor localization",
+        "Heart Arc preservation"
+      ],
+      "essential_skills": [
+        "translation",
+        "localization",
+        "Bible Guard"
+      ],
+      "inputs": [
+        "Master aprovado",
+        "locale e glossário",
+        "registro bíblico do idioma"
+      ],
+      "outputs": [
+        "tradução derivada com fonte preservada e revisão separada"
+      ],
+      "quality_criteria": [
+        "nenhuma omissão/invenção",
+        "nomes protegidos",
+        "naturalidade infantil",
+        "mercado explícito",
+        "versículo protegido",
+        "emoção e transformação equivalentes no idioma-alvo"
+      ],
+      "required_handoffs": [
+        "linguistic_reviewer",
+        "audiobook_director"
+      ],
+      "configuration": {
+        "role_id": "translator_localizer",
+        "ok": true,
+        "status": "configured_for_execution",
+        "quality_validated": false,
+        "production_validated": false,
+        "errors": []
+      },
+      "contract_injected_in_source": true,
+      "deterministic_gate_source_lines": [],
+      "entrypoint_static_presence": {
+        "tradutor_node": true,
+        "localizar_livro": true
+      },
+      "source_evidence": [
+        "agents/tradutor.py:51",
+        "agents/tradutor.py:27"
+      ],
+      "provided_runtime_evidence": [],
+      "imported_callable_verified_by_inventory": false,
+      "output_quality_verified_by_inventory": false,
+      "external_limits": [
+        "provedor e resultado em produção não testados por este inventário"
+      ],
+      "source_sha256": "d2cfd9097d5cff677746149575221a85504be7dc3da23fb2c7d8abf80102dc26",
+      "consumer": "translation_localization.py: per-locale derivative and structural review; export requires approval",
+      "local_behavior_case": "tests/test_agent_execution_alignment.py::test_each_job_executes_its_real_entrypoint_and_returns_reviewable_output[translator_localizer]",
+      "local_behavior_result": "PASS",
+      "live_provider_tested": false
+    }
+  ],
+  "inherited_modules": {
+    "estilos_narrativos.py": [
+      "storyteller"
+    ],
+    "roteirista_autoral.py": [
+      "storyteller"
+    ],
+    "formato_quadrinhos.py": [
+      "storyteller"
+    ]
+  },
+  "services": [
+    {
+      "service_id": "asset_library",
+      "kind": "service_not_llm_role",
+      "module": "asset_library.py",
+      "entrypoints": [
+        "get_asset",
+        "register_usage"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "audio_qa",
+      "kind": "service_not_llm_role",
+      "module": "audiobook_studio.py",
+      "entrypoints": [
+        "qa_audio_clip",
+        "audio_readiness"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "bestseller_readiness",
+      "kind": "service_not_llm_role",
+      "module": "bestseller_readiness.py",
+      "entrypoints": [
+        "evaluate_bestseller_readiness"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "biblical_reference_validator",
+      "kind": "service_not_llm_role",
+      "module": "biblical_reference_validator.py",
+      "entrypoints": [
+        "create_reference_candidate",
+        "reference_gate"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "character_consistency",
+      "kind": "service_not_llm_role",
+      "module": "character_consistency.py",
+      "entrypoints": [
+        "auditar_caracteristicas"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "character_universe",
+      "kind": "service_not_llm_role",
+      "module": "character_universe.py",
+      "entrypoints": [
+        "carregar_personagem_oficial",
+        "personagem_para_prompt"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "coloring_doctor",
+      "kind": "service_not_llm_role",
+      "module": "coloring_book_doctor.py",
+      "entrypoints": [
+        "analisar_line_art_avancada",
+        "auditar_lote_colorir"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "cover_master",
+      "kind": "service_not_llm_role",
+      "module": "cover_master.py",
+      "entrypoints": [
+        "carregar_cover_master",
+        "preflight_cover_master"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "emotional_color_director",
+      "kind": "service_not_llm_role",
+      "module": "emotional_color_director.py",
+      "entrypoints": [
+        "construir_mapa_emocional",
+        "prompt_direcao_visual"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "launch_strategy",
+      "kind": "service_not_llm_role",
+      "module": "agents/marketing.py",
+      "entrypoints": [
+        "marketing_lancamento_node"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "linguistic_reviewer",
+      "kind": "service_not_llm_role",
+      "module": "translation_localization.py",
+      "entrypoints": [
+        "revisar_localizacao_estrutural",
+        "revisar_localizacao_com_llm"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "market_bestseller_intelligence",
+      "kind": "service_not_llm_role",
+      "module": "market_intelligence.py",
+      "entrypoints": [
+        "validate_market_evidence",
+        "build_market_brief"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "print_preflight",
+      "kind": "service_not_llm_role",
+      "module": "qualidade_impressao.py",
+      "entrypoints": [
+        "preflight_livro",
+        "analisar_pdf_miolo"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "publishing_distribution",
+      "kind": "service_not_llm_role",
+      "module": "publishing_distribution.py",
+      "entrypoints": [
+        "create_distribution_plan",
+        "build_channel_package"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "publishing_engine",
+      "kind": "service_not_llm_role",
+      "module": "platform_registry.py",
+      "entrypoints": [
+        "get_platform",
+        "verification_state"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    },
+    {
+      "service_id": "quality_guardian",
+      "kind": "service_not_llm_role",
+      "module": "quality_guardian.py",
+      "entrypoints": [
+        "run_quality_guardian",
+        "register_author_final_approval"
+      ],
+      "static_errors": [],
+      "provided_runtime_evidence": [],
+      "execution_verified_by_inventory": false
+    }
+  ],
+  "production_validated": false,
+  "provider_configuration": "Author confirmed AI providers and storage configured in Streamlit on 2026-10-17; not inspected in this workspace",
+  "limits": [
+    "skills declaradas não medem excelência profissional",
+    "AST verifica configuração, não execução",
+    "handoffs são contratos de destinos; o registro não executa um pipeline automaticamente",
+    "validar cada saída, aprovações e integrações externas no contexto de uso"
+  ]
+}

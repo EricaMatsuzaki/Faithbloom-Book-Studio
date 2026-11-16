@@ -128,6 +128,10 @@ def coletar_assets_state(state: dict) -> list[dict]:
         assets.append({"tipo":"ilustracao", "numero":item.get("numero"), "arquivo":item.get("caminho_arquivo","")})
     for i,item in enumerate(state.get("paginas_colorir", []) or [],1):
         assets.append({"tipo":"line_art", "numero":item.get("numero", item.get("cena_numero",i)), "arquivo":item.get("caminho_arquivo","")})
+    # Coloring Studio usa páginas próprias, indexadas pelo Diagramador de colorir.
+    for i,item in enumerate(state.get("paginas", []) or [],1):
+        if isinstance(item, dict):
+            assets.append({"tipo":"line_art", "numero":i, "arquivo":item.get("caminho_arquivo","")})
     if state.get("capa_ebook"):
         assets.append({"tipo":"capa_ebook", "numero":None, "arquivo":state["capa_ebook"]})
     if state.get("capa_fisica_wrap"):
@@ -260,3 +264,4 @@ def analisar_pdf_miolo(caminho_pdf: str, trim_largura_in: float, trim_altura_in:
     except Exception as exc:
         resultado["erros"].append(f"Falha ao inspecionar PDF: {exc}")
         return resultado
+

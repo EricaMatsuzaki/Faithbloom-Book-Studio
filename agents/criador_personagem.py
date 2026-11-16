@@ -48,6 +48,11 @@ def criar_personagem_a_partir_de_ideia(
     )
     prompt += skill_contract("character_creator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere o personagem em JSON.")
+    if not isinstance(resposta, dict) or any(
+        not isinstance(resposta.get(chave), str) or not resposta[chave].strip()
+        for chave in ("nome_sugerido", "descricao_fixa")
+    ):
+        raise ValueError("O Criador de Personagem não retornou nome e DNA utilizáveis; nenhum personagem foi criado.")
     return PersonagemDNA(
         nome=resposta.get("nome_sugerido", ""),
         descricao_fixa=resposta.get("descricao_fixa", ""),

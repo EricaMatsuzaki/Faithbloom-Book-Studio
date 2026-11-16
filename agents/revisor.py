@@ -67,9 +67,28 @@ def revisor_node(state: LivroState, chamar_llm) -> LivroState:
     )
     if not isinstance(resposta, dict):
         resposta = {"status": "REVISAR", "notas": ["Resposta do Revisor não veio em JSON estruturado; revisar manualmente."]}
-    aprovado = resposta.get("status") == "APROVADO"
-    state["revisao_aprovada"] = aprovado
-    state["notas_revisor"] = resposta.get("notas", [])
+    notas = resposta.get("notas")
+    estruturada = (
+        resposta.get("status") in {"APROVADO", "REVISAR"}
+        and isinstance(notas, list)
+        and all(isinstance(nota, str) and nota.strip() for nota in notas)
+    )
+    # A status word cannot overrule reported problems or approve an empty book.
+    cenas = state.get("cenas_texto") or []
+    manuscrito_valido = (
+        isinstance(cenas, list) and bool(cenas)
+        and all(isinstance(cena, dict) and isinstance(cena.get("texto"), str)
+                and cena["texto"].strip() for cena in cenas)
+    )
+    aprovado = estruturada and manuscrito_valido and resposta.get("status") == "APROVADO" and not notas
+    state["revisao_aprovada"] = bool(aprovado)
+    if not estruturada:
+        notas = ["Resposta do Revisor incompleta; revisar manualmente antes de aprovar."]
+    elif not manuscrito_valido:
+        notas = ["O manuscrito está vazio ou contém cena sem texto; revisão não aprovada.", *notas]
+    elif resposta.get("status") == "REVISAR" and not notas:
+        notas = ["O Revisor solicitou revisão sem indicar o problema; requer análise humana."]
+    state["notas_revisor"] = notas
     return state
 
 

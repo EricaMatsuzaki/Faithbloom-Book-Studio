@@ -23,14 +23,37 @@ import threading
 import time
 import uuid
 
+from saas_access import AccessDenied, require_action
+from storage_backend import materializar, tenant_local_directory
+
 DATA_DIR = Path(os.environ.get("FAITHBLOOM_RUNTIME_DIR", ".faithbloom_data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = DATA_DIR / "geracoes.jsonl"
 
 _LOCK = threading.Lock()
-_IN_FLIGHT: set[str] = set()
-_RECENT: dict[str, float] = {}
-_EXECUTIONS: dict[str, dict[str, Any]] = {}
+_IN_FLIGHT: set[str | tuple[str, str]] = set()
+_RECENT: dict[str | tuple[str, str], float] = {}
+_EXECUTIONS: dict[str | tuple[str, str], dict[str, Any]] = {}
+
+
+def _scope(action: str) -> str:
+    actor = require_action(action)
+    return actor.tenant_id if actor is not None else ""
+
+
+def _execution_key(signature: str, *, action: str = "storage.write") -> str | tuple[str, str]:
+    scope = _scope(action)
+    return (scope, signature) if scope else signature
+
+
+def _log_path(*, action: str) -> Path:
+    if not _scope(action):
+        return LOG_PATH
+    path = tenant_local_directory("cache") / "runtime" / "geracoes.jsonl"
+    materializar(str(path))  # Reject symlinks/foreign paths before any log I/O.
+    if path.resolve() != path.absolute():
+        raise AccessDenied("Histórico local não autorizado.")
+    return path
 
 
 def _env_float(nome: str, padrao: float) -> float:
@@ -82,21 +105,26 @@ class RegistroGeracao:
 
 
 def assinatura_requisicao(modalidade: str, modelo: str, conteudo: str) -> str:
-    base = f"{modalidade}|{modelo}|{conteudo}".encode("utf-8", errors="ignore")
+    scope = _scope("storage.write")
+    content = f"{modalidade}|{modelo}|{conteudo}"
+    base = (json.dumps([scope, content], ensure_ascii=False) if scope else content).encode("utf-8", errors="ignore")
     return sha256(base).hexdigest()[:24]
 
 
 def _gravar(registro: RegistroGeracao) -> None:
     # O log nunca recebe prompt completo, API key, headers ou payload bruto.
+    path = _log_path(action="storage.write")
+    path.parent.mkdir(parents=True, exist_ok=True)
     with _LOCK:
-        with LOG_PATH.open("a", encoding="utf-8") as f:
+        with path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(registro), ensure_ascii=False) + "\n")
 
 
 def ler_registros(limite: int = 250) -> list[dict[str, Any]]:
-    if not LOG_PATH.exists():
+    path = _log_path(action="storage.read")
+    if not path.exists():
         return []
-    linhas = LOG_PATH.read_text(encoding="utf-8").splitlines()[-limite:]
+    linhas = path.read_text(encoding="utf-8").splitlines()[-limite:]
     saida=[]
     for linha in linhas:
         try:
@@ -166,18 +194,20 @@ def validar_orcamento(estimativa_usd: float) -> None:
 
 def iniciar_requisicao(modalidade: str, modelo: str, conteudo_assinatura: str,
                        estimativa_usd: float | None = None) -> tuple[str,str,float,float]:
+    _scope("storage.write")
     estimativa = estimativa_usd if estimativa_usd is not None else estimar_custo(modalidade)
     validar_orcamento(estimativa)
     assinatura = assinatura_requisicao(modalidade, modelo, conteudo_assinatura)
+    key = _execution_key(assinatura)
     agora=time.monotonic()
     request_id = uuid.uuid4().hex
     with _LOCK:
-        if assinatura in _IN_FLIGHT:
-            execution = _EXECUTIONS.get(assinatura)
+        if key in _IN_FLIGHT:
+            execution = _EXECUTIONS.get(key)
             if execution and not execution["thread"].is_alive():
-                _IN_FLIGHT.discard(assinatura)
-                _EXECUTIONS.pop(assinatura, None)
-                _RECENT.pop(assinatura, None)
+                _IN_FLIGHT.discard(key)
+                _EXECUTIONS.pop(key, None)
+                _RECENT.pop(key, None)
                 raise GeracaoBloqueada(
                     "A execução local anterior foi encerrada e seu bloqueio foi removido. "
                     "Nenhuma nova geração foi enviada. Confira a última tentativa na OpenRouter "
@@ -191,23 +221,24 @@ def iniciar_requisicao(modalidade: str, modelo: str, conteudo_assinatura: str,
                     "Este clique não enviou outra geração."
                 )
             raise GeracaoBloqueada("Há um bloqueio de uma versão anterior sem diagnóstico disponível. Nenhuma nova geração foi enviada.")
-        ultimo=_RECENT.get(assinatura)
+        ultimo=_RECENT.get(key)
         if ultimo is not None and agora-ultimo < POLITICA.cooldown_duplicado_seg:
             restante=POLITICA.cooldown_duplicado_seg-(agora-ultimo)
             raise GeracaoBloqueada(f"Clique duplicado bloqueado. Aguarde cerca de {restante:.1f}s e tente novamente se desejar.")
-        _IN_FLIGHT.add(assinatura)
-        _RECENT[assinatura]=agora
-        _EXECUTIONS[assinatura] = {"thread": threading.current_thread(), "started": agora,
+        _IN_FLIGHT.add(key)
+        _RECENT[key]=agora
+        _EXECUTIONS[key] = {"thread": threading.current_thread(), "started": agora,
                                    "stage": "preparando entrada", "request_id": request_id}
     return request_id, assinatura, float(estimativa), time.perf_counter()
 
 
 def atualizar_etapa(assinatura: str, etapa: str) -> None:
     """Só aceita fases conhecidas; não registra prompt, imagens ou credenciais."""
+    key = _execution_key(assinatura)
     if etapa not in {"preparando entrada", "aguardando OpenRouter", "salvando resultado"}:
         raise ValueError("Etapa inválida")
     with _LOCK:
-        execution = _EXECUTIONS.get(assinatura)
+        execution = _EXECUTIONS.get(key)
         if execution:
             execution["stage"] = etapa
 
@@ -215,9 +246,10 @@ def atualizar_etapa(assinatura: str, etapa: str) -> None:
 
 def liberar_requisicao(assinatura: str) -> None:
     """Libera a execução local encerrada, inclusive após interrupção do Streamlit."""
+    key = _execution_key(assinatura)
     with _LOCK:
-        _IN_FLIGHT.discard(assinatura)
-        _EXECUTIONS.pop(assinatura, None)
+        _IN_FLIGHT.discard(key)
+        _EXECUTIONS.pop(key, None)
 
 
 def finalizar_requisicao(request_id: str, assinatura: str, modalidade: str, modelo: str,

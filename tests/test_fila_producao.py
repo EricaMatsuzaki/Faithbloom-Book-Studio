@@ -6,9 +6,11 @@ from storage_backend import LocalStorageBackend
 class TestFilaProducao(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
+        self.backend = fp.BACKEND
         fp.BACKEND=LocalStorageBackend(self.tmp.name)
 
     def tearDown(self):
+        fp.BACKEND = self.backend
         self.tmp.cleanup()
 
     def test_pausa_continua_cancela(self):
@@ -32,9 +34,20 @@ class TestFilaProducao(unittest.TestCase):
 
     def test_recupera_interrompido_sem_repetir(self):
         j=fp.criar_job('x','teste',[{'kind':'x'}],state={})
-        j['status']='executando'; fp.salvar_job(j)
-        ids=fp.recuperar_jobs_interrompidos()
+        j['status']='executando'
+        j['itens'][0]['status']='executando'
+        fp.salvar_job(j)
+        with self.assertRaises(PermissionError):
+            fp.recuperar_jobs_interrompidos()
+        ids=fp.recuperar_jobs_interrompidos(confirmed=True)
         self.assertIn(j['id'],ids)
-        self.assertEqual(fp.carregar_job(j['id'])['status'],'pausado')
+        recovered = fp.carregar_job(j['id'])
+        self.assertEqual(recovered['status'],'pausado')
+        self.assertEqual(recovered['itens'][0]['status'],'incerto')
+        self.assertTrue(recovered['itens'][0]['attempt_token'])
+        called = []
+        fp.continuar_job(j['id'])
+        fp.processar_proximo(j['id'], lambda *_: called.append(True))
+        self.assertEqual(called, [])
 
 if __name__=='__main__': unittest.main()

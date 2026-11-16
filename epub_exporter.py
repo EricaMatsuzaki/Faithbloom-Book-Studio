@@ -19,6 +19,8 @@ import uuid
 import zipfile
 from pathlib import Path
 
+from storage_backend import materializar, resolve_local_output
+
 
 def _slug(value: str) -> str:
     x = re.sub(r"[^a-zA-Z0-9_-]+", "-", value or "book").strip("-").lower()
@@ -32,8 +34,11 @@ def _x(value: str) -> str:
 def _image_items(images: list[dict], root: Path) -> tuple[list[dict], dict[int, str]]:
     items, by_scene = [], {}
     for i, item in enumerate(images or [], 1):
-        src = str(item.get("arquivo") or item.get("caminho") or item.get("path") or "")
-        if not src or not os.path.exists(src):
+        src = str(item.get("arquivo") or item.get("caminho_arquivo") or item.get("caminho") or item.get("path") or "")
+        if not src:
+            continue
+        src = materializar(src)
+        if not os.path.exists(src):
             continue
         ext = Path(src).suffix.lower() or ".jpg"
         name = f"images/img_{i:03d}{ext}"
@@ -48,7 +53,10 @@ def _image_items(images: list[dict], root: Path) -> tuple[list[dict], dict[int, 
 
 
 def _cover_item(path: str | None) -> dict | None:
-    if not path or not os.path.exists(path):
+    if not path:
+        return None
+    path = materializar(path)
+    if not os.path.exists(path):
         return None
     ext = Path(path).suffix.lower() or ".jpg"
     return {"id": "cover-image", "href": f"images/cover{ext}", "media": mimetypes.guess_type(path)[0] or "image/jpeg", "src": path}
@@ -92,6 +100,7 @@ def export_epub(
     """
     if mode not in {"fixed", "reflowable"}:
         raise ValueError("mode precisa ser fixed ou reflowable")
+    output_path = resolve_local_output(output_path, default_path="exportacoes_epub/book.epub")
     title = state.get("titulo", "Livro sem título")
     author = author_display_from_state(state)
     lang = language or state.get("idioma_original", "pt-BR")
@@ -100,6 +109,8 @@ def export_epub(
     cover = _cover_item(cover_path or state.get("capa_ebook"))
     uid = str(state.get("isbn") or state.get("book_id") or uuid.uuid4())
     out = Path(output_path)
+    if any(out.resolve() == Path(item["src"]).resolve() for item in images + ([cover] if cover else [])):
+        raise ValueError("O destino do EPUB deve preservar os arquivos de origem.")
     out.parent.mkdir(parents=True, exist_ok=True)
 
     manifest = [
@@ -175,7 +186,10 @@ def export_epub(
 
 
 def inspect_epub(path: str) -> dict:
-    if not path or not os.path.exists(path):
+    if not path:
+        return {"ok": False, "errors": ["Arquivo EPUB não encontrado."]}
+    path = materializar(path)
+    if not os.path.exists(path):
         return {"ok": False, "errors": ["Arquivo EPUB não encontrado."]}
     errors = []
     try:

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,7 @@ from reportlab.platypus import Paragraph
 
 from author_profiles import author_display_from_state
 from age_profiles import perfil_etario
+from storage_backend import materializar, resolve_local_output
 from qualidade_impressao import (
     BLEED_IN,
     gutter_minimo_in,
@@ -114,7 +116,10 @@ def _mapear_por_numero(itens: list[dict] | None) -> dict[int, dict]:
 
 
 def _draw_image_cover(c: canvas.Canvas, caminho: str, x: float, y: float, w: float, h: float) -> bool:
-    if not caminho or not os.path.exists(caminho):
+    if not caminho:
+        return False
+    caminho = materializar(caminho)
+    if not os.path.exists(caminho):
         return False
     try:
         with Image.open(caminho) as im:
@@ -136,7 +141,10 @@ def _draw_image_cover(c: canvas.Canvas, caminho: str, x: float, y: float, w: flo
 
 
 def _draw_image_contain(c: canvas.Canvas, caminho: str, x: float, y: float, w: float, h: float) -> bool:
-    if not caminho or not os.path.exists(caminho):
+    if not caminho:
+        return False
+    caminho = materializar(caminho)
+    if not os.path.exists(caminho):
         return False
     try:
         with Image.open(caminho) as im:
@@ -223,6 +231,16 @@ def _desenhar_creditos_dedicatoria(c: canvas.Canvas, state: dict, page_w: float,
         "Edição preparada no FaithBloom Book Studio."
     )
     _paragraph(c, texto, x, y, w, h, 12.5, 19, TA_LEFT, cor="#37433F")
+
+
+def _desenhar_pertence_a(c: canvas.Canvas, page_w: float, page_h: float,
+                        bleed_pt: float, pagina_num: int, total: int, bleed: bool) -> None:
+    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
+    _paragraph(c, "Este livro pertence a", x, y + h * 0.55, w, h * 0.15,
+               22, 30, TA_CENTER, bold=True, cor="#000000")
+    c.setStrokeColor(HexColor("#000000"))
+    c.setLineWidth(1)
+    c.line(x + w * 0.12, y + h * 0.48, x + w * 0.88, y + h * 0.48)
 
 
 def _desenhar_boas_vindas(c: canvas.Canvas, state: dict, page_w: float, page_h: float,
@@ -326,6 +344,23 @@ def _desenhar_ficha_pedagogica(c: canvas.Canvas, state: dict, page_w: float, pag
 def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = True,
                           forcar: bool = False) -> dict[str, Any]:
     """Gera o PDF físico do miolo e devolve metadados do arquivo."""
+    destino = resolve_local_output(destino, default_path=os.path.join(
+        PASTA_EXPORTACOES, f"{_slug(state.get('titulo','livro'))}-miolo-print-ready.pdf"))
+    # Resolve all preflight/render inputs before opening media or writing output;
+    # the caller's Book Master keeps its durable references unchanged.
+    state = deepcopy(state)
+    inputs = []
+    for key in ("cenas_imagem", "paginas_colorir", "paginas"):
+        for item in state.get(key, []) or []:
+            if isinstance(item, dict) and item.get("caminho_arquivo"):
+                item["caminho_arquivo"] = materializar(item["caminho_arquivo"])
+                inputs.append(item["caminho_arquivo"])
+    for key in ("capa_ebook", "capa_fisica_wrap"):
+        if state.get(key):
+            state[key] = materializar(state[key])
+            inputs.append(state[key])
+    if any(Path(destino).resolve() == Path(source).resolve() for source in inputs):
+        raise ValueError("O destino do PDF deve preservar os arquivos de origem.")
     _registrar_fontes()
     pf = preflight_livro(state, bleed=bleed)
     if pf["bloqueios"] and not forcar:
@@ -342,13 +377,12 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
     if total % 2:
         total += 1
 
-    Path(PASTA_EXPORTACOES).mkdir(parents=True, exist_ok=True)
-    destino = destino or os.path.join(PASTA_EXPORTACOES, f"{_slug(state.get('titulo','livro'))}-miolo-print-ready.pdf")
     Path(destino).parent.mkdir(parents=True, exist_ok=True)
 
     cenas = _mapear_por_numero(state.get("cenas_texto"))
     imagens = _mapear_por_numero(state.get("cenas_imagem"))
     colorir = _mapear_por_numero(state.get("paginas_colorir"))
+    paginas_colorir = state.get("paginas", []) or []
     por_pagina = {int(p["pagina"]): p for p in layout}
 
     c = canvas.Canvas(destino, pagesize=(page_w, page_h), pageCompression=1, initialFontName=_FONT_NORMAL, initialFontSize=10)
@@ -363,6 +397,8 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
 
         if pagina_num == 1:
             _desenhar_rosto(c, state, page_w, page_h, bleed_pt)
+        elif pagina_num == 2 and por_pagina.get(2, {}).get("tipo") == "este_livro_pertence_a":
+            _desenhar_pertence_a(c, page_w, page_h, bleed_pt, pagina_num, total, bleed)
         elif pagina_num == 2:
             _desenhar_creditos_dedicatoria(c, state, page_w, page_h, bleed_pt, pagina_num, total, bleed)
         else:
@@ -385,6 +421,17 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
                     if not _draw_image_contain(c, caminho, x, y, w, h):
                         _placeholder(c, f"Line art da cena {num} não encontrada", page_w, page_h)
                         avisos.append(f"Cena {num}: line art ausente no PDF.")
+                elif tipo == "colorir":
+                    try:
+                        indice = int(item.get("indice_pagina_colorir", -1))
+                        pagina = paginas_colorir[indice] if 0 <= indice < len(paginas_colorir) else {}
+                        caminho = pagina.get("caminho_arquivo", "")
+                    except (TypeError, ValueError, AttributeError):
+                        caminho = ""
+                    x, y, w, h = _safe_box(page_w, page_h, bleed_pt, pagina_num, total, bleed)
+                    if not _draw_image_contain(c, caminho, x, y, w, h):
+                        _placeholder(c, "Página de colorir não encontrada", page_w, page_h)
+                        avisos.append(f"Página {pagina_num}: line art ausente no PDF.")
                 elif tipo in ("resolucao", "celebracao", "licao_e_versiculo_fim"):
                     _desenhar_final(c, state, tipo, page_w, page_h, bleed_pt, pagina_num, total, bleed)
                 elif tipo == "pais_educadores":
@@ -405,3 +452,4 @@ def renderizar_miolo_pdf(state: dict, destino: str | None = None, bleed: bool = 
         "avisos": avisos,
         "preflight_assets": pf,
     }
+

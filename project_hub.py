@@ -155,7 +155,7 @@ def build_project_overview(state: dict, *, translations=None, activities=None, a
         editorial_status, editorial_detail = "attention", f"{len(scenes)} cena(s) encontradas; a aprovação editorial ainda não está registrada."
     else:
         editorial_status, editorial_detail = "not_started", "Ainda não encontrei cenas de história neste Book Master."
-    stages.append(status_card("editorial", "História & Editorial", editorial_status, editorial_detail, action_page="pages/5_#L01f50d_Analisar_Livro.py", action_label="Revisar livro"))
+    stages.append(status_card("editorial", "História & Editorial", editorial_status, editorial_detail, action_page="pages/5_🔍_Analisar_Livro.py", action_label="Revisar livro"))
 
     br = state.get("bestseller_readiness_report") or {}
     if not br:

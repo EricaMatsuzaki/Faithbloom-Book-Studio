@@ -25,6 +25,8 @@ PAGINAS_ABERTURA_FIXAS = 2
 
 
 def montar_layout_colorir(total_paginas_colorir: int) -> list[dict]:
+    from agent_skills import require_role_ready
+    require_role_ready("coloring_layout")
     layout = []
     pagina_atual = 1
     for tipo in ("rosto_titulo", "este_livro_pertence_a"):
@@ -41,6 +43,8 @@ def montar_layout_colorir(total_paginas_colorir: int) -> list[dict]:
 
 
 def diagramador_colorir_node(state: dict) -> dict:
+    from agent_skills import require_role_ready
+    require_role_ready("coloring_layout")
     total_colorir = len(state.get("paginas", []))
     layout = montar_layout_colorir(total_colorir)
     paginas_fisicas = layout[-1]["pagina"] if layout else 0

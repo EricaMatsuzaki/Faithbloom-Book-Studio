@@ -120,7 +120,7 @@ def test_quatro_estilos_completos_pedem_metadados_emocionais():
         return {
             "titulo": "História",
             "sinopse_poetica": "Sinopse",
-            "cenas_texto": [],
+            "cenas_texto": [{"numero": 1, "texto": "Mel agradeceu pelo novo dia."}],
             "licao_final": "Moral",
         }
 
@@ -140,3 +140,4 @@ def test_quatro_estilos_completos_pedem_metadados_emocionais():
     assert all("intensidade_emocional" in instrucao for _, instrucao in chamadas)
     assert all("transicao_emocional" in instrucao for _, instrucao in chamadas)
     assert all("onomatopeias" in sistema for sistema, _ in chamadas)
+

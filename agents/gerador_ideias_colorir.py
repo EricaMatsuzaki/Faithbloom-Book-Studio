@@ -56,11 +56,18 @@ def gerador_ideias_colorir_node(quantidade: int, temas_usados: list[str], chamar
     )
     prompt += skill_contract("coloring_idea_generator")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as ideias em JSON.")
-    if isinstance(resposta, list):
-        return resposta
-    if isinstance(resposta, dict):
-        return resposta.get("ideias", [])
-    return []
+    ideias = resposta if isinstance(resposta, list) else resposta.get("ideias", []) if isinstance(resposta, dict) else []
+    campos = ('titulo_sugerido', 'tema_geral')
+    if not isinstance(ideias, list) or not ideias or any(
+        not isinstance(ideia, dict) or any(not isinstance(ideia.get(campo), str) or not ideia[campo].strip() for campo in campos)
+        for ideia in ideias
+    ):
+        raise ValueError("O gerador não retornou ideias completas; nenhuma sugestão vazia foi aceita.")
+    if any(type(ideia.get("precisa_codigo_sexo")) is not bool or not isinstance(ideia.get("sugestoes_paginas"), list)
+           or not ideia["sugestoes_paginas"] or any(not isinstance(x, str) or not x.strip() for x in ideia["sugestoes_paginas"])
+           for ideia in ideias):
+        raise ValueError("As ideias de colorir precisam indicar os sujeitos e páginas do conceito.")
+    return ideias
 
 
 # Refinamento 21 — papéis formais deste módulo (auditáveis pelo Skill Registry).

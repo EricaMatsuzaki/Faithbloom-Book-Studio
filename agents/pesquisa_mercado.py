@@ -71,7 +71,10 @@ def pesquisa_palavras_chave_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += "\n" + evidence_prompt(state.get("market_evidence") or []) + skill_contract("market_keywords")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as 7 frases-chave em JSON.")
-    state["palavras_chave_kdp"] = resposta if isinstance(resposta, list) else resposta.get("palavras_chave", []) if isinstance(resposta, dict) else []
+    palavras = resposta if isinstance(resposta, list) else resposta.get("palavras_chave", []) if isinstance(resposta, dict) else []
+    if not isinstance(palavras, list) or len(palavras) != 7 or any(not isinstance(p, str) or not p.strip() for p in palavras):
+        raise ValueError("A pesquisa não retornou as sete frases-chave utilizáveis. As sugestões anteriores foram preservadas.")
+    state["palavras_chave_kdp"] = palavras
     state["market_suggestions_provenance"] = classify_market_mode(state.get("market_evidence") or [])
     return state
 
@@ -83,7 +86,11 @@ def pesquisa_categorias_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += "\n" + evidence_prompt(state.get("market_evidence") or []) + skill_contract("market_categories")
     resposta = chamar_llm(sistema=prompt, instrucao="Gere as 3 categorias sugeridas em JSON.")
-    state["categorias_sugeridas"] = resposta if isinstance(resposta, list) else resposta.get("categorias", []) if isinstance(resposta, dict) else []
+    categorias = resposta if isinstance(resposta, list) else resposta.get("categorias", []) if isinstance(resposta, dict) else []
+    if not isinstance(categorias, list) or len(categorias) != 3 or any(not isinstance(c, str) or not c.strip() for c in categorias):
+        raise ValueError("A pesquisa não retornou três categorias utilizáveis. As sugestões anteriores foram preservadas.")
+    state["categorias_sugeridas"] = categorias
+    state["market_suggestions_provenance"] = classify_market_mode(state.get("market_evidence") or [])
     return state
 
 

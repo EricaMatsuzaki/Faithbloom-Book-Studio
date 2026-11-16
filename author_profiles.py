@@ -4,6 +4,10 @@ Separa a identidade de quem usa o SaaS da autoria/crédito editorial de cada
 projeto. Perfis são reutilizáveis e os créditos do livro guardam snapshots,
 para que uma alteração futura no perfil não reescreva silenciosamente uma
 edição já publicada.
+
+Perfil e índice são documentos independentes: a sincronização do resumo pode
+ser retomada após uma falha. A versão impede que um escritor atrasado substitua
+um resumo mais novo; isso não constitui uma transação entre os documentos.
 """
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ import uuid
 from typing import Any
 
 from storage_backend import BACKEND
+from storage_updates import update_json_document
 
 PROFILE_SCHEMA = "faithbloom.author-profile.v1"
 AUTHORSHIP_SCHEMA = "faithbloom.project-authorship.v1"
@@ -47,8 +52,26 @@ def _index() -> list[dict]:
     return rows if isinstance(rows, list) else []
 
 
-def _save_index(rows: list[dict]) -> None:
-    BACKEND.put_json(INDEX_PATH, rows)
+def _sync_index(profile: dict) -> None:
+    summary = {
+        "id": profile["id"],
+        "display_name": profile_display_name(profile),
+        "active": bool(profile.get("active", True)),
+        "updated_at": profile["updated_at"],
+        "profile_version": int(profile.get("version") or 1),
+    }
+
+    def sync(rows):
+        for row in rows:
+            if row.get("id") == summary["id"]:
+                if int(row.get("profile_version") or 0) <= summary["profile_version"]:
+                    row.update(summary)
+                break
+        else:
+            rows.append(dict(summary))
+        return rows
+
+    update_json_document(BACKEND, INDEX_PATH, sync, [], allow_legacy_pilot=True)
 
 
 def _profile_path(profile_id: str) -> str:
@@ -94,14 +117,7 @@ def create_author_profile(
         "version": 1,
     }
     BACKEND.put_json(_profile_path(pid), profile)
-    rows = _index()
-    rows.append({
-        "id": pid,
-        "display_name": profile_display_name(profile),
-        "active": True,
-        "updated_at": profile["updated_at"],
-    })
-    _save_index(rows)
+    _sync_index(profile)
     return profile
 
 
@@ -123,10 +139,8 @@ def list_author_profiles(*, include_archived: bool = False) -> list[dict]:
 
 
 def update_author_profile(profile_id: str, **changes) -> dict:
-    p = get_author_profile(profile_id)
-    if not p:
-        raise KeyError("Perfil de autoria não encontrado.")
     allowed = {"display_name", "legal_name", "pen_name", "bio", "locales", "website", "social_links", "photo_asset_id", "notes", "active"}
+    normalized = {}
     for key, value in changes.items():
         if key not in allowed:
             continue
@@ -136,17 +150,21 @@ def update_author_profile(profile_id: str, **changes) -> dict:
             value = sorted({_clean(x) for x in (value or []) if _clean(x)})
         elif key == "social_links":
             value = [_clean(x) for x in (value or []) if _clean(x)]
-        p[key] = value
-    if not profile_display_name(p):
-        raise ValueError("O perfil precisa manter um nome de publicação.")
-    p["updated_at"] = _now()
-    p["version"] = int(p.get("version") or 1) + 1
-    BACKEND.put_json(_profile_path(profile_id), p)
-    rows = _index()
-    for row in rows:
-        if row.get("id") == profile_id:
-            row.update({"display_name": profile_display_name(p), "active": bool(p.get("active", True)), "updated_at": p["updated_at"]})
-    _save_index(rows)
+        normalized[key] = deepcopy(value)
+    now = _now()
+
+    def update(p):
+        if not p:
+            raise KeyError("Perfil de autoria não encontrado.")
+        p.update(deepcopy(normalized))
+        if not profile_display_name(p):
+            raise ValueError("O perfil precisa manter um nome de publicação.")
+        p["updated_at"] = now
+        p["version"] = int(p.get("version") or 1) + 1
+        return p
+
+    p = update_json_document(BACKEND, _profile_path(profile_id), update, {}, allow_legacy_pilot=True)
+    _sync_index(p)
     return p
 
 

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from armazenamento import _ler_indice_galeria, _salvar_indice_galeria
+from saas_access import AccessDenied
 from storage_backend import BACKEND, is_storage_uri, materializar, storage_uri, uri_to_path
 
 ASSET_SCHEMA_VERSION = 2
@@ -157,6 +158,8 @@ def get_asset(asset_id: str, materialize_file: bool = True) -> dict | None:
         if uri:
             try:
                 item["caminho_arquivo"] = materializar(uri)
+            except AccessDenied:
+                raise
             except Exception:
                 item["caminho_arquivo"] = uri
     return item
@@ -508,6 +511,8 @@ def _asset_digest(item: dict, deep: bool = False) -> str:
         return name.lower()
     if deep and path:
         try: return hashlib.sha256(BACKEND.get_bytes(path)).hexdigest()
+        except AccessDenied:
+            raise
         except Exception: pass
     return ""
 
@@ -531,7 +536,7 @@ def _technical_metadata(item: dict, compute_hash: bool = False) -> dict:
     uri = item.get("storage_uri") or ""
     path = _storage_path(item)
     if not path:
-        local = item.get("caminho_arquivo") or ""
+        local = materializar(item.get("storage_uri") or item.get("caminho_arquivo") or "")
         p = Path(local)
         if p.exists() and p.is_file():
             data = p.read_bytes()
@@ -539,6 +544,8 @@ def _technical_metadata(item: dict, compute_hash: bool = False) -> dict:
             return meta
     else:
         try: data = BACKEND.get_bytes(path)
+        except AccessDenied:
+            raise
         except Exception: return meta
     meta["file_size_bytes"] = len(data)
     meta["mime_type"] = mimetypes.guess_type(path or str(item.get("caminho_arquivo") or ""))[0] or "application/octet-stream"
@@ -551,6 +558,8 @@ def _technical_metadata(item: dict, compute_hash: bool = False) -> dict:
             with Image.open(io.BytesIO(data)) as im:
                 meta["width_px"], meta["height_px"] = im.size
                 meta["image_mode"] = im.mode
+        except AccessDenied:
+            raise
         except Exception:
             pass
     return meta
@@ -565,6 +574,8 @@ def backfill_technical_metadata(asset_ids: Iterable[str] | None = None, limit: i
             meta = _technical_metadata(item, compute_hash=True)
             update_asset(item["id"], metadata=meta, sha256=meta.get("sha256", item.get("sha256", "")))
             done += 1
+        except AccessDenied:
+            raise
         except Exception as exc:
             errors.append(f"{item.get('nome')}: {exc}")
     return {"processed": done, "errors": errors, "limited": len(items) > limit}
@@ -576,13 +587,15 @@ def get_thumbnail(asset_id: str, max_px: int = 480) -> str | None:
         return None
     if item.get("media_kind") == "svg":
         try: return materializar(item.get("storage_uri") or item.get("caminho_arquivo") or "")
+        except AccessDenied:
+            raise
         except Exception: return None
     digest = _asset_digest(item) or hashlib.sha256(asset_id.encode()).hexdigest()[:20]
     thumb_path = f"{THUMB_PREFIX}/{digest}-{int(max_px)}.jpg"
     if not BACKEND.exists(thumb_path):
         source = _storage_path(item)
         try:
-            data = BACKEND.get_bytes(source) if source else Path(item.get("caminho_arquivo") or "").read_bytes()
+            data = BACKEND.get_bytes(source) if source else Path(materializar(item.get("storage_uri") or item.get("caminho_arquivo") or "")).read_bytes()
             from PIL import Image, ImageOps
             import io
             with Image.open(io.BytesIO(data)) as im:
@@ -590,10 +603,16 @@ def get_thumbnail(asset_id: str, max_px: int = 480) -> str | None:
                 im.thumbnail((max_px, max_px))
                 buf = io.BytesIO(); im.save(buf, format="JPEG", quality=82, optimize=True)
                 BACKEND.put_bytes(thumb_path, buf.getvalue(), "image/jpeg")
+        except AccessDenied:
+            raise
         except Exception:
             try: return materializar(item.get("storage_uri") or item.get("caminho_arquivo") or "")
+            except AccessDenied:
+                raise
             except Exception: return None
     try: return materializar(storage_uri(thumb_path))
+    except AccessDenied:
+        raise
     except Exception: return None
 
 
@@ -642,6 +661,8 @@ def permanent_delete(asset_id: str, confirmed: bool = False) -> bool:
     uri = target.get("storage_uri") or ""
     if is_storage_uri(uri):
         try: BACKEND.delete(uri_to_path(uri))
+        except AccessDenied:
+            raise
         except Exception: pass
     _salvar_indice_galeria([x for x in items if x.get("id") != asset_id])
     return True

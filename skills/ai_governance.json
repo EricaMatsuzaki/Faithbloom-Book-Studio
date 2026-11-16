@@ -1,0 +1,67 @@
+{
+  "schema": "faithbloom.technical-agent-skills.v2",
+  "role_id": "ai_governance",
+  "name": "Agente de Governança de IA",
+  "mission": "Verificar rastreabilidade da IA, limites de custos, avaliação de resultados e decisões humanas antes de ações de risco.",
+  "module": "agents/governanca_ia.py",
+  "skill_domains": {
+    "model_risk": [
+      "inventário de modelos",
+      "proveniência de resultados",
+      "avaliação de IA",
+      "limites de inferência"
+    ],
+    "controls": [
+      "aprovação humana",
+      "guardas de custos",
+      "segurança de prompts",
+      "preservação de Masters"
+    ],
+    "assurance": [
+      "evidências verificáveis",
+      "avaliação por faixa etária",
+      "continuidade editorial",
+      "monitoramento de falhas"
+    ]
+  },
+  "runtime_contract": {
+    "entrypoints": [
+      "run_diagnostic",
+      "check_generation_action"
+    ],
+    "essential_skills": [
+      "inventário de modelos",
+      "guardas de custos",
+      "aprovação humana"
+    ],
+    "inputs": [
+      "fontes, metadados e contexto da ação"
+    ],
+    "outputs": [
+      "achados sanitizados e decisão pré-ação, UNKNOWN sem evidência"
+    ],
+    "handoff_mode": "explicit workflow or human-approved transition; registry is not an automatic dispatcher",
+    "quality_boundary": "configuration verified; output quality and live integrations require independent evidence"
+  },
+  "quality_criteria": [
+    "achados com fonte e escopo",
+    "UNKNOWN quando não há evidência",
+    "nenhuma alteração destrutiva automática"
+  ],
+  "evidence_requirements": [
+    "fontes locais inspecionadas",
+    "evidência observada e rastreável de execução"
+  ],
+  "non_negotiables": [
+    "não chamar provedores durante o diagnóstico",
+    "não confundir modelo configurado com modelo validado",
+    "não promover candidatos a Master nem publicar automaticamente",
+    "não salvar prompts, manuscritos, credenciais ou dados pessoais no relatório",
+    "evidência ausente permanece UNKNOWN; contrato não é certificação"
+  ],
+  "runtime_entrypoints": [
+    "run_diagnostic"
+  ],
+  "activation": "Governança / Agent Skills; diagnóstico determinístico",
+  "execution_boundary": "Diagnóstico local e guardas pré-ação; nenhum dado, Master, provedor ou deploy é modificado automaticamente."
+}

@@ -14,7 +14,9 @@ fixar um preço de venda de verdade.
 import streamlit as st
 
 from estilo import aplicar_estilo, hero
-from armazenamento import listar_livros, carregar_livro, salvar_livro
+from armazenamento import listar_livros, carregar_livro
+from generation_autosave import persist_generation_snapshot
+from generation_save_ui import render_generation_save_recovery
 from openrouter_client import chamar_llm
 from agents.pesquisa_mercado import pesquisa_palavras_chave_node, pesquisa_categorias_node
 from agents.marketing import marketing_lancamento_node
@@ -35,14 +37,17 @@ if not livros:
     st.info("Nenhum livro salvo ainda.")
     st.stop()
 
-opcoes = {f"{l['titulo']} ({l['colecao']})": l for l in livros}
-escolha = st.selectbox("Livro", list(opcoes.keys()))
+opcoes = {l["storage_path"]: l for l in livros}
+escolha = st.selectbox("Livro", list(opcoes), format_func=lambda ref: (
+    f"{opcoes[ref]['titulo']} ({opcoes[ref]['colecao']}) · {ref.rsplit('/', 1)[-1]}"))
 livro_info = opcoes[escolha]
 
 if "state_lancamento" not in st.session_state or st.session_state.get("livro_lancamento") != escolha:
-    st.session_state.state_lancamento = carregar_livro(livro_info["colecao"], livro_info["arquivo"])
+    st.session_state.state_lancamento = carregar_livro(livro_info["colecao"], escolha)
     st.session_state.livro_lancamento = escolha
 s = st.session_state.state_lancamento
+if render_generation_save_recovery(s, key_prefix="launch_save"):
+    st.stop()
 
 aba_meta, aba_kw, aba_preco, aba_preflight, aba_pdf, aba_capa, aba_ia, aba_marketing, aba_pacote = st.tabs([
     "📝 Metadados",
@@ -239,7 +244,7 @@ with aba_capa:
     s["tipo_papel_capa"]=papel_capa
     c2.text_input("Crédito de autoria na capa",value=cover_credit_from_state(s),key="autora_capa",disabled=True)
     s["autora"] = author_display_from_state(s) or s.get("autora", "")
-    s["subtitulo"]=c3.text_input("Subtítulo (opcional)",value=s.get("subtitulo",""),key="subtitulo_capa")
+    c3.text_input("Subtítulo (edite em Metadados)", value=s.get("subtitulo", ""), disabled=True)
 
     st.write(f"**Trim:** {trim_w} × {trim_h} in · **Páginas usadas para lombada:** {paginas_capa}")
     st.info("Para medida final de produção, confira também o KDP Cover Calculator/Template com exatamente o mesmo trim, papel e total de páginas do PDF final.")
@@ -346,5 +351,10 @@ with aba_pacote:
             st.download_button("⬇️ Baixar Pacote de Publicação", data=fh.read(), file_name=__import__("os").path.basename(pacote), mime="application/zip", use_container_width=True)
 
 if st.button("💾 Salvar alterações neste livro"):
-    caminho = salvar_livro(dict(s))
-    st.success(f"Salvo em: {caminho}")
+    try:
+        caminho = persist_generation_snapshot(s, reason="launch_metadata_updated")
+    except Exception as exc:
+        st.error(str(exc))
+        render_generation_save_recovery(s, key_prefix="launch_save")
+    else:
+        st.success(f"Salvo em: {caminho}")

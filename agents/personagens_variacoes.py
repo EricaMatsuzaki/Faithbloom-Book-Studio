@@ -61,6 +61,8 @@ def gerar_primeira_referencia(personagem: dict, gerar_imagem) -> dict:
     )
     prompt += skill_contract("character_variations", compact=True)
     caminho = gerar_imagem(prompt=prompt, imagem_base=None)
+    if not isinstance(caminho, str) or not caminho.strip():
+        raise ValueError("O gerador não retornou uma referência utilizável; o personagem anterior foi preservado.")
     personagem["imagem_referencia"] = caminho
     personagem["origem_referencia"] = "gerada_pelo_agente"
     personagem["variacoes_visuais"].append(
@@ -86,6 +88,8 @@ def gerar_variacao(personagem: dict, gerar_imagem, instrucao: str = "", variacao
             if v.get("id") == variacao_base_id:
                 base = v.get("caminho_arquivo", "")
                 break
+        if not base:
+            raise ValueError("A variação-base selecionada não está disponível; selecione novamente antes de gerar.")
     if not base:
         base = personagem.get("imagem_referencia", "")
 
@@ -108,6 +112,8 @@ def gerar_variacao(personagem: dict, gerar_imagem, instrucao: str = "", variacao
     )
     prompt += skill_contract("character_variations", compact=True)
     caminho = gerar_imagem(prompt=prompt, imagem_base=base or None)
+    if not isinstance(caminho, str) or not caminho.strip():
+        raise ValueError("O gerador não retornou uma variação utilizável; o Master e as opções anteriores foram preservados.")
     nova = _nova_variacao(caminho, "variacao_ia", prompt, base=base)
     variacoes.append(nova)
     personagem["variacoes_visuais"] = variacoes

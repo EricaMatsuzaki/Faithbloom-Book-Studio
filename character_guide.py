@@ -11,6 +11,9 @@ Princípios:
 """
 from __future__ import annotations
 
+from agent_skills import skill_contract
+from age_profiles import normalizar_faixa_etaria, instrucao_faixa_etaria
+
 import os
 import time
 from copy import deepcopy
@@ -266,7 +269,19 @@ def _normalize_scene_ideas(raw: Any, count: int = 3) -> list[dict]:
     return normalized[:count]
 
 
-def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: int = 3) -> list[dict]:
+def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: int = 3, *, project_context: dict | None = None, text_generator=None) -> list[dict]:
+    if count != 3:
+        raise ValueError("O Diretor de Cena trabalha com exatamente três propostas A/B/C.")
+    context = dict(project_context or {})
+    audience = context.get("editorial_audience") or context.get("faixa_etaria")
+    broad_audience = audience if audience in {"teen", "adult", "custom"} else None
+    faixa = broad_audience or normalizar_faixa_etaria(context.get("faixa_etaria"))
+    if context.get("style_dna_id"):
+        from style_dna import carregar_style
+        style = carregar_style(context["style_dna_id"])
+        if not style or style.get("status") != "oficial":
+            raise ValueError("O Style DNA vinculado não está disponível como estilo oficial.")
+        context["style_dna"] = {k: style.get(k) for k in ("id", "nome", "regras", "usos_permitidos")}
     excerpt = str(story_excerpt or "").strip()
     if not excerpt:
         raise ValueError("Cole um trecho da história primeiro.")
@@ -277,13 +292,26 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
         summary = character_identity_summary(p)
         char_context.append({"nome": p.get("nome"), "dna": summary["descricao"], "locked": summary["locked"], "variaveis_permitidas": summary["controlled"]})
     system = (
-        "Você é o Scene Director do FaithBloom Book Studio, especialista em direção de arte para livros infantis. "
-        "Receba um trecho de história e personagens oficiais. Proponha exatamente 3 direções visuais DISTINTAS. Não gere imagens. "
+        "Você é o Scene Director do FaithBloom Book Studio, especialista em direção de arte editorial. "
+        "Receba um trecho do projeto e personagens oficiais. Proponha exatamente 3 direções visuais DISTINTAS. Não gere imagens. "
         "Não altere o Character DNA. A psicologia das cores deve reforçar emoção, mas nunca recolorir identidade canônica. "
-        "As ideias devem ser práticas para ilustração editorial, com composição clara, movimento, leitura visual infantil e reaproveitamento futuro. "
+        "As ideias devem ser práticas para ilustração editorial, com composição clara, movimento, leitura visual adequada ao público e reaproveitamento futuro. "
         f"Responda apenas JSON válido. Toda direção deve respeitar {TEXT_POLICY}: nenhuma tipografia na arte."
     )
+    if context.get("direcao_emocional_aprovada"):
+        from emotional_visual_binding import direction_prompt
+        system += "\nA emoção, intensidade, transição e paleta aprovadas são obrigatórias em A/B/C. Varie composição, nunca substitua essa direção:\n" + direction_prompt(context["direcao_emocional_aprovada"])
+    audience_direction = {
+        "teen": "Público adolescente: respeite autonomia, privacidade e complexidade emocional. Evite infantilização visual; mantenha os personagens canônicos escolhidos.",
+        "adult": "Público adulto: composição e linguagem visual maduras, fiéis ao conteúdo e aos personagens escolhidos. Não converta o projeto em livro infantil.",
+        "custom": "Público personalizado: siga o brief e o contexto editorial fornecidos. Não presuma uma faixa infantil e não altere os personagens escolhidos.",
+    }
+    system += skill_contract("scene_director") + "\n" + (audience_direction[broad_audience] if broad_audience else instrucao_faixa_etaria(faixa))
     instruction = {
+        "contexto_editorial": {key: context.get(key) for key in (
+            "titulo", "colecao", "licao_final", "cenas_texto", "mapa_emocional", "direcao_emocional_aprovada", "style_dna", "world_masters", "editorial_audience"
+        )},
+        "faixa_etaria": faixa,
         "trecho": excerpt,
         "personagens": char_context,
         "quantidade": count,
@@ -295,8 +323,30 @@ def suggest_scene_concepts(story_excerpt: str, characters: list[dict], count: in
             "objetos": "props essenciais", "por_que_funciona": "1 frase"
         }]}
     }
-    raw = chamar_llm(system, str(instruction))
-    return _normalize_scene_ideas(raw, count=count)
+    raw = (text_generator or chamar_llm)(system, str(instruction))
+    ideas = _normalize_scene_ideas(raw, count=count)
+    validate_scene_concepts(ideas)
+    for idea in ideas:
+        idea["editorial_context"] = {"faixa_etaria": faixa, "editorial_audience": audience, "style_dna": deepcopy(context.get("style_dna")), "world_masters": deepcopy(context.get("world_masters"))}
+    return ideas
+
+
+def validate_scene_concepts(ideas: list[dict]) -> None:
+    """Validate new generations; normalization remains compatible with legacy data."""
+    signatures = set()
+    if len(ideas) != 3:
+        raise ValueError("São necessárias três propostas de cena.")
+    for idx, idea in enumerate(ideas):
+        required = ("cenario", "acao", "emocao", "psicologia_cores", "iluminacao", "camera", "por_que_funciona")
+        if any(not str(idea.get(k) or "").strip() for k in required) or not idea.get("poses"):
+            raise ValueError("Proposta incompleta: faltam ação, pose, câmera, luz ou direção emocional. Tente novamente.")
+        if any(not isinstance(v, str) or not v.strip() for v in idea["poses"].values()):
+            raise ValueError("Todas as poses devem estar preenchidas.")
+        signature = tuple(str(idea[k]).strip().casefold() for k in ("cenario", "acao", "camera"))
+        if signature in signatures:
+            raise ValueError("As três propostas precisam oferecer direções visuais distintas.")
+        signatures.add(signature)
+        idea["id"] = "ABC"[idx]
 
 
 def compose_scene_prompt(concept: dict, characters: list[dict], *, usage: str = "story", adjustment: str = "") -> str:
@@ -307,6 +357,7 @@ def compose_scene_prompt(concept: dict, characters: list[dict], *, usage: str = 
         name = p.get("nome", "Personagem")
         variables = {"pose": (concept.get("poses") or {}).get(name, ""), "acao": concept.get("acao", ""), "emocao": concept.get("emocao", ""), "cenario": concept.get("cenario", "")}
         blocks.append(_identity_block(p, variables, usage))
+    blocks.append("CONTEXTO EDITORIAL DA PROPOSTA: " + str(concept.get("editorial_context") or {}))
     return "\n".join(blocks) + (
         "\nDIREÇÃO DE CENA APROVADA PELA AUTORA:\n"
         f"Cenário: {concept.get('cenario','')}\nAção: {concept.get('acao','')}\nPoses: {concept.get('poses',{})}\n"
@@ -421,3 +472,4 @@ def approve_asset_as_variation(asset_id: str) -> dict:
     if asset.get("visual_status") not in {VARIATION_STATUS, MASTER_STATUS, "RESTORATION_CANDIDATE"}:
         raise ValueError("Somente uma candidata visual pode ser aprovada como variação.")
     return update_asset(asset_id, approved=True, visual_status="APPROVED_VARIATION", metadata={"visual_status": "APPROVED_VARIATION", "approved_at": _now(), "approval": "human"})
+

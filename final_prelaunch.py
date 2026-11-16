@@ -3,6 +3,7 @@
 Esta camada reúne os gates que já existiam sem fingir que validações offline equivalem
 a um deploy real. O objetivo é deixar a candidata pronta para ser validada no
 Streamlit Cloud e impedir a promoção para Stable enquanto faltarem evidências reais.
+Security-by-Default é obrigatório: nenhuma candidata final passa sem Security Gate.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from real_pilot import pilot_readiness
+from security_baseline import security_by_default_gate
 from stable_candidate import (
     EVIDENCE_SCHEMA,
     build_evidence_bundle_bytes,
@@ -28,7 +30,7 @@ from stable_candidate import (
 from stable_hardening import sanitize_for_log
 from storage_backend import BACKEND
 
-RC4_SCHEMA = "faithbloom.final-prelaunch.v1"
+RC4_SCHEMA = "faithbloom.final-prelaunch.v2"
 RC4_PREFIX = "system/final-prelaunch"
 RC4_DRAFT = f"{RC4_PREFIX}/evidence-draft.json"
 
@@ -62,6 +64,18 @@ def build_prelaunch_test_plan() -> list[dict]:
                 "incident": "Registrar incidente de teste e confirmar sanitização de token/chave/senha no audit log.",
             }.get(item["id"], "Validar manualmente no ambiente de produção e registrar evidência verificável."),
         })
+    base.append({
+        "id": "security_by_default",
+        "label": "Security-by-Default / Security Gate",
+        "required": True,
+        "environment": "production-cloud",
+        "evidence_required": True,
+        "how_to_validate": (
+            "Registrar evidências explícitas de autenticação/autorização, isolamento de tenant/RLS quando aplicável, "
+            "secrets, APIs, uploads, logs, backups/restore, privacidade, dependências, monitoramento, MFA para acessos "
+            "privilegiados e reautenticação para ações críticas. O gate é fail-closed."
+        ),
+    })
     return base
 
 
@@ -72,15 +86,23 @@ def final_prelaunch_gate(
     deployment_ready: bool,
     pilot_status: dict | None = None,
     source_manifest: dict | None = None,
+    security_controls: dict[str, Any] | None = None,
+    privileged_access: bool = True,
 ) -> dict:
     """Gate final antes de criar a RC4.
 
-    Importante: `deployment_ready` é readiness para validar na nuvem; as evidências de
-    Cloud E2E continuam obrigatórias e impedem PASS quando não existem.
+    `deployment_ready` é readiness para validar na nuvem; evidências Cloud E2E e o
+    Security Gate continuam obrigatórios. Ausência de evidência de segurança bloqueia
+    o PASS em vez de assumir que a proteção existe.
     """
     manifest = source_manifest or source_release_manifest()
     pilots = copy.deepcopy(pilot_status or pilot_readiness())
     cloud = evaluate_cloud_launch_evidence(evidence, require_note_or_reference=True)
+    security = security_by_default_gate(
+        security_controls,
+        production=True,
+        privileged_access=privileged_access,
+    )
     checks = [
         {
             "id": "source_manifest",
@@ -103,10 +125,15 @@ def final_prelaunch_gate(
             "ok": bool(cloud.get("cloud_launch_evidence_passed")),
             "detail": f"{cloud.get('required_done', 0)}/{cloud.get('required_total', 0)} evidências obrigatórias; {len(cloud.get('required_without_detail') or [])} sem nota/referência",
         },
+        {
+            "id": "security_by_default",
+            "ok": bool(security.get("ready")),
+            "detail": f"{security.get('passed_total', 0)}/{security.get('required_total', 0)} controles de segurança comprovados",
+        },
     ]
     blockers = [x for x in checks if not x["ok"]]
     return {
-        "schema": "faithbloom.final-prelaunch-gate.v1",
+        "schema": "faithbloom.final-prelaunch-gate.v2",
         "generated_at": _now(),
         "status": "PASS" if not blockers else "BLOCKED",
         "ready_to_create_rc4": not blockers,
@@ -114,6 +141,7 @@ def final_prelaunch_gate(
         "blockers": blockers,
         "pilot_readiness": sanitize_for_log(pilots),
         "cloud_evidence": cloud,
+        "security_gate": sanitize_for_log(security),
         "source_manifest": manifest,
         "notice": (
             "PASS autoriza registrar uma Release Candidate final. Não significa Stable nem aprovação por Amazon, Apple, Kobo ou outra plataforma."
@@ -143,14 +171,20 @@ def create_final_candidate_record(
     actor: str,
     previous_version: str,
     notes: str = "",
+    security_controls: dict[str, Any] | None = None,
+    privileged_access: bool = True,
 ) -> dict:
     gate = final_prelaunch_gate(
         evidence,
         qa_ok=bool((qa_report or {}).get("ok")),
         deployment_ready=deployment_ready,
+        security_controls=security_controls,
+        privileged_access=privileged_access,
     )
     if not gate["ready_to_create_rc4"]:
-        raise ValueError("RC4 bloqueada: conclua pilotos, QA, configuração de produção e evidências reais do Cloud E2E.")
+        raise ValueError(
+            "RC4 bloqueada: conclua pilotos, QA, configuração de produção, Cloud E2E e Security Gate."
+        )
     cid = f"{version.replace('/', '-')}-{uuid.uuid4().hex[:10]}"
     record = {
         "schema": RC4_SCHEMA,
@@ -163,12 +197,15 @@ def create_final_candidate_record(
         "notes": str(notes or "").strip(),
         "source_manifest": gate["source_manifest"],
         "gate": gate,
+        "security_gate": gate["security_gate"],
         "evidence": normalize_evidence((evidence or {}).get("items") if (evidence or {}).get("schema") == EVIDENCE_SCHEMA else evidence, actor=actor),
         "qa_report": sanitize_for_log(qa_report or {}),
         "manual_signoff": {"approved": False, "actor": "", "at": "", "note": ""},
         "policy": {
             "cloud_e2e_mandatory": True,
             "pilot_gate_mandatory": True,
+            "security_by_default_mandatory": True,
+            "security_gate_fail_closed": True,
             "does_not_auto_deploy": True,
             "does_not_auto_tag_stable": True,
             "does_not_publish_books": True,
@@ -181,7 +218,7 @@ def create_final_candidate_record(
 def record_final_signoff(candidate_id: str, *, approved: bool, actor: str, note: str = "") -> dict:
     path = f"{RC4_PREFIX}/{candidate_id}.json"
     record = BACKEND.get_json(path, {}) or {}
-    if record.get("schema") != RC4_SCHEMA:
+    if record.get("schema") not in {RC4_SCHEMA, "faithbloom.final-prelaunch.v1"}:
         raise ValueError("Candidata final não encontrada.")
     if approved and not str(actor or "").strip():
         raise ValueError("Informe quem está aprovando o sign-off.")
@@ -199,7 +236,7 @@ def list_final_candidates(limit: int = 50) -> list[dict]:
         if not path.endswith(".json") or path.endswith("evidence-draft.json"):
             continue
         value = BACKEND.get_json(path, {}) or {}
-        if value.get("schema") == RC4_SCHEMA:
+        if value.get("schema") in {RC4_SCHEMA, "faithbloom.final-prelaunch.v1"}:
             out.append({**value, "storage_path": path})
         if len(out) >= max(1, int(limit)):
             break
@@ -211,14 +248,16 @@ def final_stable_promotion_gate(candidate: dict, *, current_manifest: dict | Non
     current = candidate_is_current({"source_manifest": candidate.get("source_manifest") or {}}, manifest)
     signoff = candidate.get("manual_signoff") or {}
     gate = candidate.get("gate") or {}
+    security = gate.get("security_gate") or candidate.get("security_gate") or {}
     checks = [
         {"id": "final_gate", "ok": gate.get("status") == "PASS", "detail": gate.get("status", "missing")},
+        {"id": "security_gate", "ok": security.get("status") == "PASS", "detail": security.get("status", "missing")},
         {"id": "source_current", "ok": bool(current.get("current")), "detail": "fingerprint vigente" if current.get("current") else "fonte mudou após a RC4"},
         {"id": "manual_signoff", "ok": bool(signoff.get("approved")), "detail": f"sign-off por {signoff.get('actor') or '—'}"},
     ]
     blockers = [x for x in checks if not x["ok"]]
     return {
-        "schema": "faithbloom.final-stable-promotion-gate.v1",
+        "schema": "faithbloom.final-stable-promotion-gate.v2",
         "status": "PASS" if not blockers else "BLOCKED",
         "ready_to_tag_stable_manually": not blockers,
         "checks": checks,
@@ -229,9 +268,8 @@ def final_stable_promotion_gate(candidate: dict, *, current_manifest: dict | Non
 
 
 def build_final_evidence_bundle_bytes(candidate: dict) -> bytes:
-    if candidate.get("schema") != RC4_SCHEMA:
+    if candidate.get("schema") not in {RC4_SCHEMA, "faithbloom.final-prelaunch.v1"}:
         raise ValueError("Registro RC4 inválido.")
-    # Reusa o formato conhecido do bundle de Stable Candidate, além do gate RC4.
     shim = {
         "schema": "faithbloom.stable-candidate.v1",
         **candidate,
@@ -248,6 +286,7 @@ def build_final_evidence_bundle_bytes(candidate: dict) -> bytes:
         for name in source.namelist():
             target.writestr(name, source.read(name))
         target.writestr("final-prelaunch-gate.json", json.dumps(sanitize_for_log(candidate.get("gate") or {}), ensure_ascii=False, indent=2))
+        target.writestr("security-gate.json", json.dumps(sanitize_for_log(candidate.get("security_gate") or (candidate.get("gate") or {}).get("security_gate") or {}), ensure_ascii=False, indent=2))
         target.writestr("final-stable-promotion-gate.json", json.dumps(final_stable_promotion_gate(candidate), ensure_ascii=False, indent=2))
         target.writestr("cloud-test-plan.json", json.dumps(build_prelaunch_test_plan(), ensure_ascii=False, indent=2))
     return out.getvalue()

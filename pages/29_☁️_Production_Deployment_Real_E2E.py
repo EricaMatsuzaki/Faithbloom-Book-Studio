@@ -49,6 +49,8 @@ if inv:
     st.download_button("Baixar inventário JSON", json.dumps(inv, ensure_ascii=False, indent=2), "faithbloom-local-inventory.json", "application/json")
 
 section_title("Real E2E no Streamlit Cloud", "Marque somente depois de executar cada prova de verdade no ambiente de destino.", "Cloud validation")
+st.caption("Este checklist é uma declaração manual nesta sessão. Para guardar notas e referências de evidência no storage, use a tela Stable Candidate & Cloud Launch.")
+st.page_link("pages/30_🏆_Stable_Candidate_Cloud_Launch.py", label="Registrar evidências da validação", use_container_width=True)
 evidence = st.session_state.setdefault("real_e2e_evidence", {})
 for spec in real_e2e_checklist():
     evidence[spec["id"]] = st.checkbox(("Obrigatório · " if spec["required"] else "Opcional · ") + spec["label"], value=bool(evidence.get(spec["id"])), key=f"e2e_{spec['id']}")

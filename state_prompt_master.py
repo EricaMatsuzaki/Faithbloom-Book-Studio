@@ -26,3 +26,9 @@ class LivroStatePromptMestre(LivroState, total=False):
 
     # Auditoria do Prompt-Mestre
     prompt_mestre_compliance: dict
+
+    # Tentativas editoriais limitadas; uma reprovação persistente volta à autora.
+    editorial_review_attempts: int
+    pipeline_status: str
+    book_id: str
+    emotional_book_binding: dict

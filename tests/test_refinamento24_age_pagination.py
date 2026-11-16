@@ -30,7 +30,10 @@ def test_gerador_de_ideias_recebe_faixa_etaria():
 
     def fake_llm(*, sistema, instrucao):
         chamadas.append((sistema, instrucao))
-        return []
+        return [{"titulo_sugerido": f"Uma escolha corajosa {i}",
+                 "situacao": "Amigos aprendem a resolver um desacordo.",
+                 "emocao_central": "coragem", "pista_licao": "Ouvir com respeito."}
+                for i in range(4)]
 
     gerador_ideias_node(
         4,
@@ -89,20 +92,19 @@ def test_quatro_estilos_preservam_mesma_faixa():
     assert all("6–8 anos" in instrucao for _, instrucao in chamadas)
 
 
-def test_complementos_fixam_faixa_do_projeto():
+def test_complementos_fixam_faixa_do_projeto(complete_editorial_extras):
     capturado = {}
 
     def fake_llm(*, sistema, instrucao):
         capturado["sistema"] = sistema
-        return {
-            "boas_vindas": "Bem-vindos",
-            "pais_educadores": {"perguntas": ["1", "2", "3", "4"]},
-            "ficha_pedagogica": {"faixa_etaria": "ERRADA", "perguntas_reflexao": ["1", "2", "3", "4"]},
-        }
+        result = complete_editorial_extras(4, "Salmo 118:24")
+        result["ficha_pedagogica"]["faixa_etaria"] = "ERRADA"
+        return result
 
     out = gerar_complementos_editoriais(
         {
             "titulo": "Teste",
+            "cenas_texto": [{"numero": 1, "texto": "Mel agradeceu."}],
             "faixa_etaria": "9-12",
             "versiculo_referencia": "Salmo 118:24",
         },

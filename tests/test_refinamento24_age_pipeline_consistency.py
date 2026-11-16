@@ -114,7 +114,7 @@ def test_audiobook_adapta_performance_sem_pedir_reescrita():
     def fake_llm(*, sistema, instrucao):
         capturado["sistema"] = sistema
         capturado["instrucao"] = instrucao
-        return {"roteiro": []}
+        return {"roteiro": [{"numero": 1, "texto_narrado": "[voz suave] Texto aprovado.", "nota_producao": "Leitura natural."}]}
 
     audiobook_node(
         {
@@ -188,7 +188,7 @@ def test_marketing_respeita_faixa_e_claims_seguros():
 
     def fake_llm(*, sistema, instrucao):
         capturado["sistema"] = sistema
-        return {"legenda_instagram": "Post"}
+        return {"legenda_instagram": "Post", "descricao_pinterest": "Uma jornada.", "email_lancamento": "Conheça o livro.", "pedido_avaliacao": "Compartilhe sua avaliação honesta."}
 
     out = marketing_lancamento_node(
         {
@@ -249,12 +249,12 @@ def test_state_tem_faixa_etaria_como_campo_oficial_e_sem_duplicata_colorir():
 def test_dashboard_envia_criacao_para_novo_fluxo():
     source = Path("app.py").read_text(encoding="utf-8")
     assert 'card("Criar um livro"' in source
-    assert '"pages/39_Historia_4_Estilos.py"' in source
+    assert '"pages/39_✍️_Historia_4_Estilos.py"' in source
     assert 'Criar do Zero — fluxo clássico 3–8' in source
 
 
 def test_novo_fluxo_pede_colecao_autoria_salva_rascunho_e_carrega_biblioteca():
-    source = Path("pages/39_Historia_4_Estilos.py").read_text(encoding="utf-8")
+    source = Path("pages/39_✍️_Historia_4_Estilos.py").read_text(encoding="utf-8")
     assert 'st.subheader("1. Coleção e autoria")' in source
     assert "list_author_profiles" in source
     assert "listar_colecoes" in source
@@ -265,6 +265,6 @@ def test_novo_fluxo_pede_colecao_autoria_salva_rascunho_e_carrega_biblioteca():
 
 
 def test_novo_fluxo_permita_limpar_autoria_selecao():
-    source = Path("pages/39_Historia_4_Estilos.py").read_text(encoding="utf-8")
+    source = Path("pages/39_✍️_Historia_4_Estilos.py").read_text(encoding="utf-8")
     assert "if autores != atuais:" in source
     assert "set_project_authors(dict(s), autores)" in source

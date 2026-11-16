@@ -82,7 +82,9 @@ def dedicatoria_node(state: LivroState, chamar_llm) -> LivroState:
     )
     prompt += skill_contract("dedication")
     resposta = chamar_llm(sistema=prompt, instrucao="Escreva a dedicatória.")
-    state["dedicatoria_texto"] = resposta.get("texto", "")
+    if not isinstance(resposta, dict) or not isinstance(resposta.get("texto"), str) or not resposta["texto"].strip():
+        raise ValueError("A dedicatória veio vazia ou inválida. O texto anterior foi preservado.")
+    state["dedicatoria_texto"] = resposta["texto"].strip()
     return state
 
 

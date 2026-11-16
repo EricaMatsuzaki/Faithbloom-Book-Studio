@@ -236,12 +236,14 @@ def verificar_refinamento21() -> list[dict]:
     ]
     faltam = [str(p.relative_to(ROOT)) for p in esperados if not p.exists()]
     try:
-        from agent_skills import validate_registry
+        from agent_skills import AGENT_PROFILES, validate_registry
         audit = validate_registry()
+        expected_roles = len(AGENT_PROFILES)
     except Exception as exc:
         audit = {"ok": False, "errors": [f"{type(exc).__name__}: {exc}"]}
-    ok = not faltam and bool(audit.get("ok")) and int(audit.get("role_count", 0)) == 23
-    detalhe = f"23 papéis formalizados · {audit.get('module_count',0)} módulos agents/ · Bible/Market/Readiness presentes" if ok else f"Faltam={faltam}; audit={audit.get('errors',[])}"
+        expected_roles = 0
+    ok = not faltam and bool(audit.get("ok")) and expected_roles > 0 and int(audit.get("role_count", 0)) == expected_roles
+    detalhe = f"{expected_roles} papéis formalizados · {audit.get('module_count',0)} módulos com perfil · Bible/Market/Readiness presentes" if ok else f"Faltam={faltam}; audit={audit.get('errors',[])}"
     return [_item("Agent Skills & Bestseller Readiness", ok, detalhe)]
 
 

@@ -1,12 +1,16 @@
 """Refinamento 10 — FaithBloom Quality Guardian."""
 import json
 import os
+from hashlib import sha256
+import storage_backend as storage
 import streamlit as st
 
 from estilo import aplicar_estilo, hero, section_title, callout
 from armazenamento import listar_livros, carregar_livro
+from editorial_dispatch import book_selection_labels, apply_studio_book_handoff, book_source_key, require_child_translation_source
 from activity_studio import list_activity_projects, load_activity_project
 from audiobook_studio import list_audiobook_projects, load_audiobook_project
+from governance_callbacks import governed_text_callback, render_personal_consent, text_route_configuration
 from quality_guardian import (
     SEVERITIES, DOMAIN_LABELS, run_quality_guardian, record_issue_decision,
     register_author_final_approval, issue_internal_certificate,
@@ -36,21 +40,50 @@ if not books:
     st.warning("Ainda não há Story Books salvos na Biblioteca Editorial. Salve/retome uma obra antes de executar o Guardian.")
     st.stop()
 
-book_path = st.selectbox(
-    "Story Book Master",
-    [b["storage_path"] for b in books],
-    format_func=lambda x: next((f"{b.get('titulo')} · {b.get('colecao')}" for b in books if b["storage_path"] == x), x),
-)
-book_meta = next(b for b in books if b["storage_path"] == book_path)
+try:
+    source_options=book_selection_labels(books)
+    apply_studio_book_handoff(st.session_state,"quality",source_options,"r10_master_selection")
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+book_label=st.selectbox("Story Book Master",list(source_options),key="r10_master_selection")
+book_meta=source_options[book_label]
+book_path=book_meta.get("storage_path") or book_meta.get("arquivo","")
 state = carregar_livro(book_meta.get("colecao", ""), book_path)
+try:
+    require_child_translation_source(state, studio="Quality Guardian, cujos checks de legibilidade ainda são infantis")
+except ValueError as exc:
+    st.error(str(exc)); st.stop()
+source_identity=book_source_key(book_path)
+if st.session_state.get("r10_form_source")!=source_identity:
+    for key in ("r10_report","r10_activity_selection","r10_audio_selection"):
+        st.session_state.pop(key,None)
+    st.session_state["r10_form_source"]=source_identity
 
 activities = list_activity_projects()
 audio_projects = list_audiobook_projects()
 a1, a2 = st.columns(2)
-activity_id = a1.selectbox("Activity Book vinculado (opcional)", [""] + [x["id"] for x in activities], format_func=lambda x: "— Não incluir —" if not x else next((p.get("title", x) for p in activities if p.get("id") == x), x))
-audio_id = a2.selectbox("Audiobook vinculado (opcional)", [""] + [x["id"] for x in audio_projects], format_func=lambda x: "— Não incluir —" if not x else next((p.get("title", x) + " · " + p.get("locale", "") for p in audio_projects if p.get("id") == x), x))
+activity_id = a1.selectbox("Activity Book vinculado (opcional)", [""] + [x["id"] for x in activities], format_func=lambda x: "— Não incluir —" if not x else next((p.get("title", x) for p in activities if p.get("id") == x), x),key="r10_activity_selection")
+audio_id = a2.selectbox("Audiobook vinculado (opcional)", [""] + [x["id"] for x in audio_projects], format_func=lambda x: "— Não incluir —" if not x else next((p.get("title", x) + " · " + p.get("locale", "") for p in audio_projects if p.get("id") == x), x),key="r10_audio_selection")
 activity = load_activity_project(activity_id) if activity_id else None
 audio = load_audiobook_project(audio_id) if audio_id else None
+if audio and book_source_key(audio.get("source_ref"))!=source_identity:
+    st.error("O audiobook escolhido pertence a outra fonte. Selecione uma edição vinculada à obra exata."); st.stop()
+source_snapshot=storage.BACKEND.get_json(source_identity,None)
+if not isinstance(source_snapshot,dict) or not source_snapshot:
+    st.error("A fonte salva da obra não está disponível para vincular as evidências. Nenhum relatório foi aprovado."); st.stop()
+# Canonical persisted state covers image choices, covers, print QA and publication
+# evidence too, without volatile migration timestamps added only while loading.
+review_context=sha256(json.dumps({"source_ref":source_identity,"source_snapshot":source_snapshot,"activity":activity,"audio":audio},sort_keys=True,ensure_ascii=False,default=str).encode()).hexdigest()
+if st.session_state.get("r10_review_context")!=review_context:
+    st.session_state.pop("r10_report",None)
+    st.session_state.pop("r10_final_confirmation",None)
+    st.session_state.pop("r10_final_note",None)
+    st.session_state["r10_review_context"]=review_context
+
+def bind_report(report):
+    report["source_ref"]=book_path
+    report["studio_review_context"]=review_context
+    return report
 
 # ---------- Executar / recuperar
 section_title("2 · Rodar o Guardian", "Rerun após uma correção: bloqueios só desaparecem quando o check deixa de encontrá-los. Versões anteriores ficam no relatório salvo.", "Independent Gate")
@@ -58,16 +91,21 @@ previous = st.session_state.get("r10_report")
 c1, c2 = st.columns(2)
 if c1.button("🛡️ Executar Quality Guardian", type="primary", use_container_width=True):
     report = run_quality_guardian(state, activity_project=activity, audiobook_project=audio, previous_report=previous, project_type="story")
-    st.session_state.r10_report = save_guardian_report(report)
+    st.session_state.r10_report = save_guardian_report(bind_report(report))
     st.rerun()
 if c2.button("🔁 Reexecutar após correções", use_container_width=True, disabled=not bool(previous)):
     report = run_quality_guardian(state, activity_project=activity, audiobook_project=audio, previous_report=previous, project_type="story")
-    st.session_state.r10_report = save_guardian_report(report)
+    st.session_state.r10_report = save_guardian_report(bind_report(report))
     st.rerun()
 
 report = st.session_state.get("r10_report")
 if not report:
-    recent = list_guardian_reports()
+    # An archived same-title report is not evidence for another source/version.
+    recent = []
+    for card in list_guardian_reports():
+        candidate=load_guardian_report(card["id"])
+        if book_source_key(candidate.get("source_ref"))==source_identity and candidate.get("studio_review_context")==review_context:
+            recent.append(card)
     if recent:
         rid = st.selectbox("Ou abrir relatório anterior", [""] + [x["id"] for x in recent], format_func=lambda x: "—" if not x else next((f"{r.get('project_title')} · run {r.get('run_number')} · {r.get('open_blockers')} bloqueios" for r in recent if r["id"] == x), x))
         if rid and st.button("Abrir relatório"):
@@ -127,13 +165,17 @@ for x in [i for i in issues if i.get("severity") in filters]:
 # ---------- segunda opinião IA
 section_title("5 · Revisores independentes opcionais", "A segunda opinião não modifica o livro. Bible Guard envia referência/contexto, nunca o texto bíblico protegido para tradução/paráfrase.", "Specialist Review")
 focus = st.selectbox("Especialidade", ["editorial", "child_readability", "biblical_context", "cross_modal"], format_func=lambda x: {"editorial":"Editorial/continuidade", "child_readability":"Legibilidade infantil", "biblical_context":"Contexto bíblico/teológico", "cross_modal":"Texto × imagem / multimodal"}[x])
-has_key = bool(os.environ.get("OPENROUTER_API_KEY"))
+has_key = text_route_configuration()["configured"]
+guardian_source={"source_ref":book_path,"master":state,"activity":activity,"audio":audio,"focus":focus}
+guardian_consent=render_personal_consent(st,guardian_source,action="quality.specialist_review")
 if st.button("🤖 Solicitar segunda opinião independente", disabled=not has_key):
     try:
-        from openrouter_client import chamar_llm
         system, user = build_specialist_review_prompt(state, focus)
-        raw = chamar_llm(system, user)
+        callback=governed_text_callback("quality.specialist_review",guardian_source,
+            confirmed=True,consent_confirmed=guardian_consent)
+        raw = callback(system, user)
         review = normalize_specialist_review(raw, focus)
+        review["governance_receipts"]=callback.governance_receipts
         report = merge_specialist_review(report, review)
         # registra no estado em memória para que o check bíblico possa reconhecer a revisão no próximo rerun
         if focus == "biblical_context":
@@ -142,12 +184,12 @@ if st.button("🤖 Solicitar segunda opinião independente", disabled=not has_ke
     except Exception as exc:
         st.error(f"Revisor independente: {exc}")
 if not has_key:
-    st.caption("A revisão offline continua disponível. Configure OPENROUTER_API_KEY somente se quiser uma segunda opinião por IA.")
+    st.caption("A revisão offline continua disponível. Configure um provedor de texto somente se quiser uma segunda opinião por IA.")
 
 # ---------- assinatura e certificado
 section_title("6 · Aprovação final humana", "O Guardian só libera o certificado interno quando não há bloqueios nem alertas que exijam decisão.", "Final Sign-off")
-confirm = st.checkbox("Eu revisei os alertas, decisões e evidências e aprovo esta versão para seguir ao gate de publicação.")
-final_note = st.text_input("Nota final (opcional)")
+confirm = st.checkbox("Eu revisei os alertas, decisões e evidências e aprovo esta versão para seguir ao gate de publicação.",key="r10_final_confirmation")
+final_note = st.text_input("Nota final (opcional)",key="r10_final_note")
 if st.button("✅ Registrar aprovação final", disabled=not confirm):
     try:
         report = register_author_final_approval(report, True, final_note)
@@ -174,3 +216,4 @@ st.download_button(
     mime="application/json",
     use_container_width=True,
 )
+

@@ -42,5 +42,9 @@ def estado_inicial() -> LivroState:
 if __name__ == "__main__":
     grafo = construir_grafo(chamar_llm, gerar_imagem, gerar_audio)
     resultado = grafo.invoke(estado_inicial())
-    print("Pacote pronto para publicação manual na KDP:", resultado["pacote_pronto"])
-    print("Checklist:", resultado["checklist_kdp"])
+    if resultado.get("pipeline_status") in {"awaiting_human_review", "awaiting_emotional_review"}:
+        print("Rascunho preservado. Revisão humana pendente:", resultado["pipeline_status"])
+        print("Revise a história e aprove o mapa em Emoção e cores antes de iniciar as ilustrações.")
+    else:
+        print("Pacote pronto para publicação manual na KDP:", resultado.get("pacote_pronto", False))
+        print("Checklist:", resultado.get("checklist_kdp", []))
