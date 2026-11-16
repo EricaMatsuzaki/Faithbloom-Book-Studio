@@ -12,6 +12,8 @@ import time, uuid
 from copy import deepcopy
 from armazenamento import _json, _save_json, _slug
 from storage_backend import materializar_assets_em_objeto, persistir_assets_em_objeto
+import storage_backend as storage
+from storage_updates import update_json_document
 
 INDEX = "character_universe/index.json"
 USOS_PADRAO = ["story", "coloring", "activity", "cover"]
@@ -55,25 +57,48 @@ def _index():
     return x if isinstance(x, list) else []
 
 
-def _sync_index_record(personagem: dict) -> None:
-    """Mantém o índice alinhado quando nome, coleção ou status mudam."""
-    pid = str(personagem.get("id") or "")
-    if not pid:
-        return
-    idx = [dict(item) for item in _index()]
-    registro = {
-        "id": pid,
+def _atomic_update(path: str, mutator, default=None):
+    return update_json_document(
+        storage.BACKEND, path, mutator, default, allow_legacy_pilot=True
+    )
+
+
+def _character_card(personagem: dict) -> dict:
+    return {
+        "id": personagem.get("id", ""),
         "colecao": personagem.get("colecao", ""),
         "nome": personagem.get("nome", ""),
         "status": personagem.get("status", "oficial"),
+        "storage_revision": int(personagem.get("storage_revision") or 0),
     }
-    for pos, item in enumerate(idx):
-        if str(item.get("id") or "") == pid:
-            idx[pos] = registro
-            break
-    else:
-        idx.append(registro)
-    _save_json(INDEX, idx)
+
+
+def _sync_index_record(personagem: dict) -> None:
+    """Upsert atômico sem deixar uma sincronização atrasada regredir o índice."""
+    registro = _character_card(personagem)
+    pid = str(registro.get("id") or "")
+    if not pid:
+        return
+
+    def mutate(rows):
+        if rows is None:
+            rows = []
+        if not isinstance(rows, list):
+            raise storage.StorageCorrupt(
+                "Índice do Character Universe inválido; nenhuma gravação foi realizada."
+            )
+        out = [dict(item) for item in rows if isinstance(item, dict)]
+        for pos, item in enumerate(out):
+            if str(item.get("id") or "") != pid:
+                continue
+            current_revision = int(item.get("storage_revision") or 0)
+            if current_revision <= registro["storage_revision"]:
+                out[pos] = registro
+            return out
+        out.append(registro)
+        return out
+
+    _atomic_update(INDEX, mutate, [])
 
 
 def normalizar_dna(dna: dict | str | None) -> dict:
@@ -108,6 +133,7 @@ def criar_personagem_oficial(colecao: str, nome: str, dna: dict, color_master: s
         "line_art_master": line_art_master, "reference_pack": normalizar_reference_pack(reference_pack),
         "metadata": meta, "variacoes": [], "versoes": [],
         "criado_em": int(time.time()), "atualizado_em": int(time.time()),
+        "storage_revision": 1,
     }
     obj = persistir_assets_em_objeto(obj, f"assets/character_universe/{_slug(colecao)}/{_slug(nome)}")
     _save_json(f"character_universe/{pid}.json", obj)
@@ -155,11 +181,10 @@ def carregar_personagem_oficial(pid: str) -> dict:
     path = f"character_universe/{pid}.json"
     persistido = _json(path, {}) or {}
     if persistido:
-        referencias = normalizar_reference_pack(persistido.get("reference_pack", []))
-        if referencias != persistido.get("reference_pack", []):
-            persistido = deepcopy(persistido)
-            persistido["reference_pack"] = referencias
-            _save_json(path, persistido)
+        persistido = deepcopy(persistido)
+        persistido["reference_pack"] = normalizar_reference_pack(
+            persistido.get("reference_pack", [])
+        )
     obj = materializar_assets_em_objeto(persistido)
     if obj:
         obj["dna"] = normalizar_dna(obj.get("dna"))
@@ -229,22 +254,54 @@ def restaurar_personagem(pid: str) -> dict:
 
 
 def atualizar_personagem_oficial(pid: str, novos: dict) -> dict:
-    atual = _json(f"character_universe/{pid}.json", {}) or {}
-    if not atual:
+    """Mescla campos do personagem atomicamente, preservando Masters e histórico."""
+    if not isinstance(novos, dict):
+        raise TypeError("A atualização do personagem precisa ser um objeto.")
+    path = f"character_universe/{pid}.json"
+    observado = _json(path, {}) or {}
+    if not observado:
         raise KeyError(pid)
-    snapshot = {k: v for k, v in atual.items() if k != "versoes"}
-    atual.setdefault("versoes", []).append({"salvo_em": int(time.time()), "snapshot": snapshot})
-    novos = deepcopy(novos)
-    if "dna" in novos:
-        novos["dna"] = normalizar_dna(novos["dna"])
-    if "reference_pack" in novos:
-        novos["reference_pack"] = normalizar_reference_pack(novos["reference_pack"])
-    atual.update(novos)
-    atual["atualizado_em"] = int(time.time())
-    atual = persistir_assets_em_objeto(atual, f"assets/character_universe/{_slug(atual.get('colecao',''))}/{_slug(atual.get('nome',''))}")
-    _save_json(f"character_universe/{pid}.json", atual)
-    _sync_index_record(atual)
-    return materializar_assets_em_objeto(atual)
+
+    prepared = deepcopy(novos)
+    if "id" in prepared and str(prepared.get("id") or "") != str(pid):
+        raise ValueError("A identidade do Character Master não pode ser substituída.")
+    prepared.pop("id", None)
+    prepared.pop("storage_revision", None)
+    if "dna" in prepared:
+        prepared["dna"] = normalizar_dna(prepared["dna"])
+    if "reference_pack" in prepared:
+        prepared["reference_pack"] = normalizar_reference_pack(prepared["reference_pack"])
+
+    target_collection = prepared.get("colecao", observado.get("colecao", ""))
+    target_name = prepared.get("nome", observado.get("nome", ""))
+    prepared = persistir_assets_em_objeto(
+        prepared,
+        f"assets/character_universe/{_slug(target_collection)}/{_slug(target_name)}",
+    )
+
+    def mutate(atual):
+        if not isinstance(atual, dict) or not atual:
+            raise KeyError(pid)
+        if str(atual.get("id") or pid) != str(pid):
+            raise storage.StorageCorrupt(
+                "O Character Master salvo possui identidade divergente."
+            )
+        snapshot = {k: v for k, v in atual.items() if k != "versoes"}
+        result = deepcopy(atual)
+        result["versoes"] = list(atual.get("versoes") or [])
+        result["versoes"].append({
+            "salvo_em": int(time.time()),
+            "snapshot": snapshot,
+        })
+        result.update(deepcopy(prepared))
+        result["id"] = pid
+        result["storage_revision"] = int(atual.get("storage_revision") or 0) + 1
+        result["atualizado_em"] = int(time.time())
+        return result
+
+    committed = _atomic_update(path, mutate, None)
+    _sync_index_record(committed)
+    return materializar_assets_em_objeto(committed)
 
 
 def mover_personagem_para_colecao(pid: str, nova_colecao: str, *, confirmacao_explicita: bool = False, motivo: str = "correcao_manual") -> dict:
