@@ -27,10 +27,17 @@ class TestCharacterUniverse(unittest.TestCase):
         def fake_save(path, value):
             store[path] = value
 
+        def fake_atomic(path, mutator, default=None):
+            value = fake_json(path, default)
+            committed = mutator(value)
+            fake_save(path, committed)
+            return fake_json(path, default)
+
         return store, patch.multiple(
             cu,
             _json=fake_json,
             _save_json=fake_save,
+            _atomic_update=fake_atomic,
             persistir_assets_em_objeto=lambda obj, prefix: obj,
             materializar_assets_em_objeto=lambda obj: obj,
         )
