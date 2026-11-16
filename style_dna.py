@@ -22,6 +22,7 @@ def _style_card(style: dict) -> dict:
         "colecao": style.get("colecao", ""),
         "modo": style.get("modo", "geral"),
         "status": style.get("status", "oficial"),
+        "storage_revision": int(style.get("storage_revision") or 0),
     }
 
 
@@ -37,7 +38,14 @@ def _sync_index_record(style: dict) -> list[dict]:
             rows = []
         if not isinstance(rows, list):
             raise storage.StorageCorrupt("Índice de Style DNA inválido; nenhuma gravação foi realizada.")
-        out = [dict(item) for item in rows if isinstance(item, dict) and str(item.get("id") or "") != sid]
+        out = [dict(item) for item in rows if isinstance(item, dict)]
+        for pos, item in enumerate(out):
+            if str(item.get("id") or "") != sid:
+                continue
+            current_revision = int(item.get("storage_revision") or 0)
+            if current_revision <= card["storage_revision"]:
+                out[pos] = card
+            return out
         out.append(card)
         return out
 
@@ -60,6 +68,7 @@ def criar_style_dna(nome: str, colecao: str, regras: dict, modo: str = "geral", 
         "versoes": [],
         "criado_em": int(time.time()),
         "atualizado_em": int(time.time()),
+        "storage_revision": 1,
     }
     _save_json(f"style_dna/{sid}.json", obj)
     _sync_index_record(obj)
@@ -116,6 +125,7 @@ def criar_style_candidate_autopilot(colecao: str) -> dict:
         "versoes": [],
         "criado_em": now,
         "atualizado_em": now,
+        "storage_revision": 1,
     }
     _save_json(f"style_dna/{sid}.json", obj)
     _sync_index_record(obj)
@@ -198,6 +208,7 @@ def atualizar_style(sid: str, novos: dict) -> dict:
         result["versoes"].append({"salvo_em": int(time.time()), "snapshot": snap})
         result.update(prepared)
         result["id"] = sid
+        result["storage_revision"] = int(atual.get("storage_revision") or 0) + 1
         result["atualizado_em"] = int(time.time())
         return result
 
