@@ -2,6 +2,8 @@
 from __future__ import annotations
 import time, uuid
 from armazenamento import _json, _save_json, _slug
+import storage_backend as storage
+from storage_updates import update_json_document
 
 INDEX = "style_dna/index.json"
 
@@ -11,6 +13,37 @@ DEFAULT_USE_CONTEXTS = ["story", "coloring", "activity", "cover"]
 def _index() -> list[dict]:
     d = _json(INDEX, [])
     return d if isinstance(d, list) else []
+
+
+def _style_card(style: dict) -> dict:
+    return {
+        "id": style.get("id", ""),
+        "nome": style.get("nome", ""),
+        "colecao": style.get("colecao", ""),
+        "modo": style.get("modo", "geral"),
+        "status": style.get("status", "oficial"),
+    }
+
+
+def _sync_index_record(style: dict) -> list[dict]:
+    """Upsert one Style DNA card without replacing concurrent index changes."""
+    card = _style_card(style)
+    sid = str(card.get("id") or "")
+    if not sid:
+        raise ValueError("Style DNA sem id não pode ser indexado.")
+
+    def mutate(rows):
+        if rows is None:
+            rows = []
+        if not isinstance(rows, list):
+            raise storage.StorageCorrupt("Índice de Style DNA inválido; nenhuma gravação foi realizada.")
+        out = [dict(item) for item in rows if isinstance(item, dict) and str(item.get("id") or "") != sid]
+        out.append(card)
+        return out
+
+    return update_json_document(
+        storage.BACKEND, INDEX, mutate, [], allow_legacy_pilot=True
+    )
 
 
 def criar_style_dna(nome: str, colecao: str, regras: dict, modo: str = "geral", usos: list[str] | None = None, metadata: dict | None = None) -> dict:
@@ -29,9 +62,7 @@ def criar_style_dna(nome: str, colecao: str, regras: dict, modo: str = "geral", 
         "atualizado_em": int(time.time()),
     }
     _save_json(f"style_dna/{sid}.json", obj)
-    idx = [x for x in _index() if x.get("id") != sid]
-    idx.append({"id": sid, "nome": nome, "colecao": colecao, "modo": modo, "status": "oficial"})
-    _save_json(INDEX, idx)
+    _sync_index_record(obj)
     return obj
 
 
@@ -87,15 +118,7 @@ def criar_style_candidate_autopilot(colecao: str) -> dict:
         "atualizado_em": now,
     }
     _save_json(f"style_dna/{sid}.json", obj)
-    idx = _index()
-    idx.append({
-        "id": sid,
-        "nome": nome,
-        "colecao": collection,
-        "modo": "autopilot_provisional",
-        "status": "candidate",
-    })
-    _save_json(INDEX, idx)
+    _sync_index_record(obj)
     return obj
 
 
@@ -158,15 +181,31 @@ def carregar_style(sid: str) -> dict:
 
 
 def atualizar_style(sid: str, novos: dict) -> dict:
-    atual = carregar_style(sid)
-    if not atual:
-        raise KeyError(sid)
-    snap = {k: v for k, v in atual.items() if k != "versoes"}
-    atual.setdefault("versoes", []).append({"salvo_em": int(time.time()), "snapshot": snap})
-    atual.update(novos)
-    atual["atualizado_em"] = int(time.time())
-    _save_json(f"style_dna/{sid}.json", atual)
-    return atual
+    """Merge top-level Style DNA fields atomically and retain a pre-edit snapshot."""
+    if not isinstance(novos, dict):
+        raise TypeError("A atualização do Style DNA precisa ser um objeto.")
+    path = f"style_dna/{sid}.json"
+    prepared = dict(novos)
+
+    def mutate(atual):
+        if not isinstance(atual, dict) or not atual:
+            raise KeyError(sid)
+        if str(atual.get("id") or sid) != str(sid):
+            raise storage.StorageCorrupt("O Style DNA salvo possui identidade divergente.")
+        snap = {k: v for k, v in atual.items() if k != "versoes"}
+        result = dict(atual)
+        result["versoes"] = list(atual.get("versoes") or [])
+        result["versoes"].append({"salvo_em": int(time.time()), "snapshot": snap})
+        result.update(prepared)
+        result["id"] = sid
+        result["atualizado_em"] = int(time.time())
+        return result
+
+    committed = update_json_document(
+        storage.BACKEND, path, mutate, None, allow_legacy_pilot=True
+    )
+    _sync_index_record(committed)
+    return committed
 
 
 def style_para_prompt(style: dict, contexto: str = "story") -> str:
